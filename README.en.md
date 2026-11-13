@@ -28,4 +28,4 @@ The Docker stack uses a separately distributed closed-source LunaFox Agent image
 
 ## Source and licenses
 
-LunaFox-derived source is GPL-3.0-only, `third_party/artex` is AGPL-3.0-only, `third_party/norma` is Apache-2.0 and `third_party/go-mitmproxy` is MIT. License texts and change notices are retained in their respective directories. Historical upstream release manifests do not represent SkyShield releases.
+LunaFox-derived source is GPL-3.0-only, `third_party/artex` is AGPL-3.0-only, `third_party/norma` is Apache-2.0 and `third_party/go-mitmproxy` is MIT. The original copyright and license scope are retained in [NOTICE](NOTICE); license texts and change notices are retained in their respective directories. Historical upstream release manifests do not represent SkyShield releases.

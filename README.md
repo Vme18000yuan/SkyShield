@@ -41,4 +41,4 @@ cd ../server && go test ./...
 
 ## 来源与许可
 
-项目保留上游版权及许可：LunaFox 的相应源码使用 GPL-3.0-only，`third_party/artex` 使用 AGPL-3.0-only，`third_party/norma` 使用 Apache-2.0，`third_party/go-mitmproxy` 使用 MIT。各部分的许可证和修改说明见各目录及 [LICENSE](LICENSE)。原有上游发行清单仅用于记录来源，不代表 SkyShield 已发布相同镜像或版本。
+项目保留上游版权及许可：LunaFox 的相应源码使用 GPL-3.0-only，`third_party/artex` 使用 AGPL-3.0-only，`third_party/norma` 使用 Apache-2.0，`third_party/go-mitmproxy` 使用 MIT。原版权和适用范围见 [NOTICE](NOTICE)，各部分的许可证和修改说明见各目录及 [LICENSE](LICENSE)。原有上游发行清单仅用于记录来源，不代表 SkyShield 已发布相同镜像或版本。
