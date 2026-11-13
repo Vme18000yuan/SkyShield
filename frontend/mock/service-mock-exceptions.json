@@ -1,0 +1,13 @@
+{
+  "$schema": "service-mock-exceptions.v1",
+  "entries": [
+    {
+      "file": "services/asset-coverage.service.ts",
+      "owner": "Asset inventory and AI workbench",
+      "reason": "Coverage requires persisted root associations and owner-scoped AI facts; the network mock explicitly returns 501 for these backend-dependent views.",
+      "status": "mock-unsupported",
+      "reviewTrigger": "When mock root inventory and task evidence fixtures become available",
+      "recoveryPath": "Use the local backend; graph interaction smoke tests use isolated network fixtures"
+    }
+  ]
+}

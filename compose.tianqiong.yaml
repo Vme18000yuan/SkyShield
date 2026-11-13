@@ -1,0 +1,213 @@
+name: tianqiong
+
+x-server-env: &server-env
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_USER: tianqiong
+  DB_NAME: tianqiong
+  DB_PASSWORD_FILE: /run/secrets/db_password
+  DB_SSLMODE: disable
+  DB_TIMEZONE: UTC
+  JWT_SECRET_FILE: /run/secrets/jwt_secret
+  PUBLIC_HOST: ${PUBLIC_HOST:-localhost}
+  PUBLIC_PORT: ${PUBLIC_PORT:-8443}
+  RELEASE_VERSION: 0.0.1-alpha.229
+  AGENT_VERSION: 0.0.1-alpha.229
+  AGENT_IMAGE_REF: docker.io/yyhuni/lunafox-agent@sha256:a0dbaecc2b8b17342b1691f868851d47455198bdac188385d718e29770942562
+  LUNAFOX_SHARED_DATA_VOLUME_BIND: lunafox_data:/opt/lunafox:rw
+  ENGINE_INSTALL_REGISTRY: docker.io
+  ENGINE_PACKAGE_CACHE_ROOT: /opt/lunafox/engine-packages
+  WORKFLOW_DEFINITIONS_ROOT: /usr/local/share/lunafox/workflows
+  WORDLISTS_BASE_PATH: /opt/lunafox/wordlists
+  FINGERPRINT_ARTIFACTS_BASE_PATH: /opt/lunafox/fingerprint-artifacts
+  LOGIN_VISUALS_BASE_PATH: /opt/lunafox/login-visuals
+  NUCLEI_POC_WORKSPACE_ROOT: /opt/lunafox/nuclei-poc-workspaces
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  LOKI_URL: http://loki:3100
+  TIANQIONG_AI_DATA_ROOT: /opt/lunafox/ai
+  TIANQIONG_AI_SKILLS_ROOT: /usr/local/share/lunafox/skills
+  TIANQIONG_AI_ENCRYPTION_KEY_FILE: /run/secrets/ai_encryption_key
+
+services:
+  postgres:
+    image: docker.io/library/postgres@sha256:67f41722b7a8cbdb868a44a4995c846eddfdc2973bccb291ce937dce88ad5675
+    environment:
+      POSTGRES_DB: tianqiong
+      POSTGRES_USER: tianqiong
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U tianqiong -d tianqiong]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: docker.io/library/redis@sha256:2afba59292f25f5d1af200496db41bea2c6c816b059f57ae74703a50a03a27d0
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  loki:
+    image: docker.io/grafana/loki@sha256:3c8fd3570dd9219951a60d3f919c7f31923d10baee578b77bc26c4a0b32d092d
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./resources/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data:/loki
+    healthcheck:
+      test: [CMD, /usr/bin/loki, -verify-config=true, -config.file=/etc/loki/loki-config.yaml]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    image: tianqiong-bootstrap:local
+    build:
+      context: .
+      dockerfile: docker/bootstrap/Dockerfile
+    entrypoint: [/usr/local/bin/server]
+    command: [migrate, up]
+    environment: *server-env
+    secrets: [db_password, jwt_secret, ai_encryption_key]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  volume-preflight:
+    image: tianqiong-bootstrap:local
+    build:
+      context: .
+      dockerfile: docker/bootstrap/Dockerfile
+    entrypoint: [bash, /check/volume-preflight.sh]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./scripts/tianqiong-volume-preflight.sh:/check/volume-preflight.sh:ro
+
+  bootstrap:
+    image: tianqiong-bootstrap:local
+    build:
+      context: .
+      dockerfile: docker/bootstrap/Dockerfile
+    environment:
+      <<: *server-env
+      ENGINE_INSTALL_INVENTORY_PATH: /bootstrap/engine-inventory.yaml
+      FINGERPRINT_BOOTSTRAP_PATH: /bootstrap/fingerprints/web_fingerprint_v4.json
+      WORDLISTS_SOURCE_PATH: /bootstrap/wordlists
+      AGENT_HOSTNAME: tianqiong-agent
+      LUNAFOX_AGENT_STATE_VOLUME: lunafox_agent_state
+      LUNAFOX_ENGINE_EXECUTION_VOLUME: lunafox_engine_execution
+      LUNAFOX_ENGINE_EXECUTION_ROOT: /var/lib/lunafox/engine-execution
+    secrets: [db_password, jwt_secret, ai_encryption_key]
+    volumes:
+      - shared_data:/opt/lunafox
+      - engine_execution:/var/lib/lunafox/engine-execution
+      - agent_state:/var/lib/lunafox-agent
+      - ./resources/fingerprints/web_fingerprint_v4.json:/bootstrap/fingerprints/web_fingerprint_v4.json:ro
+      - ./resources/wordlists:/bootstrap/wordlists:ro
+      - ./engine-inventory.yaml:/bootstrap/engine-inventory.yaml:ro
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      volume-preflight: { condition: service_completed_successfully }
+
+  server:
+    image: tianqiong-server:local
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment: *server-env
+    secrets: [db_password, jwt_secret, ai_encryption_key]
+    volumes:
+      - shared_data:/opt/lunafox
+      - upgrade_state:/opt/lunafox/.lunafox/upgrade
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      loki: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:8080/healthChecks/current]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  frontend:
+    image: tianqiong-frontend:local
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      API_HOST: server
+    depends_on:
+      server: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, node, -e, "require('http').get('http://localhost:3000',res=>process.exit(res.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  cert-init:
+    image: tianqiong-bootstrap:local
+    build:
+      context: .
+      dockerfile: docker/bootstrap/Dockerfile
+    entrypoint: [/usr/local/bin/lunafox-cert-init]
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:-localhost}
+    volumes: [ssl:/etc/nginx/ssl]
+
+  nginx:
+    build:
+      context: ./docker/nginx
+    image: tianqiong-nginx:local
+    ports:
+      - "127.0.0.1:${PUBLIC_PORT:-8443}:443"
+    volumes: [ssl:/etc/nginx/ssl:ro]
+    depends_on:
+      server: { condition: service_healthy }
+      frontend: { condition: service_healthy }
+      cert-init: { condition: service_completed_successfully }
+
+  agent:
+    image: docker.io/yyhuni/lunafox-agent@sha256:a0dbaecc2b8b17342b1691f868851d47455198bdac188385d718e29770942562
+    container_name: tianqiong-agent
+    hostname: tianqiong-agent
+    stop_grace_period: 30s
+    environment:
+      AGENT_CONTROL_URL: http://server:9090
+      AGENT_BOOTSTRAP_CREDENTIALS_PATH: /var/lib/lunafox-agent/bootstrap.json
+      AGENT_VERSION: 0.0.1-alpha.229
+      AGENT_HOSTNAME: tianqiong-agent
+      LUNAFOX_AGENT_CONTAINER_NAME: tianqiong-agent
+      LUNAFOX_AGENT_DISABLE_SELF_UPDATE: 'true'
+      LUNAFOX_SHARED_DATA_VOLUME_BIND: lunafox_data:/opt/lunafox:rw
+      LUNAFOX_ENGINE_EXECUTION_VOLUME: lunafox_engine_execution
+      LUNAFOX_ENGINE_EXECUTION_ROOT: /var/lib/lunafox/engine-execution
+      ENGINE_INSTALL_REGISTRY: docker.io
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - shared_data:/opt/lunafox
+      - engine_execution:/var/lib/lunafox/engine-execution
+      - agent_state:/var/lib/lunafox-agent
+    depends_on:
+      bootstrap: { condition: service_completed_successfully }
+      server: { condition: service_healthy }
+
+volumes:
+  postgres_data:
+  shared_data: { name: lunafox_data }
+  engine_execution: { name: lunafox_engine_execution }
+  agent_state: { name: lunafox_agent_state }
+  upgrade_state:
+  loki_data:
+  ssl:
+
+secrets:
+  db_password:
+    file: ./.local/secrets/db_password
+  jwt_secret:
+    file: ./.local/secrets/jwt_secret
+  ai_encryption_key:
+    file: ./.local/secrets/ai_encryption_key

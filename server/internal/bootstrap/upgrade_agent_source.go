@@ -1,0 +1,286 @@
+package bootstrap
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	agentapp "github.com/yyhuni/lunafox/server/internal/modules/agent/application"
+	agentdomain "github.com/yyhuni/lunafox/server/internal/modules/agent/domain"
+	upgradeapp "github.com/yyhuni/lunafox/server/internal/modules/upgrade/application"
+	upgradedomain "github.com/yyhuni/lunafox/server/internal/modules/upgrade/domain"
+)
+
+const (
+	// Heartbeat freshness is intentionally shorter than the verification
+	// deadline. A stale row must not be mistaken for an Agent that survived the
+	// host restart and is ready to claim work.
+	upgradeAgentHeartbeatFreshness = 90 * time.Second
+	upgradeAgentPageSize           = 200
+)
+
+// upgradeAgentSource adapts the persisted Agent runtime projection and the
+// existing control-plane publisher to the upgrade application port. It never
+// claims work and never copies authentication tokens into the Operation.
+type upgradeAgentSource struct {
+	repository agentdomain.AgentOperationalRepository
+	publisher  agentapp.AgentMessagePublisher
+	now        func() time.Time
+	freshness  time.Duration
+}
+
+func newUpgradeAgentSource(repository agentdomain.AgentOperationalRepository, publisher agentapp.AgentMessagePublisher, now func() time.Time) *upgradeAgentSource {
+	if now == nil {
+		now = func() time.Time { return time.Now().UTC() }
+	}
+	return &upgradeAgentSource{
+		repository: repository,
+		publisher:  publisher,
+		now:        now,
+		freshness:  upgradeAgentHeartbeatFreshness,
+	}
+}
+
+func (source *upgradeAgentSource) Snapshot(ctx context.Context, target upgradeapp.AgentUpgradeTarget) ([]upgradedomain.AgentExpectation, error) {
+	if source == nil || source.repository == nil {
+		return nil, fmt.Errorf("agent upgrade source is not configured")
+	}
+	if strings.TrimSpace(target.Version) == "" || strings.TrimSpace(target.Digest) == "" || strings.TrimSpace(target.ImageRef) == "" {
+		return nil, fmt.Errorf("agent upgrade target is incomplete")
+	}
+	now := source.now().UTC()
+	all := make([]upgradedomain.AgentExpectation, 0)
+	for page := 1; ; page++ {
+		agents, total, err := source.repository.List(ctx, page, upgradeAgentPageSize, "", "createdAt asc")
+		if err != nil {
+			return nil, fmt.Errorf("list Agents for upgrade snapshot: %w", err)
+		}
+		for _, agent := range agents {
+			if agent == nil || agent.ID <= 0 {
+				continue
+			}
+			all = append(all, source.expectation(agent, target, now))
+		}
+		if len(agents) == 0 || len(all) >= int(total) || len(agents) < upgradeAgentPageSize {
+			break
+		}
+	}
+	return all, nil
+}
+
+// Reconcile is an optional extension consumed by the application service after
+// the host is back. The expected set is immutable: newly registered Agents are
+// deliberately excluded from this Operation.
+func (source *upgradeAgentSource) Reconcile(ctx context.Context, target upgradeapp.AgentUpgradeTarget, expected []upgradedomain.AgentExpectation) ([]upgradedomain.AgentExpectation, error) {
+	if source == nil || source.repository == nil {
+		return nil, fmt.Errorf("agent upgrade source is not configured")
+	}
+	now := source.now().UTC()
+	current, err := source.Snapshot(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[int]upgradedomain.AgentExpectation, len(current))
+	for _, item := range current {
+		byID[item.AgentID] = item
+	}
+	result := make([]upgradedomain.AgentExpectation, 0, len(expected))
+	for _, wanted := range expected {
+		observed, ok := byID[wanted.AgentID]
+		if !ok {
+			wanted.Connected = false
+			wanted.Healthy = false
+			wanted.ClaimReady = false
+			wanted.ObservedVersion = ""
+			wanted.ObservedDigest = ""
+			wanted.LastObservedAt = nil
+			wanted.ReasonCode = upgradedomain.AgentReasonNotRegistered
+			wanted.DiagnosticSource = upgradedomain.AgentDiagnosticSourceServer
+			wanted.Diagnostic = "Agent is no longer registered"
+			result = append(result, wanted)
+			continue
+		}
+		// The name is an immutable Operation-start snapshot. Current polling may
+		// refresh health evidence, but must not rewrite historical identity.
+		observed.DisplayNameSnapshot = wanted.DisplayNameSnapshot
+		observed.DesiredVersion = wanted.DesiredVersion
+		observed.TargetDigest = wanted.TargetDigest
+		result = append(result, observed)
+	}
+	// Keep the timestamp read above meaningful if a test clock returns a zero
+	// value; expectation() normalizes it, while this guard documents that the
+	// reconciliation is based on one observation instant.
+	_ = now
+	return result, nil
+}
+
+func (source *upgradeAgentSource) NotifyUpdateRequired(ctx context.Context, target upgradeapp.AgentUpgradeTarget, expectations []upgradedomain.AgentExpectation) error {
+	if source == nil || source.publisher == nil {
+		return nil
+	}
+	if strings.TrimSpace(target.Version) == "" || strings.TrimSpace(target.ImageRef) == "" {
+		return fmt.Errorf("agent update target is incomplete")
+	}
+	payload := agentdomain.UpdateRequiredPayload{AgentVersion: target.Version, AgentImageRef: target.ImageRef}
+	failed := 0
+	for _, expectation := range expectations {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if expectation.AgentID <= 0 {
+			continue
+		}
+		if !source.publisher.SendUpdateRequired(expectation.AgentID, payload) {
+			failed++
+		}
+	}
+	if failed > 0 {
+		return fmt.Errorf("update_required could not reach %d Agent(s)", failed)
+	}
+	return nil
+}
+
+// agentObservation is the version-independent part of an Agent expectation.
+// Upgrade verification and the deployment lifecycle probe share it so a running
+// deployment and an Upgrade Operation never disagree about what an Agent is
+// currently able to do. It deliberately carries no DesiredVersion or
+// TargetDigest: those belong to a specific Operation.
+type agentObservation struct {
+	Connected      bool
+	Healthy        bool
+	Paused         bool
+	ClaimReady     bool
+	ReasonCode     string
+	Source         upgradedomain.AgentDiagnosticSource
+	Diagnostic     string
+	LastObservedAt *time.Time
+}
+
+// observeAgent evaluates the persisted Agent runtime projection. claimReady
+// means the Agent is authenticated, its heartbeat is fresh, and its container
+// runtime can accept work now.
+func observeAgent(agent *agentdomain.Agent, now time.Time, freshness time.Duration) agentObservation {
+	if agent == nil {
+		return agentObservation{ReasonCode: upgradedomain.AgentReasonNotRegistered, Source: upgradedomain.AgentDiagnosticSourceServer, Diagnostic: "Agent is not registered"}
+	}
+	lastHeartbeat := cloneTime(agent.LastHeartbeat)
+	connected := strings.EqualFold(strings.TrimSpace(agent.Status), "online") && heartbeatFresh(lastHeartbeat, now, freshness)
+	healthState := strings.ToLower(strings.TrimSpace(agent.HealthState))
+	healthy := healthState == "healthy"
+	paused := healthState == "paused"
+	claimReady := connected && agent.ContainerRuntimeReady && strings.EqualFold(strings.TrimSpace(agent.OperatingSystem), "linux") && supportedAgentArchitecture(agent.Architecture) && len(agent.SupportedEngineAPIMajors) > 0 && strings.TrimSpace(agent.SessionID) != "" && agent.SessionEpoch > 0
+	diagnostic := ""
+	reasonCode := ""
+	source := upgradedomain.AgentDiagnosticSourceServer
+	switch {
+	case !connected:
+		reasonCode = upgradedomain.AgentReasonHeartbeatMissing
+		diagnostic = "Agent heartbeat is missing or stale"
+	case paused:
+		reasonCode = upgradedomain.AgentReasonPaused
+		diagnostic = "Agent is paused"
+	case !healthy:
+		reasonCode = upgradedomain.AgentReasonHealthUnhealthy
+		diagnostic = firstNonEmpty(agent.HealthMessage, agent.HealthReason, "Agent health is not healthy")
+		if strings.TrimSpace(agent.HealthMessage) != "" || strings.TrimSpace(agent.HealthReason) != "" {
+			reasonCode = upgradedomain.AgentReasonHealthReported
+			source = upgradedomain.AgentDiagnosticSourceHeartbeat
+		}
+	case !claimReady:
+		reasonCode = upgradedomain.AgentReasonClaimNotReady
+		diagnostic = "Agent runtime is not ready to claim work"
+	}
+	return agentObservation{
+		Connected:      connected,
+		Healthy:        healthy,
+		Paused:         paused,
+		ClaimReady:     claimReady,
+		ReasonCode:     reasonCode,
+		Source:         source,
+		Diagnostic:     diagnostic,
+		LastObservedAt: lastHeartbeat,
+	}
+}
+
+func (source *upgradeAgentSource) expectation(agent *agentdomain.Agent, target upgradeapp.AgentUpgradeTarget, now time.Time) upgradedomain.AgentExpectation {
+	observation := observeAgent(agent, now, source.freshness)
+	diagnostic := observation.Diagnostic
+	reasonCode := observation.ReasonCode
+	var sourceKind upgradedomain.AgentDiagnosticSource
+	if reasonCode != "" {
+		sourceKind = observation.Source
+	}
+	if diagnostic == "" && strings.TrimSpace(agent.AgentVersion) != target.Version {
+		// The version target narrows an otherwise ready Agent; it never makes an
+		// Agent that cannot claim work look ready.
+		diagnostic = "Agent is running a different version"
+		reasonCode = upgradedomain.AgentReasonVersionMismatch
+		sourceKind = upgradedomain.AgentDiagnosticSourceServer
+	}
+	return upgradedomain.AgentExpectation{
+		AgentID:             agent.ID,
+		DisplayNameSnapshot: boundedDisplayName(agent.DisplayName),
+		DesiredVersion:      target.Version,
+		TargetDigest:        target.Digest,
+		ObservedVersion:     strings.TrimSpace(agent.AgentVersion),
+		// The current heartbeat contract has no image digest. Leave this empty
+		// rather than treating a configured target as observed evidence.
+		ObservedDigest:   "",
+		Connected:        observation.Connected,
+		Healthy:          observation.Healthy,
+		Paused:           observation.Paused,
+		ClaimReady:       observation.ClaimReady,
+		LastObservedAt:   observation.LastObservedAt,
+		ReasonCode:       reasonCode,
+		DiagnosticSource: sourceKind,
+		Diagnostic:       diagnostic,
+	}
+}
+
+func boundedDisplayName(value string) string {
+	value = strings.TrimSpace(value)
+	if len([]rune(value)) > 100 {
+		return string([]rune(value)[:100])
+	}
+	return value
+}
+
+func heartbeatFresh(observed *time.Time, now time.Time, freshness time.Duration) bool {
+	if observed == nil || observed.IsZero() {
+		return false
+	}
+	if freshness <= 0 {
+		freshness = upgradeAgentHeartbeatFreshness
+	}
+	age := now.UTC().Sub(observed.UTC())
+	return age >= 0 && age <= freshness
+}
+
+func supportedAgentArchitecture(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "amd64", "x86_64", "arm64", "aarch64":
+		return true
+	default:
+		return false
+	}
+}
+
+func cloneTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	copy := value.UTC()
+	return &copy
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+var _ upgradeapp.AgentUpgradeSource = (*upgradeAgentSource)(nil)

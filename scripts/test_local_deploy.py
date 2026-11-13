@@ -1,0 +1,266 @@
+import importlib.util
+import contextlib
+import os
+import pathlib
+import socket
+import tempfile
+import unittest
+from types import SimpleNamespace
+from unittest import mock
+
+SCRIPT = pathlib.Path(__file__).with_name("local-deploy.py")
+SPEC = importlib.util.spec_from_file_location("skyshield_local_deploy", SCRIPT)
+deploy = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(deploy)
+
+
+class LocalDeployTests(unittest.TestCase):
+    def test_rebuild_does_not_interrupt_running_scan(self):
+        state = {"server": {"pid": 1}, "agent": {"pid": 2}, "frontend": {"pid": 3}}
+        with mock.patch.object(deploy, "prepare_directories"), mock.patch.object(deploy, "environment", return_value={}), mock.patch.object(deploy, "active_frontend_stage", return_value=None), \
+             mock.patch.object(deploy, "read_state", return_value=state), mock.patch.object(deploy, "frontend_needs_build", return_value=True), \
+             mock.patch.object(deploy, "build", return_value=(True, True)), mock.patch.object(deploy, "alive", side_effect=lambda item: bool(item)), \
+             mock.patch.object(deploy, "local_agent_busy", return_value=True), mock.patch.object(deploy, "stop_managed") as stop, \
+             mock.patch.object(deploy, "build_frontend") as frontend:
+            with self.assertRaisesRegex(RuntimeError, "不会|避免中断"):
+                deploy.start(SimpleNamespace(no_build=False, ui_only=False, no_tools_install=True))
+            stop.assert_not_called()
+            frontend.assert_not_called()
+            deploy.build.assert_not_called()
+
+    def test_failed_frontend_build_preserves_running_services(self):
+        state = {"server": {"pid": 1, "owned": True}, "agent": {"pid": 2, "owned": True}, "frontend": {"pid": 3, "owned": True}}
+        with mock.patch.object(deploy, "prepare_directories"), mock.patch.object(deploy, "environment", return_value={}), \
+             mock.patch.object(deploy, "read_state", return_value=state), mock.patch.object(deploy, "active_frontend_stage", return_value=None), \
+             mock.patch.object(deploy, "frontend_needs_build", return_value=True), mock.patch.object(deploy, "alive", side_effect=lambda item: bool(item)), \
+             mock.patch.object(deploy, "local_agent_busy", return_value=False), mock.patch.object(deploy, "stop_managed") as stop, \
+             mock.patch.object(deploy, "build") as backend, mock.patch.object(deploy, "build_frontend", side_effect=RuntimeError("fixture build failed")):
+            with self.assertRaisesRegex(RuntimeError, "fixture build failed"):
+                deploy.start(SimpleNamespace(no_build=False, ui_only=False, no_tools_install=True))
+            stop.assert_not_called()
+            backend.assert_not_called()
+            self.assertEqual(len(state), 3)
+
+    def test_failed_backend_build_keeps_installed_binaries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            binary = root / "bin"
+            engines = binary / "engines"
+            engines.mkdir(parents=True)
+            (binary / "skyshield-server").write_text("old server")
+            (binary / "skyshield-local-agent").write_text("old agent")
+
+            def fake_build(go, output, package, cwd, env):
+                if package == "./cmd/local-agent":
+                    raise RuntimeError("agent build failed")
+                output.write_text("new server")
+                return True
+
+            with mock.patch.object(deploy, "DATA", root), mock.patch.object(deploy, "ROOT", root), \
+                 mock.patch.object(deploy, "BIN", binary), mock.patch.object(deploy, "ENGINES", engines), \
+                 mock.patch.object(deploy, "go_binary", return_value="go"), mock.patch.object(deploy, "build_binary", side_effect=fake_build):
+                with self.assertRaisesRegex(RuntimeError, "agent build failed"):
+                    deploy.build({})
+            self.assertEqual((binary / "skyshield-server").read_text(), "old server")
+            self.assertEqual((binary / "skyshield-local-agent").read_text(), "old agent")
+
+    def test_failed_binary_promotion_restores_previous_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            first, second = root / "first", root / "second"
+            next_first, next_second = root / "next-first", root / "next-second"
+            first.write_text("old first")
+            second.write_text("old second")
+            next_first.write_text("new first")
+            next_second.write_text("new second")
+            original_replace = pathlib.Path.replace
+
+            def replace(path, destination):
+                if path == next_second:
+                    raise OSError("promotion failed")
+                return original_replace(path, destination)
+
+            with mock.patch.object(pathlib.Path, "replace", replace):
+                with self.assertRaisesRegex(OSError, "promotion failed"):
+                    deploy.promote_binaries([(next_first, first), (next_second, second)], root)
+            self.assertEqual(first.read_text(), "old first")
+            self.assertEqual(second.read_text(), "old second")
+
+    def test_scan_started_during_build_prevents_binary_promotion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            binary = root / "bin"
+            engines = binary / "engines"
+            engines.mkdir(parents=True)
+            for name in ("skyshield-server", "skyshield-local-agent", "skyshield-local-engines"):
+                (binary / name).write_text("old-" + name)
+            state = {name: {"pid": index, "owned": True} for index, name in enumerate(("server", "agent", "frontend"), 1)}
+
+            def compile_fixture(go, output, package, cwd, env):
+                output.write_text("new-" + output.name)
+                return True
+
+            with contextlib.ExitStack() as stack:
+                def patch(name, *args, **kwargs):
+                    return stack.enter_context(mock.patch.object(deploy, name, *args, **kwargs))
+                patch("ROOT", root)
+                patch("DATA", root)
+                patch("BIN", binary)
+                patch("ENGINES", engines)
+                patch("ENGINE_NAMES", ())
+                patch("prepare_directories")
+                patch("environment", return_value={})
+                patch("read_state", return_value=state)
+                patch("active_frontend_stage", return_value=None)
+                patch("frontend_needs_build", return_value=False)
+                patch("go_binary", return_value="go")
+                patch("build_binary", side_effect=compile_fixture)
+                patch("alive", side_effect=lambda item: bool(item))
+                patch("local_agent_busy", side_effect=[False, True])
+                stop = patch("stop_managed")
+                with self.assertRaisesRegex(RuntimeError, "避免中断"):
+                    deploy.start(SimpleNamespace(no_build=False, ui_only=True, no_tools_install=True))
+            stop.assert_not_called()
+            self.assertEqual((binary / "skyshield-server").read_text(), "old-skyshield-server")
+            self.assertEqual((binary / "skyshield-local-agent").read_text(), "old-skyshield-local-agent")
+
+    def test_staged_frontend_build_keeps_existing_output_and_tsconfig(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            frontend = root / "frontend"
+            next_bin = frontend / "node_modules/.bin/next"
+            next_bin.parent.mkdir(parents=True)
+            next_bin.touch()
+            (frontend / ".next").mkdir()
+            (frontend / ".next/BUILD_ID").write_text("old build")
+            (frontend / "tsconfig.json").write_text('{"compilerOptions":{}}\n')
+            previous = b'/// <reference path="./.next/types/routes.d.ts" />\n'
+            (frontend / "next-env.d.ts").write_bytes(previous)
+
+            def fake_build(args, *, cwd=None, env=None, capture=False):
+                stage = env["SKYSHIELD_NEXT_STAGE_DIR"]
+                (frontend / stage).mkdir()
+                (frontend / stage / "BUILD_ID").write_text("candidate")
+                (frontend / "next-env.d.ts").write_bytes(previous.replace(b"./.next/", ("./" + stage + "/").encode()))
+                (frontend / ("tsconfig." + stage + ".json")).write_text("generated candidate config")
+
+            with mock.patch.object(deploy, "ROOT", root), mock.patch.object(deploy, "call", side_effect=fake_build), \
+                 mock.patch.object(deploy, "preview_frontend") as preview:
+                stage = deploy.build_frontend({"PATH": os.environ.get("PATH", "")})
+            self.assertEqual((frontend / ".next/BUILD_ID").read_text(), "old build")
+            self.assertEqual((frontend / "tsconfig.json").read_text(), '{"compilerOptions":{}}\n')
+            self.assertEqual((frontend / "next-env.d.ts").read_bytes(), previous)
+            self.assertEqual((frontend / stage / "skyshield-local-api-origin").read_text().strip(), f"127.0.0.1:{deploy.HTTP_PORT}")
+            self.assertEqual(preview.call_args.args[0], stage)
+
+    def test_preview_starts_and_stops_a_separate_frontend(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            next_bin = root / "frontend/node_modules/.bin/next"
+            next_bin.parent.mkdir(parents=True)
+            next_bin.write_text("#!/usr/bin/env python3\nimport http.server,sys\nport=int(sys.argv[sys.argv.index('--port')+1])\nhttp.server.HTTPServer(('127.0.0.1',port),http.server.SimpleHTTPRequestHandler).serve_forever()\n")
+            next_bin.chmod(0o700)
+            stage = root / "frontend/.next-skyshield-stage-fixture"
+            (stage / "static/fixture").mkdir(parents=True)
+            (stage / "BUILD_ID").write_text("fixture")
+            (stage / "static/fixture/_buildManifest.js").touch()
+            static = root / "frontend/_next/static/fixture"
+            static.mkdir(parents=True)
+            (static / "_buildManifest.js").touch()
+            logs = root / "logs"
+            logs.mkdir()
+            with mock.patch.object(deploy, "ROOT", root), mock.patch.object(deploy, "LOGS", logs):
+                deploy.preview_frontend(".next-skyshield-stage-fixture", {"PATH": os.environ.get("PATH", "")})
+            self.assertTrue((logs / "local-frontend-preview.log").exists())
+
+    def test_invalid_active_frontend_record_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            pointer = pathlib.Path(temporary) / "frontend-build.json"
+            pointer.write_text('{"stage":"../../outside"}')
+            with mock.patch.object(deploy, "FRONTEND_BUILD", pointer):
+                with self.assertRaisesRegex(RuntimeError, "记录无效"):
+                    deploy.active_frontend_stage()
+
+    def test_failed_candidate_start_restores_running_frontend(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            binary = root / "bin"
+            binary.mkdir()
+            for name in ("skyshield-server", "skyshield-local-agent"):
+                (binary / name).touch()
+            credentials = root / "agent.json"
+            credentials.write_text('{"instanceId":"fixture"}')
+            state = {name: {"pid": index, "owned": True} for index, name in enumerate(("server", "agent", "frontend", "redis"), 1)}
+            launches = []
+
+            def stop(current, name):
+                current.pop(name, None)
+
+            def spawn(current, name, args, env, cwd):
+                launches.append((name, env.get("SKYSHIELD_NEXT_STAGE_DIR")))
+                current[name] = {"pid": 50 + len(launches), "owned": True}
+
+            def wait(predicate, description, **kwargs):
+                if description == "前端":
+                    raise RuntimeError("candidate failed")
+
+            with contextlib.ExitStack() as stack:
+                def patch(name, *args, **kwargs):
+                    return stack.enter_context(mock.patch.object(deploy, name, *args, **kwargs))
+                patch("ROOT", root)
+                patch("BIN", binary)
+                patch("AGENT_CREDENTIALS", credentials)
+                patch("prepare_directories")
+                patch("environment", return_value={})
+                patch("read_state", return_value=state)
+                patch("active_frontend_stage", return_value=None)
+                patch("frontend_needs_build", return_value=True)
+                patch("build_frontend", return_value=".next-skyshield-stage-fixture")
+                def successful_build(env, validate):
+                    validate(False, False)
+                    return False, False
+                patch("build", side_effect=successful_build)
+                patch("alive", side_effect=lambda item: bool(item))
+                patch("local_agent_busy", return_value=False)
+                patch("matches_binary", return_value=True)
+                patch("stop_managed", side_effect=stop)
+                patch("spawn", side_effect=spawn)
+                patch("wait_for", side_effect=wait)
+                patch("postgres_start")
+                patch("free_port")
+                patch("query", return_value="1")
+                patch("call")
+                record = patch("record_frontend_stage")
+                with self.assertRaisesRegex(RuntimeError, "candidate failed"):
+                    deploy.start(SimpleNamespace(no_build=False, ui_only=True, no_tools_install=True))
+            self.assertEqual(launches, [("frontend", ".next-skyshield-stage-fixture"), ("frontend", None)])
+            self.assertIn("frontend", state)
+            record.assert_not_called()
+
+    def test_active_frontend_pointer_only_accepts_completed_stage(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            stage = ".next-skyshield-stage-fixture"
+            directory = root / "frontend" / stage
+            directory.mkdir(parents=True)
+            (directory / "BUILD_ID").write_text("candidate")
+            pointer = root / "frontend-build.json"
+            with mock.patch.object(deploy, "ROOT", root), mock.patch.object(deploy, "FRONTEND_BUILD", pointer):
+                deploy.record_frontend_stage(stage)
+                self.assertEqual(deploy.active_frontend_stage(), stage)
+                (directory / "BUILD_ID").unlink()
+                with self.assertRaisesRegex(RuntimeError, "目录不存在或无效"):
+                    deploy.active_frontend_stage()
+
+    def test_pid_identity_and_port_collision(self):
+        self.assertTrue(deploy.alive({"pid": os.getpid(), "start": deploy.process_start(os.getpid())}))
+        self.assertFalse(deploy.alive({"pid": os.getpid(), "start": "not-the-same-process"}))
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            with self.assertRaises(RuntimeError):
+                deploy.free_port(listener.getsockname()[1])
+
+
+if __name__ == "__main__":
+    unittest.main()

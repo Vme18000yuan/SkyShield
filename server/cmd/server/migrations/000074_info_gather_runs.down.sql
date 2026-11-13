@@ -1,0 +1,3 @@
+-- DESTRUCTIVE TEST TEARDOWN ONLY.
+DROP TABLE IF EXISTS ai_info_gather_record;
+DROP TABLE IF EXISTS ai_info_gather_run;

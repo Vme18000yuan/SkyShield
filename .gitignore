@@ -1,0 +1,123 @@
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+go.work
+
+# Build artifacts
+dist/
+build/
+bin/
+tools/installer/lunafox-installer
+/server/server
+/engines/*-runtime-engine
+
+# Node dependencies
+node_modules/
+**/node_modules/
+.pnpm-store/
+
+# Frontend build output
+frontend/output
+output/
+
+# IDE
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+*.log
+.venv/
+
+# Testing
+reports/
+coverage.txt
+*.coverprofile
+.hypothesis/
+
+# Temporary files
+*.tmp
+tmp/
+temp/
+.worktrees/
+/.codex-runtime/
+/.local/
+
+.kiro/
+.claude/*
+!.claude/skills/
+!.claude/skills/**
+.claude/settings.local.json
+!.specify/
+
+# AI Assistant directories
+/codex/
+/.lunafox-deployment/
+.qoder/
+.workbuddy/
+# Track all OpenSpec artifacts
+!openspec/
+!openspec/**
+openspec/.DS_Store
+WARP.md
+.opencode/
+
+# Playwright MCP screenshots
+.playwright-mcp/
+.playwright-cli/
+
+# SSL certificates
+docker/nginx/ssl/*.pem
+docker/nginx/ssl/*.key
+docker/nginx/ssl/*.crt
+
+# old
+old/
+old-python/
+
+# Local services, build outputs and private material are never source inputs.
+/.lunafox/
+/agent/bin/
+**/.next-skyshield-stage-*/
+**/tsconfig..next-skyshield-stage-*.json
+**/node_modules/
+**/__pycache__/
+**/*.py[cod]
+**/*.tsbuildinfo
+**/.env*
+!**/.env.example
+!.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.keystore
+**/id_rsa
+**/id_ed25519
+**/.aws/
+**/.ssh/
+**/secrets/
+**/credentials.json
+**/service-account*.json
+**/*.jks
+**/*.pkcs8
+**/*.p8
+**/*.sqlite*
+**/*.db
+**/*.dump

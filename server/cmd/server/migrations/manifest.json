@@ -1,0 +1,553 @@
+{
+  "schemaVersion": 1,
+  "checksumAlgorithm": "sha256-canonical-pair-v1",
+  "baselineMigration": "000001",
+  "migrations": [
+    {
+      "id": "000001",
+      "slug": "init_schema",
+      "up": "000001_init_schema.up.sql",
+      "down": "000001_init_schema.down.sql",
+      "checksum": "sha256:7c4aaf55edfc0f403bb47e2cccd491c6876e4f611cb0d0dfc585defb508b3721"
+    },
+    {
+      "id": "000002",
+      "slug": "upgrade_operation_scope",
+      "up": "000002_upgrade_operation_scope.up.sql",
+      "down": "000002_upgrade_operation_scope.down.sql",
+      "checksum": "sha256:d6e460d2c4a97058f9dafd5916c09421b2e8e1e7b732789c3847cd04908c066a"
+    },
+    {
+      "id": "000003",
+      "slug": "scheduled_scan_time_zone",
+      "up": "000003_scheduled_scan_time_zone.up.sql",
+      "down": "000003_scheduled_scan_time_zone.down.sql",
+      "checksum": "sha256:a2399a12cd536f6045810809b869f1c0c6a6a903fff2d8d4ef380bb031482107"
+    },
+    {
+      "id": "000004",
+      "slug": "upgrade_operation_host_activity",
+      "up": "000004_upgrade_operation_host_activity.up.sql",
+      "down": "000004_upgrade_operation_host_activity.down.sql",
+      "checksum": "sha256:940a3cefb86090ec0999fc381f7d51e3b3cea37ee87c0c67adc4afbac128d34b"
+    },
+    {
+      "id": "000005",
+      "slug": "scheduled_scan_handoff_retry",
+      "up": "000005_scheduled_scan_handoff_retry.up.sql",
+      "down": "000005_scheduled_scan_handoff_retry.down.sql",
+      "checksum": "sha256:e1237440f43ddc28cac2ed077ce163fa9acae541502af37d19f776b0b7dcbc3c"
+    },
+    {
+      "id": "000006",
+      "slug": "scheduled_scan_disabled_cursor_cleanup",
+      "up": "000006_scheduled_scan_disabled_cursor_cleanup.up.sql",
+      "down": "000006_scheduled_scan_disabled_cursor_cleanup.down.sql",
+      "checksum": "sha256:671903f6b223cef7516f8caba85fa0ff359bbc7df0d40a4c8f4f9ae7da1c8053"
+    },
+    {
+      "id": "000007",
+      "slug": "response_headers_trgm",
+      "up": "000007_response_headers_trgm.up.sql",
+      "down": "000007_response_headers_trgm.down.sql",
+      "checksum": "sha256:89a8bf65f26f13cec68cff69cf6d9c0a16e508cb807a7eb7a7469263f9141ef1"
+    },
+    {
+      "id": "000008",
+      "slug": "widen_web_observation_numbers",
+      "up": "000008_widen_web_observation_numbers.up.sql",
+      "down": "000008_widen_web_observation_numbers.down.sql",
+      "checksum": "sha256:9b5cd2436646901fc4d4b222448af69667cf8cb7763f76e93084de13ea359d9f"
+    },
+    {
+      "id": "000009",
+      "slug": "agent_license",
+      "up": "000009_agent_license.up.sql",
+      "down": "000009_agent_license.down.sql",
+      "checksum": "sha256:c92e7fdc8f7351c3cf554a7b9efd18a39bb57046d24c1d3e563e5c841cc268fc"
+    },
+    {
+      "id": "000010",
+      "slug": "asset_registry",
+      "up": "000010_asset_registry.up.sql",
+      "down": "000010_asset_registry.down.sql",
+      "checksum": "sha256:3900bae97d17bbc7c751e1b001f0e81923259d05dcba68329e048b3f5e5870d6"
+    },
+    {
+      "id": "000011",
+      "slug": "ai_conversations",
+      "up": "000011_ai_conversations.up.sql",
+      "down": "000011_ai_conversations.down.sql",
+      "checksum": "sha256:946d37408022926f48bc6f7e99df688df420eba13d3cdcae18cf3121231e3696"
+    },
+    {
+      "id": "000012",
+      "slug": "ai_llm_profiles",
+      "up": "000012_ai_llm_profiles.up.sql",
+      "down": "000012_ai_llm_profiles.down.sql",
+      "checksum": "sha256:44ea730f5e4298254cfcb65f2d5b424c12bf45a5a62a9ef0572c1e176c83c663"
+    },
+    {
+      "id": "000013",
+      "slug": "asset_observations",
+      "up": "000013_asset_observations.up.sql",
+      "down": "000013_asset_observations.down.sql",
+      "checksum": "sha256:dc43c42d34c82ccd3d5a81976758c4fb68ccdfaf8a785811f4d3a3345b1fdea3"
+    },
+    {
+      "id": "000014",
+      "slug": "ai_task_graph",
+      "up": "000014_ai_task_graph.up.sql",
+      "down": "000014_ai_task_graph.down.sql",
+      "checksum": "sha256:1038b11d7f586acecb0e6935f27d0ad5020c1dc0bf5290152e79baec07693399"
+    },
+    {
+      "id": "000015",
+      "slug": "ai_schedules",
+      "up": "000015_ai_schedules.up.sql",
+      "down": "000015_ai_schedules.down.sql",
+      "checksum": "sha256:4f8a8956c805a7136a99ecc7957d45b1678165c904d17275d177f97292a07261"
+    },
+    {
+      "id": "000016",
+      "slug": "ai_task_tool_executions",
+      "up": "000016_ai_task_tool_executions.up.sql",
+      "down": "000016_ai_task_tool_executions.down.sql",
+      "checksum": "sha256:ab0c27294f7614d1a2d31af6d89ad32563e60c818ab6dcab91e1b8a9f2690f52"
+    },
+    {
+      "id": "000017",
+      "slug": "ai_agent_settings",
+      "up": "000017_ai_agent_settings.up.sql",
+      "down": "000017_ai_agent_settings.down.sql",
+      "checksum": "sha256:0a42fd974afbc8bfce6c3f6fca82800f2c570d6d07129f3a77d195bc3db90d35"
+    },
+    {
+      "id": "000018",
+      "slug": "ai_tool_settings",
+      "up": "000018_ai_tool_settings.up.sql",
+      "down": "000018_ai_tool_settings.down.sql",
+      "checksum": "sha256:6c5d33ce64e6e89c87a7c8de8bcc0246a555a7dce1d6a19dd6c42d28b2a141fc"
+    },
+    {
+      "id": "000019",
+      "slug": "ai_skills",
+      "up": "000019_ai_skills.up.sql",
+      "down": "000019_ai_skills.down.sql",
+      "checksum": "sha256:a5f02c09a6b195afdbb759f8300633207f965c9d745ffedb7bee3f2cd2998d37"
+    },
+    {
+      "id": "000020",
+      "slug": "ai_mcp_servers",
+      "up": "000020_ai_mcp_servers.up.sql",
+      "down": "000020_ai_mcp_servers.down.sql",
+      "checksum": "sha256:317eb3719ce162192753daca272fac05459351547881a3eaeae55bb733895f3d"
+    },
+    {
+      "id": "000021",
+      "slug": "ai_task_asset_trace",
+      "up": "000021_ai_task_asset_trace.up.sql",
+      "down": "000021_ai_task_asset_trace.down.sql",
+      "checksum": "sha256:2d56d2bdccf52ce3a0e917b3589febed955e5084c53dacc22393985be08a6025"
+    },
+    {
+      "id": "000022",
+      "slug": "fofa_space_search",
+      "up": "000022_fofa_space_search.up.sql",
+      "down": "000022_fofa_space_search.down.sql",
+      "checksum": "sha256:08d7cba8082979f86860abb747216fa4113ed47d35c4d133fa590845caaa9331"
+    },
+    {
+      "id": "000023",
+      "slug": "system_http_proxy_settings",
+      "up": "000023_system_http_proxy_settings.up.sql",
+      "down": "000023_system_http_proxy_settings.down.sql",
+      "checksum": "sha256:a8917f0130c640017c65cf25357c775556618ec2717797cd35df1e0c726c7b43"
+    },
+    {
+      "id": "000024",
+      "slug": "ai_agent_catalog_builtin_skills",
+      "up": "000024_ai_agent_catalog_builtin_skills.up.sql",
+      "down": "000024_ai_agent_catalog_builtin_skills.down.sql",
+      "checksum": "sha256:cc74ac0fb992bc6d9ff9963d5d5e9776a4652d408786bac4d42b19296ae7715d"
+    },
+    {
+      "id": "000025",
+      "slug": "local_agent_bootstrap",
+      "up": "000025_local_agent_bootstrap.up.sql",
+      "down": "000025_local_agent_bootstrap.down.sql",
+      "checksum": "sha256:01961fd597f52975c5cc5514ddb594c0e832569b326d28726c66e06b490221a7"
+    },
+    {
+      "id": "000026",
+      "slug": "ai_agent_runtime_configuration",
+      "up": "000026_ai_agent_runtime_configuration.up.sql",
+      "down": "000026_ai_agent_runtime_configuration.down.sql",
+      "checksum": "sha256:b41fc29e79237e351e906ebeb3f7f50bc004ee1b8088d1ed86ca83d138d82687"
+    },
+    {
+      "id": "000027",
+      "slug": "asset_monitor_locations",
+      "up": "000027_asset_monitor_locations.up.sql",
+      "down": "000027_asset_monitor_locations.down.sql",
+      "checksum": "sha256:c46a5d8b50a0a9343cdd3b9908598e6a56debf0f1558fab2b18dc9f686d3b984"
+    },
+    {
+      "id": "000028",
+      "slug": "root_domain_projection",
+      "up": "000028_root_domain_projection.up.sql",
+      "down": "000028_root_domain_projection.down.sql",
+      "checksum": "sha256:9e5fe8937e4f00f18961aa9ca3d9837ce78ea0518c58036fcaed83fc15859cdb"
+    },
+    {
+      "id": "000029",
+      "slug": "asset_inventory_statistics",
+      "up": "000029_asset_inventory_statistics.up.sql",
+      "down": "000029_asset_inventory_statistics.down.sql",
+      "checksum": "sha256:f64683761b5c90ddc373ad59c63434635337e39f42cb656be5d3a396d8664f31"
+    },
+    {
+      "id": "000030",
+      "slug": "asset_inventory_parser",
+      "up": "000030_asset_inventory_parser.up.sql",
+      "down": "000030_asset_inventory_parser.down.sql",
+      "checksum": "sha256:868ea44652d6423a0d535b3724fd0f0fc0ac84fd17aaada90ec00cf280636fc9"
+    },
+    {
+      "id": "000031",
+      "slug": "asset_monitor_dns",
+      "up": "000031_asset_monitor_dns.up.sql",
+      "down": "000031_asset_monitor_dns.down.sql",
+      "checksum": "sha256:ab0f19b07025b5e47438376c2d5cdd43b95a66f941e90fdf5860e5567531426c"
+    },
+    {
+      "id": "000032",
+      "slug": "application_discovery",
+      "up": "000032_application_discovery.up.sql",
+      "down": "000032_application_discovery.down.sql",
+      "checksum": "sha256:dd70e164f8593aabf9133c4b9d9be890b8211c7b5890d5b24dd7679c69675974"
+    },
+    {
+      "id": "000033",
+      "slug": "artex_llm_parity",
+      "up": "000033_artex_llm_parity.up.sql",
+      "down": "000033_artex_llm_parity.down.sql",
+      "checksum": "sha256:c56e47cfc4f9de40e5082a5f4346163ff81bcfa197e1e3677bb63d7051429fed"
+    },
+    {
+      "id": "000034",
+      "slug": "artex_agent_controls",
+      "up": "000034_artex_agent_controls.up.sql",
+      "down": "000034_artex_agent_controls.down.sql",
+      "checksum": "sha256:73b04229dc25b470567f9a3328e5327704c3e247589300a63d0a992e3eb0050a"
+    },
+    {
+      "id": "000035",
+      "slug": "artex_chat_files",
+      "up": "000035_artex_chat_files.up.sql",
+      "down": "000035_artex_chat_files.down.sql",
+      "checksum": "sha256:3734c1d4d10a2b476f3ed7233251b98e03a0510f9eeca0bc6440fc473c06474a"
+    },
+    {
+      "id": "000036",
+      "slug": "artex_side_questions",
+      "up": "000036_artex_side_questions.up.sql",
+      "down": "000036_artex_side_questions.down.sql",
+      "checksum": "sha256:cabf59ed013f3c4439308e10a616583c32dca4744448602d6195a06b536e7b37"
+    },
+    {
+      "id": "000037",
+      "slug": "artex_tool_catalog",
+      "up": "000037_artex_tool_catalog.up.sql",
+      "down": "000037_artex_tool_catalog.down.sql",
+      "checksum": "sha256:80c26f5a8ea288cd1745021e6c392951742f6fa260849f5823f7c0f288d410e4"
+    },
+    {
+      "id": "000038",
+      "slug": "artex_skill_files",
+      "up": "000038_artex_skill_files.up.sql",
+      "down": "000038_artex_skill_files.down.sql",
+      "checksum": "sha256:955539b5579641c0fbfb4e1fc73221969d3178eac26e7cdb71aceedbd437b36a"
+    },
+    {
+      "id": "000039",
+      "slug": "artex_mcp_transports",
+      "up": "000039_artex_mcp_transports.up.sql",
+      "down": "000039_artex_mcp_transports.down.sql",
+      "checksum": "sha256:0d8e023b649dd0c3e0317c97970368f418c475f51001371073f6a0f0e3ff7acb"
+    },
+    {
+      "id": "000040",
+      "slug": "artex_task_llm_chain",
+      "up": "000040_artex_task_llm_chain.up.sql",
+      "down": "000040_artex_task_llm_chain.down.sql",
+      "checksum": "sha256:521b54d728477a8bf114139dd541e598536c026850ec67df03e606b9a88c7fb5"
+    },
+    {
+      "id": "000041",
+      "slug": "artex_task_budgets",
+      "up": "000041_artex_task_budgets.up.sql",
+      "down": "000041_artex_task_budgets.down.sql",
+      "checksum": "sha256:6afbb84c050b4df51b7c307f82d33d8702b4e2553bc0cecafbc7056b03400895"
+    },
+    {
+      "id": "000042",
+      "slug": "artex_finding_reports",
+      "up": "000042_artex_finding_reports.up.sql",
+      "down": "000042_artex_finding_reports.down.sql",
+      "checksum": "sha256:ebd8a6c2771971e33f54ea89aa41bdfafe8bb7ba3e8a10d1c1714952f94c00de"
+    },
+    {
+      "id": "000043",
+      "slug": "artex_finding_retests",
+      "up": "000043_artex_finding_retests.up.sql",
+      "down": "000043_artex_finding_retests.down.sql",
+      "checksum": "sha256:b3af83ab43fc249fab97765393694ab09b80e5894cc8ce611ae12a5a110c53b2"
+    },
+    {
+      "id": "000044",
+      "slug": "artex_task_constraints",
+      "up": "000044_artex_task_constraints.up.sql",
+      "down": "000044_artex_task_constraints.down.sql",
+      "checksum": "sha256:5f8aed4185ee8c1f66f09a69ad87103263fb13f0714a537159b07f664299f254"
+    },
+    {
+      "id": "000045",
+      "slug": "artex_approvals",
+      "up": "000045_artex_approvals.up.sql",
+      "down": "000045_artex_approvals.down.sql",
+      "checksum": "sha256:03c4999eeb0672a6959f358e5b79e2fd8dd99decbc90b0a41b6ae6d00f3c3168"
+    },
+    {
+      "id": "000046",
+      "slug": "artex_judge_usage",
+      "up": "000046_artex_judge_usage.up.sql",
+      "down": "000046_artex_judge_usage.down.sql",
+      "checksum": "sha256:f5824e1d12d459a0c68c2f277d125bf49839142cbaa2ee21ac2b0214d2bc4aed"
+    },
+    {
+      "id": "000047",
+      "slug": "artex_task_goals",
+      "up": "000047_artex_task_goals.up.sql",
+      "down": "000047_artex_task_goals.down.sql",
+      "checksum": "sha256:290f1c1c6126019b47decf987344705952f08ce22fcc16ff96c08283ed4756e0"
+    },
+    {
+      "id": "000048",
+      "slug": "artex_intent_rerun",
+      "up": "000048_artex_intent_rerun.up.sql",
+      "down": "000048_artex_intent_rerun.down.sql",
+      "checksum": "sha256:3f4d7dbfb0ff619db87edc3ae2ce44147b2f41aedd6adf5707302334046246dd"
+    },
+    {
+      "id": "000049",
+      "slug": "artex_intent_pause",
+      "up": "000049_artex_intent_pause.up.sql",
+      "down": "000049_artex_intent_pause.down.sql",
+      "checksum": "sha256:6b493f6b030d1bca04c216f217114536ff4bcd704e816e25261eb5b1a460853d"
+    },
+    {
+      "id": "000050",
+      "slug": "artex_intent_message",
+      "up": "000050_artex_intent_message.up.sql",
+      "down": "000050_artex_intent_message.down.sql",
+      "checksum": "sha256:00f43111972430e60439c311d017e16e3bc81186227de851eaf3609c4b53c907"
+    },
+    {
+      "id": "000051",
+      "slug": "artex_asset_intercept",
+      "up": "000051_artex_asset_intercept.up.sql",
+      "down": "000051_artex_asset_intercept.down.sql",
+      "checksum": "sha256:c5d74b42042422e8be54cf7e930fd8cb56e33049140798a329ebeba921f4cf01"
+    },
+    {
+      "id": "000052",
+      "slug": "artex_task_templates",
+      "up": "000052_artex_task_templates.up.sql",
+      "down": "000052_artex_task_templates.down.sql",
+      "checksum": "sha256:c4a273680a05b26151717f75ce7bcaa5fc1e306b90f44f802667bfb6707e955a"
+    },
+    {
+      "id": "000053",
+      "slug": "artex_task_inheritance",
+      "up": "000053_artex_task_inheritance.up.sql",
+      "down": "000053_artex_task_inheritance.down.sql",
+      "checksum": "sha256:2da49f4e48a90f3085de7eda775b3031da170b47b000ace5adbb30436eb17ffc"
+    },
+    {
+      "id": "000054",
+      "slug": "artex_task_bootstrap",
+      "up": "000054_artex_task_bootstrap.up.sql",
+      "down": "000054_artex_task_bootstrap.down.sql",
+      "checksum": "sha256:9385c09aad7f7271d9ece71a8f07b317c9cf49e88ad8c79075ff3584be9d71af"
+    },
+    {
+      "id": "000055",
+      "slug": "artex_spawn_tool_schema",
+      "up": "000055_artex_spawn_tool_schema.up.sql",
+      "down": "000055_artex_spawn_tool_schema.down.sql",
+      "checksum": "sha256:271cb5f51e92ee0ad0dcd456f55dc09d81b537bee7f8e94bb18381baae081f7e"
+    },
+    {
+      "id": "000056",
+      "slug": "artex_task_scope",
+      "up": "000056_artex_task_scope.up.sql",
+      "down": "000056_artex_task_scope.down.sql",
+      "checksum": "sha256:cea0ee5f7be490a6b42c8449bd6af3a784a76389eeb733e9a089d286ed5338dd"
+    },
+    {
+      "id": "000057",
+      "slug": "artex_intent_delete",
+      "up": "000057_artex_intent_delete.up.sql",
+      "down": "000057_artex_intent_delete.down.sql",
+      "checksum": "sha256:8f87fb78a2b7776dd22d28d5ad202dae01c2c926bd9f52a71c8a134e9b1bb8bd"
+    },
+    {
+      "id": "000058",
+      "slug": "artex_intent_hard_delete",
+      "up": "000058_artex_intent_hard_delete.up.sql",
+      "down": "000058_artex_intent_hard_delete.down.sql",
+      "checksum": "sha256:3c5e72bd1098602e38358b95b355a5babeccadd6433e64f6a709930ec5be1cb7"
+    },
+    {
+      "id": "000059",
+      "slug": "artex_main_sessions",
+      "up": "000059_artex_main_sessions.up.sql",
+      "down": "000059_artex_main_sessions.down.sql",
+      "checksum": "sha256:b787c00ea8aa738d8652f6fcafdc11bb257d197315532abd7831d3472370803d"
+    },
+    {
+      "id": "000060",
+      "slug": "artex_task_intelligence",
+      "up": "000060_artex_task_intelligence.up.sql",
+      "down": "000060_artex_task_intelligence.down.sql",
+      "checksum": "sha256:1e399ecc0bd602d18bef807e0264870cfe4940a0f881dbbcecdcef50cc28508a"
+    },
+    {
+      "id": "000061",
+      "slug": "artex_credential_processor",
+      "up": "000061_artex_credential_processor.up.sql",
+      "down": "000061_artex_credential_processor.down.sql",
+      "checksum": "sha256:8ec7007f13cb7c4c0b078e2d3dc4c72683ce38c6e9a8a5576e644fd492ec287b"
+    },
+    {
+      "id": "000062",
+      "slug": "artex_independent_main_chat",
+      "up": "000062_artex_independent_main_chat.up.sql",
+      "down": "000062_artex_independent_main_chat.down.sql",
+      "checksum": "sha256:3a93cad666be7bbcfa7e20169b50906624a9a09d8f87441f4379cddcc95877ee"
+    },
+    {
+      "id": "000063",
+      "slug": "artex_finding_evidence",
+      "up": "000063_artex_finding_evidence.up.sql",
+      "down": "000063_artex_finding_evidence.down.sql",
+      "checksum": "sha256:4b8a13a748359c16e76b7ee5d2ee33ca39ac1004353b5359545ea170cc20c4f8"
+    },
+    {
+      "id": "000064",
+      "slug": "artex_credential_traffic",
+      "up": "000064_artex_credential_traffic.up.sql",
+      "down": "000064_artex_credential_traffic.down.sql",
+      "checksum": "sha256:714a7fc85b038c5129619972aa2b42c6cc00f19e5ed71267c83ee9e5e9d3b520"
+    },
+    {
+      "id": "000065",
+      "slug": "artex_asset_intelligence",
+      "up": "000065_artex_asset_intelligence.up.sql",
+      "down": "000065_artex_asset_intelligence.down.sql",
+      "checksum": "sha256:5ec6fcecad43e5e5d16ac3eebe84710ed053d410f3922daf2bb11b67b69e94b7"
+    },
+    {
+      "id": "000066",
+      "slug": "artex_llm_usage",
+      "up": "000066_artex_llm_usage.up.sql",
+      "down": "000066_artex_llm_usage.down.sql",
+      "checksum": "sha256:61b17c21aaaba5a07db25cc86948f7848163d2927fb6a20af25a558516fd7ea7"
+    },
+    {
+      "id": "000067",
+      "slug": "artex_llm_recording",
+      "up": "000067_artex_llm_recording.up.sql",
+      "down": "000067_artex_llm_recording.down.sql",
+      "checksum": "sha256:138d89ae9979175a548e5db6044fa43ee238e1b0312d09dd3a5440bbc0416893"
+    },
+    {
+      "id": "000068",
+      "slug": "artex_task_findings",
+      "up": "000068_artex_task_findings.up.sql",
+      "down": "000068_artex_task_findings.down.sql",
+      "checksum": "sha256:a5308c71092880483058fc930cbdfd709e5e0c5534bc74c2925e7053f2be4c7b"
+    },
+    {
+      "id": "000069",
+      "slug": "artex_finding_cases",
+      "up": "000069_artex_finding_cases.up.sql",
+      "down": "000069_artex_finding_cases.down.sql",
+      "checksum": "sha256:0c2b76dbbe1980419ffa803442b42f89236a78ce5a79fbf4769e6b8a4827843c"
+    },
+    {
+      "id": "000070",
+      "slug": "artex_finding_case_reviews",
+      "up": "000070_artex_finding_case_reviews.up.sql",
+      "down": "000070_artex_finding_case_reviews.down.sql",
+      "checksum": "sha256:3c0a66eb2c6c2b60d65cbebeab4631a073fccc0e8d6a593ec024da1abac48299"
+    },
+    {
+      "id": "000071",
+      "slug": "artex_finding_notifications",
+      "up": "000071_artex_finding_notifications.up.sql",
+      "down": "000071_artex_finding_notifications.down.sql",
+      "checksum": "sha256:f904282cdf5f84bd769af868428e7b26030a23ee4e7448963a7015c2fbf2a4c2"
+    },
+    {
+      "id": "000072",
+      "slug": "artex_outbound_notifications",
+      "up": "000072_artex_outbound_notifications.up.sql",
+      "down": "000072_artex_outbound_notifications.down.sql",
+      "checksum": "sha256:125b92e1833067cfef429944d531994914c9d9e516583367f37c514df0a897c1"
+    },
+    {
+      "id": "000073",
+      "slug": "artex_auto_task_hints",
+      "up": "000073_artex_auto_task_hints.up.sql",
+      "down": "000073_artex_auto_task_hints.down.sql",
+      "checksum": "sha256:dffb0c6ec83e273d01c481442051ebad36793f3dbdbdca2cf160428e8e7a5151"
+    },
+    {
+      "id": "000074",
+      "slug": "info_gather_runs",
+      "up": "000074_info_gather_runs.up.sql",
+      "down": "000074_info_gather_runs.down.sql",
+      "checksum": "sha256:cb1b50e810381d02066a2feb1fc0a87bd29efb10c2af12206181a8d9d7c7ffeb"
+    },
+    {
+      "id": "000075",
+      "slug": "info_gather_risk_assets",
+      "up": "000075_info_gather_risk_assets.up.sql",
+      "down": "000075_info_gather_risk_assets.down.sql",
+      "checksum": "sha256:4e7a1a4c58fd884c90665979c3bb4fce717c4f2bec33f1d132607ecf677f5d61"
+    },
+    {
+      "id": "000076",
+      "slug": "ai_execution_reliability",
+      "up": "000076_ai_execution_reliability.up.sql",
+      "down": "000076_ai_execution_reliability.down.sql",
+      "checksum": "sha256:6c3790bc82631d2de6612c27c2dd703c86e7f28896116ffdc6b2056086297200"
+    },
+    {
+      "id": "000077",
+      "slug": "asset_monitor_city_locations",
+      "up": "000077_asset_monitor_city_locations.up.sql",
+      "down": "000077_asset_monitor_city_locations.down.sql",
+      "checksum": "sha256:7367836c24ba23c64e697d8a80e4a4d97d37fa837d04ab637788b53e1503dbaa"
+    },
+    {
+      "id": "000078",
+      "slug": "ai_conversation_vulnerability_reports",
+      "up": "000078_ai_conversation_vulnerability_reports.up.sql",
+      "down": "000078_ai_conversation_vulnerability_reports.down.sql",
+      "checksum": "sha256:012af97fefa461f47aa3a59c7d8b88429099f6111f11a8e186180dcfd543eecc"
+    }
+  ]
+}

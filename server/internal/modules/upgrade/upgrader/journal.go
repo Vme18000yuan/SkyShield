@@ -1,0 +1,1327 @@
+package upgrader
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/yyhuni/lunafox/server/internal/modules/upgrade/domain"
+)
+
+var (
+	ErrJournalNotFound           = os.ErrNotExist
+	ErrJournalCorrupt            = errors.New("upgrader journal is missing, truncated, or invalid")
+	ErrReceiptMismatch           = errors.New("deployment receipt does not match the operation journal")
+	ErrRepairNotAllowed          = errors.New("upgrade operation cannot be repaired from its current journal")
+	ErrMigrationIdentityMismatch = errors.New("migration identity does not match the operation journal")
+	ErrMigrationTransition       = errors.New("migration status transition is not allowed")
+)
+
+// Receipt timestamps are written by the host, but they are also read after a
+// restart and may arrive through a best-effort observation path. Allow a small
+// clock skew without accepting an obviously fabricated future receipt.
+const maxReceiptFutureSkew = 5 * time.Minute
+
+type JournalStore struct {
+	deploymentRoot string
+	root           string
+	manifestCache  bool
+	// writeMu serializes read/modify/write transitions.  Atomic rename keeps
+	// individual files intact, but without this lock two concurrent checkpoint
+	// writers could both read the same stage and lose one migration outcome.
+	writeMu     sync.Mutex
+	eventMu     sync.RWMutex
+	eventSink   EventSink
+	eventQueue  chan JournalEvent
+	eventWorker sync.Once
+}
+
+func NewJournalStore(deploymentRoot string) (*JournalStore, error) {
+	return newJournalStore(deploymentRoot, false)
+}
+
+// NewPublicJournalStore uses immutable digest-addressed manifests shared with
+// Server. The legacy host layout retains its fixed root manifest for existing
+// development tooling.
+func NewPublicJournalStore(deploymentRoot string) (*JournalStore, error) {
+	return newJournalStore(deploymentRoot, true)
+}
+
+func newJournalStore(deploymentRoot string, manifestCache bool) (*JournalStore, error) {
+	if strings.TrimSpace(deploymentRoot) == "" {
+		return nil, fmt.Errorf("deployment root is required")
+	}
+	abs, err := filepath.Abs(deploymentRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve deployment root: %w", err)
+	}
+	abs = filepath.Clean(abs)
+	info, err := os.Lstat(abs)
+	if err != nil {
+		return nil, fmt.Errorf("stat deployment root: %w", err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("deployment root must be a regular directory")
+	}
+	// Check each private path component independently. Checking only the final
+	// directory would allow a pre-created `.lunafox` symlink to redirect the
+	// privileged journal outside the deployment root.
+	privateRoot := filepath.Join(abs, ".lunafox")
+	if err := ensurePrivateDirectory(privateRoot); err != nil {
+		return nil, err
+	}
+	root := filepath.Join(privateRoot, "upgrade")
+	if err := ensurePrivateDirectory(root); err != nil {
+		return nil, err
+	}
+	history := filepath.Join(root, HistoryDirectory)
+	if err := ensurePrivateDirectory(history); err != nil {
+		return nil, err
+	}
+	receipts := filepath.Join(root, ReceiptDirectory)
+	if err := ensurePrivateDirectory(receipts); err != nil {
+		return nil, err
+	}
+	plans := filepath.Join(root, PlanDirectory)
+	if err := ensurePrivateDirectory(plans); err != nil {
+		return nil, err
+	}
+	if manifestCache {
+		if err := ensurePrivateDirectory(filepath.Join(root, ManifestDirectory)); err != nil {
+			return nil, err
+		}
+		if err := ensurePrivateDirectory(filepath.Join(root, CompositionDirectory)); err != nil {
+			return nil, err
+		}
+		if err := ensurePrivateDirectory(filepath.Join(root, DeploymentAssetDirectory)); err != nil {
+			return nil, err
+		}
+		if err := ensurePrivateDirectory(filepath.Join(root, PreheatManifestDirectory)); err != nil {
+			return nil, err
+		}
+		if err := ensurePrivateDirectory(filepath.Join(root, DeploymentSnapshotDirectory)); err != nil {
+			return nil, err
+		}
+	}
+	return &JournalStore{deploymentRoot: abs, root: root, manifestCache: manifestCache}, nil
+}
+
+func (store *JournalStore) DeploymentRoot() string {
+	if store == nil {
+		return ""
+	}
+	return store.deploymentRoot
+}
+
+func (store *JournalStore) Directory() string {
+	if store == nil {
+		return ""
+	}
+	return store.root
+}
+
+func (store *JournalStore) SocketPath() string {
+	if store == nil {
+		return ""
+	}
+	return filepath.Join(store.root, SocketFile)
+}
+
+func (store *JournalStore) LockPath() string {
+	if store == nil {
+		return ""
+	}
+	return filepath.Join(store.root, LockFile)
+}
+
+// ManifestPath resolves the only manifest location accepted for a request.
+// Public deployments address immutable cached bytes by digest; callers cannot
+// provide a path across the privileged socket boundary.
+func (store *JournalStore) ManifestPath(digest string) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("journal store is nil")
+	}
+	if !store.manifestCache {
+		return filepath.Join(store.deploymentRoot, defaultManifestName), nil
+	}
+	if err := validateDigest(digest); err != nil {
+		return "", err
+	}
+	return filepath.Join(store.root, ManifestDirectory, strings.TrimPrefix(digest, "sha256:")+".yaml"), nil
+}
+
+// RuntimeCompositionPath resolves the digest-addressed release composition
+// asset shared by the Server and host. The digest is the composition core
+// identity, not a caller-provided path; public stores keep the file inside the
+// same private upgrade volume as manifests and journals.
+func (store *JournalStore) RuntimeCompositionPath(digest string) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("journal store is nil")
+	}
+	if !store.manifestCache {
+		return "", fmt.Errorf("runtime composition cache is unavailable")
+	}
+	if err := validateDigest(digest); err != nil {
+		return "", err
+	}
+	return filepath.Join(store.root, CompositionDirectory, strings.TrimPrefix(digest, "sha256:")+".json"), nil
+}
+
+// DeploymentAssetsPath resolves the private directory containing the target
+// release's immutable Compose and third-party policy bytes. The directory name
+// is derived only from the verified release manifest digest.
+func (store *JournalStore) DeploymentAssetsPath(releaseDigest string) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("journal store is nil")
+	}
+	if !store.manifestCache {
+		return "", fmt.Errorf("deployment asset cache is unavailable")
+	}
+	if err := validateDigest(releaseDigest); err != nil {
+		return "", err
+	}
+	return filepath.Join(store.root, DeploymentAssetDirectory, strings.TrimPrefix(releaseDigest, "sha256:")), nil
+}
+
+// PreheatManifestPath resolves the immutable preheat manifest associated with
+// one release manifest digest. The preheat manifest has its own core digest,
+// but release identity is the lookup key because the host receives only the
+// release digest over the upgrade socket.
+func (store *JournalStore) PreheatManifestPath(releaseDigest string) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("journal store is nil")
+	}
+	if !store.manifestCache {
+		return "", fmt.Errorf("preheat manifest cache is unavailable")
+	}
+	if err := validateDigest(releaseDigest); err != nil {
+		return "", err
+	}
+	return filepath.Join(store.root, PreheatManifestDirectory, strings.TrimPrefix(releaseDigest, "sha256:")+".json"), nil
+}
+
+// DeploymentSnapshotPath resolves the private, digest-addressed staging
+// directory for one public release. It is deliberately not caller-selectable:
+// the upgrader receives only a verified release digest over its socket.
+func (store *JournalStore) DeploymentSnapshotPath(releaseDigest string) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("journal store is nil")
+	}
+	if !store.manifestCache {
+		return "", fmt.Errorf("deployment snapshot cache is unavailable")
+	}
+	if err := validateDigest(releaseDigest); err != nil {
+		return "", err
+	}
+	return filepath.Join(store.root, DeploymentSnapshotDirectory, strings.TrimPrefix(releaseDigest, "sha256:")), nil
+}
+
+// SetEventSink installs a best-effort observation callback. The callback is
+// intentionally separate from persistence so a disconnected Server cannot
+// prevent the host from recording a checkpoint or continuing an upgrade.
+func (store *JournalStore) SetEventSink(sink EventSink) {
+	if store == nil {
+		return
+	}
+	store.eventMu.Lock()
+	store.eventSink = sink
+	if sink != nil {
+		if store.eventQueue == nil {
+			// A bounded queue preserves checkpoint order while ensuring a stalled
+			// Server cannot block fsync/rename or consume unbounded memory.
+			store.eventQueue = make(chan JournalEvent, 128)
+		}
+		queue := store.eventQueue
+		store.eventWorker.Do(func() { go store.deliverEvents(queue) })
+	}
+	store.eventMu.Unlock()
+}
+
+func (store *JournalStore) publish(event JournalEvent) {
+	if store == nil {
+		return
+	}
+	if err := event.Validate(); err != nil {
+		return
+	}
+	store.eventMu.Lock()
+	defer store.eventMu.Unlock()
+	if store.eventSink == nil {
+		return
+	}
+	if store.eventQueue == nil {
+		store.eventQueue = make(chan JournalEvent, 128)
+	}
+	queue := store.eventQueue
+	store.eventWorker.Do(func() { go store.deliverEvents(queue) })
+	// Event delivery is deliberately detached from the write path. If the
+	// bounded queue is full, the durable journal remains the source of truth and
+	// this best-effort observation is dropped. Enqueue while holding eventMu so
+	// callers that serialize their journal writes cannot publish observations in
+	// a different order.
+	select {
+	case queue <- event:
+	default:
+	}
+}
+
+func (store *JournalStore) deliverEvents(queue <-chan JournalEvent) {
+	for event := range queue {
+		store.eventMu.RLock()
+		sink := store.eventSink
+		store.eventMu.RUnlock()
+		if sink == nil {
+			continue
+		}
+		// The observation path is intentionally outside the privileged decision
+		// path. A buggy control-plane adapter must not panic the host upgrader or
+		// turn a durable checkpoint into an implicit execution failure.
+		func() {
+			defer func() { _ = recover() }()
+			_ = sink.Publish(context.Background(), event)
+		}()
+	}
+}
+
+func (store *JournalStore) Save(journal Journal) error {
+	if store == nil {
+		return fmt.Errorf("journal store is nil")
+	}
+	if err := journal.Validate(); err != nil {
+		return fmt.Errorf("validate journal: %w", err)
+	}
+	store.writeMu.Lock()
+	err := store.saveLocked(journal)
+	if err == nil {
+		store.publish(journalEventFor(journal))
+	}
+	store.writeMu.Unlock()
+	return err
+}
+
+func (store *JournalStore) saveLocked(journal Journal) error {
+	if err := store.validatePrivateLayout(); err != nil {
+		return err
+	}
+	encoded, err := json.MarshalIndent(journal, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode journal: %w", err)
+	}
+	encoded = append(encoded, '\n')
+	if err := atomicWrite(store.currentPath(), encoded, 0o600); err != nil {
+		return fmt.Errorf("write current journal: %w", err)
+	}
+	if err := atomicWrite(store.historyPath(journal.OperationID), encoded, 0o600); err != nil {
+		return fmt.Errorf("write operation journal: %w", err)
+	}
+	return nil
+}
+
+func journalEventFor(journal Journal) JournalEvent {
+	return JournalEvent{
+		OperationID:       journal.OperationID,
+		ManifestDigest:    journal.ManifestDigest,
+		Stage:             journal.Stage,
+		UpdatedAt:         journal.UpdatedAt,
+		StageUpdatedAt:    journal.StageUpdatedAt,
+		Diagnostic:        journal.Diagnostic,
+		MigrationID:       journal.MigrationID,
+		MigrationChecksum: journal.MigrationChecksum,
+		MigrationStatus:   journal.MigrationStatus,
+		ProgressEvents:    cloneProgressEvents(journal.ProgressEvents),
+		ExecutionMode:     journal.ExecutionMode,
+		HostActivity:      domain.CloneHostActivity(journal.HostActivity),
+	}
+}
+
+// Checkpoint updates one operation while preserving its original start time.
+// It is the only convenience transition used by host executors, which keeps
+// phase timestamps and operation/digest binding consistent across retries.
+func (store *JournalStore) Checkpoint(operationID, manifestDigest string, stage Stage, diagnostic string, exitCode *int) (Journal, error) {
+	if err := validateOperationID(operationID); err != nil {
+		return Journal{}, err
+	}
+	if err := validateDigest(manifestDigest); err != nil {
+		return Journal{}, err
+	}
+	store.writeMu.Lock()
+	current, err := store.LoadCurrent()
+	if errors.Is(err, ErrJournalNotFound) {
+		now := time.Now().UTC()
+		current = Journal{SchemaVersion: JournalSchema, OperationID: operationID, ManifestDigest: manifestDigest, Stage: StageQueued, StartedAt: now, UpdatedAt: now, StageUpdatedAt: now}
+	} else if err != nil {
+		store.writeMu.Unlock()
+		return Journal{}, err
+	}
+	if current.OperationID != operationID || current.ManifestDigest != manifestDigest {
+		store.writeMu.Unlock()
+		return Journal{}, ErrReplayDigestMismatch
+	}
+	if err := ValidateStageTransition(current.Stage, stage); err != nil {
+		store.writeMu.Unlock()
+		return Journal{}, err
+	}
+	if err := ValidateDiagnostic(diagnostic); err != nil {
+		store.writeMu.Unlock()
+		return Journal{}, err
+	}
+	previousStage := current.Stage
+	now := time.Now().UTC()
+	current.Stage = stage
+	current.UpdatedAt = now
+	current.StageUpdatedAt = now
+	current.Diagnostic = diagnostic
+	current.ExitCode = exitCode
+	// A checkpoint is stronger lifecycle evidence than any in-flight wait. It
+	// must retire a stale snapshot even when the caller repeats the same stage.
+	current.HostActivity = nil
+	if IsTerminal(stage) {
+		current.RepairStage = repairStageFor(previousStage)
+		current.CompletedAt = &now
+	} else {
+		current.RepairStage = ""
+		current.CompletedAt = nil
+	}
+	if err := store.saveLocked(current); err != nil {
+		store.writeMu.Unlock()
+		return Journal{}, err
+	}
+	store.publish(journalEventFor(current))
+	store.writeMu.Unlock()
+	return current, nil
+}
+
+// AppendProgress persists one fixed, safe sub-step observation without
+// changing the lifecycle stage. It is intentionally idempotent so recovery
+// can replay the same host journal after a Server restart.
+func (store *JournalStore) AppendProgress(operationID, manifestDigest string, event ProgressEvent) (Journal, error) {
+	if store == nil {
+		return Journal{}, fmt.Errorf("journal store is nil")
+	}
+	if err := validateOperationID(operationID); err != nil {
+		return Journal{}, err
+	}
+	if err := validateDigest(manifestDigest); err != nil {
+		return Journal{}, err
+	}
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now().UTC()
+	}
+	if err := event.Validate(); err != nil {
+		return Journal{}, err
+	}
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	current, err := store.LoadCurrent()
+	if err != nil {
+		return Journal{}, err
+	}
+	if current.OperationID != operationID || current.ManifestDigest != manifestDigest {
+		return Journal{}, ErrReplayDigestMismatch
+	}
+	if current.Stage != event.Stage {
+		return Journal{}, fmt.Errorf("progress event stage %q does not match current stage %q", event.Stage, current.Stage)
+	}
+	if event.Timestamp.Before(current.StartedAt) {
+		return Journal{}, fmt.Errorf("progress event timestamp precedes journal start")
+	}
+	merged, changed, err := mergeProgressEvents(current.ProgressEvents, []ProgressEvent{event})
+	if err != nil {
+		return Journal{}, err
+	}
+	if !changed {
+		return current, nil
+	}
+	if current.StageUpdatedAt.IsZero() {
+		// Old journals predate the separate stage timestamp. Freeze the last
+		// known checkpoint before allowing a heartbeat to move UpdatedAt.
+		current.StageUpdatedAt = current.UpdatedAt
+	}
+	current.ProgressEvents = merged
+	// A delayed event is still useful evidence, but it must never move the
+	// journal's observable activity clock backwards. The stage timestamp stays
+	// frozen so a heartbeat cannot manufacture lifecycle progress.
+	if eventAt := event.Timestamp.UTC(); eventAt.After(current.UpdatedAt) {
+		current.UpdatedAt = eventAt
+	}
+	if current.UpdatedAt.Before(current.StageUpdatedAt) {
+		current.UpdatedAt = current.StageUpdatedAt
+	}
+	if err := store.saveLocked(current); err != nil {
+		return Journal{}, err
+	}
+	store.publish(journalEventFor(current))
+	return current, nil
+}
+
+// AppendProgressEvent is a descriptive alias for callers outside the host
+// executor; both names share the same validation and idempotency boundary.
+func (store *JournalStore) AppendProgressEvent(operationID, manifestDigest string, event ProgressEvent) (Journal, error) {
+	return store.AppendProgress(operationID, manifestDigest, event)
+}
+
+// SetHostActivity writes one current host wait snapshot without changing the
+// lifecycle checkpoint. Replayed or delayed heartbeats can never overwrite a
+// newer action, and callers may safely treat any error as non-fatal telemetry.
+func (store *JournalStore) SetHostActivity(operationID, manifestDigest string, activity domain.HostActivity) (Journal, error) {
+	if store == nil {
+		return Journal{}, fmt.Errorf("journal store is nil")
+	}
+	if err := validateOperationID(operationID); err != nil {
+		return Journal{}, err
+	}
+	if err := validateDigest(manifestDigest); err != nil {
+		return Journal{}, err
+	}
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	current, err := store.LoadCurrent()
+	if err != nil {
+		return Journal{}, err
+	}
+	if current.OperationID != operationID || current.ManifestDigest != manifestDigest {
+		return Journal{}, ErrReplayDigestMismatch
+	}
+	if IsTerminal(current.Stage) {
+		return Journal{}, fmt.Errorf("terminal journal cannot accept host activity")
+	}
+	observedAt := current.UpdatedAt
+	if activity.LastHeartbeatAt.After(observedAt) {
+		observedAt = activity.LastHeartbeatAt.UTC()
+	}
+	if err := domain.ValidateHostActivity(&activity, domain.Status(current.Stage), domain.ExecutionMode(current.ExecutionMode), current.StartedAt, observedAt, time.Now().UTC()); err != nil {
+		return Journal{}, err
+	}
+	if !current.StageUpdatedAt.IsZero() && activity.StartedAt.Before(current.StageUpdatedAt) {
+		// A checkpoint is stronger than a delayed best-effort write. Some actions
+		// share adjacent stages, so ownership validation alone cannot prove that a
+		// heartbeat belongs to the current checkpoint.
+		return current, nil
+	}
+	if existing := current.HostActivity; existing != nil {
+		if existing.StartedAt.After(activity.StartedAt) {
+			return current, nil
+		}
+		if existing.StartedAt.Equal(activity.StartedAt) {
+			if existing.Action != activity.Action {
+				return Journal{}, fmt.Errorf("host activity action conflicts with an active snapshot")
+			}
+			if !activity.LastHeartbeatAt.After(existing.LastHeartbeatAt) {
+				return current, nil
+			}
+		}
+	}
+	if current.StageUpdatedAt.IsZero() {
+		// Legacy journals had only UpdatedAt. Freeze that existing checkpoint
+		// before a new observation advances UpdatedAt for the first time.
+		current.StageUpdatedAt = current.UpdatedAt
+	}
+	current.HostActivity = domain.CloneHostActivity(&activity)
+	if current.UpdatedAt.Before(activity.LastHeartbeatAt) {
+		current.UpdatedAt = activity.LastHeartbeatAt.UTC()
+	}
+	if err := store.saveLocked(current); err != nil {
+		return Journal{}, err
+	}
+	store.publish(journalEventFor(current))
+	return current, nil
+}
+
+// ClearHostActivity retires one action snapshot after its call returns. The
+// expected snapshot prevents a delayed cleanup from clearing a newer action.
+func (store *JournalStore) ClearHostActivity(operationID, manifestDigest string, expected *domain.HostActivity) (Journal, error) {
+	if store == nil {
+		return Journal{}, fmt.Errorf("journal store is nil")
+	}
+	if err := validateOperationID(operationID); err != nil {
+		return Journal{}, err
+	}
+	if err := validateDigest(manifestDigest); err != nil {
+		return Journal{}, err
+	}
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	current, err := store.LoadCurrent()
+	if err != nil {
+		return Journal{}, err
+	}
+	if current.OperationID != operationID || current.ManifestDigest != manifestDigest {
+		return Journal{}, ErrReplayDigestMismatch
+	}
+	if current.HostActivity == nil {
+		return current, nil
+	}
+	if expected != nil && (current.HostActivity.Action != expected.Action || !current.HostActivity.StartedAt.Equal(expected.StartedAt)) {
+		return current, nil
+	}
+	if current.StageUpdatedAt.IsZero() {
+		current.StageUpdatedAt = current.UpdatedAt
+	}
+	current.HostActivity = nil
+	now := time.Now().UTC()
+	if now.After(current.UpdatedAt) {
+		current.UpdatedAt = now
+	}
+	if err := store.saveLocked(current); err != nil {
+		return Journal{}, err
+	}
+	store.publish(journalEventFor(current))
+	return current, nil
+}
+
+// SetMigration records the reviewed migration identity and its durable state
+// without changing the execution stage. The identity is copied from the fixed
+// release manifest by the Compose executor; callers cannot supply SQL or a
+// migration path through this method.
+func (store *JournalStore) SetMigration(operationID, manifestDigest, migrationID, checksum, status string) (Journal, error) {
+	if store == nil {
+		return Journal{}, fmt.Errorf("journal store is nil")
+	}
+	if err := validateOperationID(operationID); err != nil {
+		return Journal{}, err
+	}
+	if err := validateDigest(manifestDigest); err != nil {
+		return Journal{}, err
+	}
+	if status == "" {
+		status = MigrationStatusNotStarted
+	}
+	switch status {
+	case MigrationStatusNotStarted, MigrationStatusRunning, MigrationStatusSucceeded, MigrationStatusFailed, MigrationStatusUnknown:
+	default:
+		return Journal{}, fmt.Errorf("unsupported migration status %q", status)
+	}
+	if migrationID != "" && !validJournalToken(migrationID) {
+		return Journal{}, fmt.Errorf("migrationId is not canonical")
+	}
+	if checksum != "" && !digestPattern.MatchString(checksum) {
+		return Journal{}, fmt.Errorf("migrationChecksum is not canonical")
+	}
+	if status != MigrationStatusNotStarted && (migrationID == "" || checksum == "") {
+		return Journal{}, fmt.Errorf("migration identity and checksum are required for status %q", status)
+	}
+	store.writeMu.Lock()
+	current, err := store.LoadCurrent()
+	if err != nil {
+		store.writeMu.Unlock()
+		return Journal{}, err
+	}
+	if current.OperationID != operationID || current.ManifestDigest != manifestDigest {
+		store.writeMu.Unlock()
+		return Journal{}, ErrReplayDigestMismatch
+	}
+	if current.MigrationID != "" && current.MigrationID != migrationID {
+		store.writeMu.Unlock()
+		return Journal{}, ErrMigrationIdentityMismatch
+	}
+	if current.MigrationChecksum != "" && current.MigrationChecksum != checksum {
+		store.writeMu.Unlock()
+		return Journal{}, ErrMigrationIdentityMismatch
+	}
+	if err := ValidateMigrationTransition(current.MigrationStatus, status); err != nil {
+		store.writeMu.Unlock()
+		return Journal{}, err
+	}
+	current.MigrationID = migrationID
+	current.MigrationChecksum = checksum
+	current.MigrationStatus = status
+	current.UpdatedAt = time.Now().UTC()
+	if err := store.saveLocked(current); err != nil {
+		store.writeMu.Unlock()
+		return Journal{}, err
+	}
+	store.publish(journalEventFor(current))
+	store.writeMu.Unlock()
+	return current, nil
+}
+
+func validJournalToken(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("._/-", r) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// ValidateMigrationTransition is intentionally stricter than the stage graph.
+// A migration outcome is a one-way evidence record: once the command has
+// succeeded, failed, or become uncertain, a replay cannot rewrite it as a
+// different result or silently run the migration again.
+func ValidateMigrationTransition(from, to string) error {
+	if from == "" {
+		from = MigrationStatusNotStarted
+	}
+	if to == "" {
+		to = MigrationStatusNotStarted
+	}
+	valid := func(value string) bool {
+		switch value {
+		case MigrationStatusNotStarted, MigrationStatusRunning, MigrationStatusSucceeded, MigrationStatusFailed, MigrationStatusUnknown:
+			return true
+		default:
+			return false
+		}
+	}
+	if !valid(from) || !valid(to) {
+		return fmt.Errorf("%w: unsupported migration status %q -> %q", ErrMigrationTransition, from, to)
+	}
+	if from == to {
+		return nil
+	}
+	switch from {
+	case MigrationStatusNotStarted:
+		if to == MigrationStatusRunning {
+			return nil
+		}
+	case MigrationStatusRunning:
+		if to == MigrationStatusSucceeded || to == MigrationStatusFailed || to == MigrationStatusUnknown {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s -> %s", ErrMigrationTransition, from, to)
+}
+
+// ResetForRepair prepares one terminal operation for an explicit repair
+// request. It intentionally bypasses the normal forward-only stage transition
+// because the terminal checkpoint is the boundary being reopened. The target
+// digest and operation identity remain unchanged; migration-aware RepairStage
+// prevents a repair from silently re-running an uncertain migration.
+func (store *JournalStore) ResetForRepair(operationID, manifestDigest string) (Journal, error) {
+	if store == nil {
+		return Journal{}, fmt.Errorf("journal store is nil")
+	}
+	if err := validateOperationID(operationID); err != nil {
+		return Journal{}, err
+	}
+	if err := validateDigest(manifestDigest); err != nil {
+		return Journal{}, err
+	}
+	store.writeMu.Lock()
+	current, currentErr := store.LoadCurrent()
+	if currentErr != nil && !errors.Is(currentErr, ErrJournalNotFound) {
+		store.writeMu.Unlock()
+		return Journal{}, currentErr
+	}
+	history, historyErr := store.LoadOperation(operationID)
+	if historyErr != nil && !errors.Is(historyErr, ErrJournalNotFound) {
+		store.writeMu.Unlock()
+		return Journal{}, historyErr
+	}
+	if historyErr == nil && history.ManifestDigest != manifestDigest {
+		store.writeMu.Unlock()
+		return Journal{}, ErrReplayDigestMismatch
+	}
+	if currentErr == nil && current.OperationID != operationID {
+		// A different current operation may represent a newer deployment. Do not
+		// let an old history file replace it through a repair request.
+		store.writeMu.Unlock()
+		return Journal{}, ErrRepairNotAllowed
+	}
+	base := history
+	if currentErr == nil {
+		base = current
+	}
+	if historyErr == nil && currentErr == nil && current.UpdatedAt.Before(history.UpdatedAt) {
+		// Save writes current before history. A newer history file is therefore
+		// treated as an externally repaired/tampered state and is not trusted.
+		store.writeMu.Unlock()
+		return Journal{}, ErrJournalCorrupt
+	}
+	if base.OperationID != operationID || base.ManifestDigest != manifestDigest || !IsTerminal(base.Stage) || base.Stage == StageSucceeded {
+		store.writeMu.Unlock()
+		return Journal{}, ErrRepairNotAllowed
+	}
+	nextStage := base.RepairStage
+	if nextStage == "" {
+		if base.Stage == StageNeedsRecovery || base.Stage == StageNeedsAttention {
+			nextStage = StageRestarting
+		} else {
+			nextStage = StageQueued
+		}
+	}
+	if !validStage(nextStage) || IsTerminal(nextStage) {
+		store.writeMu.Unlock()
+		return Journal{}, ErrRepairNotAllowed
+	}
+	now := time.Now().UTC()
+	base.Stage = nextStage
+	base.RepairStage = ""
+	base.UpdatedAt = now
+	base.StageUpdatedAt = now
+	base.CompletedAt = nil
+	base.ExitCode = nil
+	base.Diagnostic = ""
+	base.HostActivity = nil
+	if err := store.saveLocked(base); err != nil {
+		store.writeMu.Unlock()
+		return Journal{}, err
+	}
+	store.publish(journalEventFor(base))
+	store.writeMu.Unlock()
+	return base, nil
+}
+
+func (store *JournalStore) LoadCurrent() (Journal, error) {
+	return store.load(store.currentPath())
+}
+
+func (store *JournalStore) LoadOperation(operationID string) (Journal, error) {
+	if err := validateOperationID(operationID); err != nil {
+		return Journal{}, err
+	}
+	return store.load(store.historyPath(operationID))
+}
+
+func (store *JournalStore) ReceiptPath(operationID string) (string, error) {
+	if err := validateOperationID(operationID); err != nil {
+		return "", err
+	}
+	return filepath.Join(store.root, ReceiptDirectory, operationID+".json"), nil
+}
+
+func (store *JournalStore) ComposeOverridePath(operationID string) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("journal store is nil")
+	}
+	if err := validateOperationID(operationID); err != nil {
+		return "", err
+	}
+	return filepath.Join(store.root, HistoryDirectory, operationID+OverrideFileSuffix), nil
+}
+
+func (store *JournalStore) SaveReceipt(receipt Receipt) error {
+	if store == nil {
+		return fmt.Errorf("journal store is nil")
+	}
+	if err := receipt.Validate(); err != nil {
+		return fmt.Errorf("validate deployment receipt: %w", err)
+	}
+	store.writeMu.Lock()
+	if err := store.validatePrivateLayout(); err != nil {
+		store.writeMu.Unlock()
+		return err
+	}
+	current, currentErr := store.LoadCurrent()
+	if currentErr != nil {
+		store.writeMu.Unlock()
+		if errors.Is(currentErr, ErrJournalNotFound) {
+			return ErrReceiptMismatch
+		}
+		return currentErr
+	}
+	if current.OperationID != receipt.OperationID || current.ManifestDigest != receipt.ManifestDigest {
+		store.writeMu.Unlock()
+		return ErrReceiptMismatch
+	}
+	history, historyErr := store.LoadOperation(receipt.OperationID)
+	if historyErr != nil {
+		store.writeMu.Unlock()
+		if errors.Is(historyErr, ErrJournalNotFound) {
+			return ErrReceiptMismatch
+		}
+		return historyErr
+	}
+	if err := validateJournalPair(current, history, receipt.OperationID, receipt.ManifestDigest); err != nil {
+		store.writeMu.Unlock()
+		return err
+	}
+	if err := validateReceiptScopeBinding(current, receipt); err != nil {
+		store.writeMu.Unlock()
+		return err
+	}
+	if err := validateReceiptTime(receipt, current, time.Now().UTC()); err != nil {
+		store.writeMu.Unlock()
+		return err
+	}
+	path, err := store.ReceiptPath(receipt.OperationID)
+	if err != nil {
+		store.writeMu.Unlock()
+		return err
+	}
+	encoded, err := json.MarshalIndent(receipt, "", "  ")
+	if err != nil {
+		store.writeMu.Unlock()
+		return fmt.Errorf("encode deployment receipt: %w", err)
+	}
+	if err := atomicWrite(path, append(encoded, '\n'), 0o600); err != nil {
+		store.writeMu.Unlock()
+		return err
+	}
+	event := JournalEvent{
+		OperationID:    receipt.OperationID,
+		ManifestDigest: receipt.ManifestDigest,
+		UpdatedAt:      receipt.CompletedAt,
+		Receipt:        cloneReceipt(&receipt),
+	}
+	event.Stage = current.Stage
+	event.StageUpdatedAt = current.StageUpdatedAt
+	event.MigrationID = current.MigrationID
+	event.MigrationChecksum = current.MigrationChecksum
+	event.MigrationStatus = current.MigrationStatus
+	event.ProgressEvents = cloneProgressEvents(current.ProgressEvents)
+	event.ExecutionMode = current.ExecutionMode
+	event.HostActivity = domain.CloneHostActivity(current.HostActivity)
+	store.publish(event)
+	store.writeMu.Unlock()
+	return nil
+}
+
+func (store *JournalStore) LoadReceipt(operationID string) (Receipt, error) {
+	if store == nil {
+		return Receipt{}, fmt.Errorf("journal store is nil")
+	}
+	if err := store.validatePrivateLayout(); err != nil {
+		return Receipt{}, fmt.Errorf("%w: %v", ErrJournalCorrupt, err)
+	}
+	path, err := store.ReceiptPath(operationID)
+	if err != nil {
+		return Receipt{}, err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Receipt{}, ErrJournalNotFound
+		}
+		return Receipt{}, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+		return Receipt{}, ErrJournalCorrupt
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Receipt{}, ErrJournalNotFound
+		}
+		return Receipt{}, err
+	}
+	var receipt Receipt
+	if err := decodeStrict(data, &receipt); err != nil {
+		return Receipt{}, fmt.Errorf("%w: %v", ErrJournalCorrupt, err)
+	}
+	if err := receipt.Validate(); err != nil {
+		return Receipt{}, fmt.Errorf("%w: %v", ErrJournalCorrupt, err)
+	}
+	return receipt, nil
+}
+
+// ReconcileReceipt verifies that a host completion receipt belongs to the
+// requested operation and target digest. It returns both artifacts for the
+// Server to compare; it never upgrades the journal to succeeded because
+// Agent, API and database evidence are outside the host receipt's authority.
+func (store *JournalStore) ReconcileReceipt(operationID, manifestDigest string) (Journal, Receipt, error) {
+	if store == nil {
+		return Journal{}, Receipt{}, fmt.Errorf("journal store is nil")
+	}
+	if err := validateOperationID(operationID); err != nil {
+		return Journal{}, Receipt{}, err
+	}
+	if err := validateDigest(manifestDigest); err != nil {
+		return Journal{}, Receipt{}, err
+	}
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	return store.reconcileReceiptLocked(operationID, manifestDigest)
+}
+
+// reconcileReceiptLocked reads all three durable artifacts under the same
+// write lock. saveLocked writes current.json before the per-operation history
+// copy, so a crash can leave a stale history snapshot; that snapshot is safe to
+// tolerate only when its identity and timestamp still point at the same
+// operation. A newer or differently-identified history file is a replay fence.
+func (store *JournalStore) reconcileReceiptLocked(operationID, manifestDigest string) (Journal, Receipt, error) {
+	receipt, err := store.LoadReceipt(operationID)
+	if err != nil {
+		return Journal{}, Receipt{}, err
+	}
+	if receipt.OperationID != operationID || receipt.ManifestDigest != manifestDigest {
+		return Journal{}, Receipt{}, ErrReceiptMismatch
+	}
+
+	current, currentErr := store.LoadCurrent()
+	history, historyErr := store.LoadOperation(operationID)
+	if currentErr != nil && !errors.Is(currentErr, ErrJournalNotFound) {
+		return Journal{}, Receipt{}, currentErr
+	}
+	if historyErr != nil && !errors.Is(historyErr, ErrJournalNotFound) {
+		return Journal{}, Receipt{}, historyErr
+	}
+	if errors.Is(currentErr, ErrJournalNotFound) {
+		if errors.Is(historyErr, ErrJournalNotFound) {
+			return Journal{}, Receipt{}, ErrReceiptMismatch
+		}
+		current = history
+	} else if errors.Is(historyErr, ErrJournalNotFound) {
+		// A receipt is only written after saveLocked has produced both journal
+		// copies. Treat a missing history file as an incomplete/tampered handoff
+		// instead of silently accepting a single artifact.
+		return Journal{}, Receipt{}, ErrReceiptMismatch
+	}
+
+	if err := validateJournalPair(current, history, operationID, manifestDigest); err != nil {
+		return Journal{}, Receipt{}, err
+	}
+	if err := validateReceiptScopeBinding(current, receipt); err != nil {
+		return Journal{}, Receipt{}, err
+	}
+	if err := validateReceiptTime(receipt, current, time.Now().UTC()); err != nil {
+		return Journal{}, Receipt{}, err
+	}
+	return current, receipt, nil
+}
+
+func validateJournalPair(current, history Journal, operationID, manifestDigest string) error {
+	if current.OperationID != operationID || current.ManifestDigest != manifestDigest ||
+		history.OperationID != operationID || history.ManifestDigest != manifestDigest {
+		return ErrReceiptMismatch
+	}
+	if !current.StartedAt.Equal(history.StartedAt) || history.UpdatedAt.After(current.UpdatedAt) {
+		return ErrReceiptMismatch
+	}
+	if history.UpdatedAt.Equal(current.UpdatedAt) && !journalsSnapshotEqual(current, history) {
+		return ErrReceiptMismatch
+	}
+	return nil
+}
+
+// validateReceiptScopeBinding keeps a receipt from being replayed across a
+// legacy/full and a v2/scoped operation that happen to share identities. The
+// receipt is host evidence, so it must carry the same schema and sealed scope
+// as the journal that created it.
+func validateReceiptScopeBinding(journal Journal, receipt Receipt) error {
+	if journal.SchemaVersion != receipt.SchemaVersion {
+		return ErrReceiptMismatch
+	}
+	if journal.SchemaVersion == ScopedJournalSchema && !sameScopeEvidence(journal.ExecutionMode, journal.PlanDigest, journal.BaselineStateDigest, journal.TouchedServices, journal.ConfirmedDeploymentVersion, receipt.ExecutionMode, receipt.PlanDigest, receipt.BaselineStateDigest, receipt.TouchedServices, receipt.ConfirmedDeploymentVersion) {
+		return ErrReceiptMismatch
+	}
+	return nil
+}
+
+func validateReceiptTime(receipt Receipt, journal Journal, now time.Time) error {
+	if receipt.CompletedAt.Before(journal.StartedAt) {
+		return ErrReceiptMismatch
+	}
+	if receipt.CompletedAt.After(now.Add(maxReceiptFutureSkew)) {
+		return ErrReceiptMismatch
+	}
+	if IsTerminal(journal.Stage) && journal.CompletedAt != nil && receipt.CompletedAt.After(*journal.CompletedAt) {
+		return ErrReceiptMismatch
+	}
+	return nil
+}
+
+func journalsSnapshotEqual(left, right Journal) bool {
+	if left.SchemaVersion != right.SchemaVersion ||
+		left.OperationID != right.OperationID ||
+		left.ManifestDigest != right.ManifestDigest ||
+		left.Stage != right.Stage ||
+		left.ExecutionMode != right.ExecutionMode ||
+		left.PlanDigest != right.PlanDigest ||
+		left.BaselineStateDigest != right.BaselineStateDigest ||
+		left.ConfirmedDeploymentVersion != right.ConfirmedDeploymentVersion ||
+		!sameStringSlice(left.TouchedServices, right.TouchedServices) ||
+		left.RepairStage != right.RepairStage ||
+		left.MigrationID != right.MigrationID ||
+		left.MigrationChecksum != right.MigrationChecksum ||
+		left.MigrationStatus != right.MigrationStatus ||
+		!domain.EqualHostActivity(left.HostActivity, right.HostActivity) ||
+		!left.StageUpdatedAt.Equal(right.StageUpdatedAt) ||
+		left.ExitCode == nil != (right.ExitCode == nil) ||
+		left.Diagnostic != right.Diagnostic ||
+		!left.StartedAt.Equal(right.StartedAt) ||
+		!left.UpdatedAt.Equal(right.UpdatedAt) {
+		return false
+	}
+	if left.ExitCode != nil && *left.ExitCode != *right.ExitCode {
+		return false
+	}
+	if left.CompletedAt == nil != (right.CompletedAt == nil) {
+		return false
+	}
+	if left.CompletedAt != nil && !left.CompletedAt.Equal(*right.CompletedAt) {
+		return false
+	}
+	if len(left.ProgressEvents) != len(right.ProgressEvents) {
+		return false
+	}
+	for index := range left.ProgressEvents {
+		if progressEventIdentity(left.ProgressEvents[index]) != progressEventIdentity(right.ProgressEvents[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+// VerifyReceiptBinding is a compact form for callers that only need the
+// operation/digest integrity check.
+func (store *JournalStore) VerifyReceiptBinding(operationID, manifestDigest string) error {
+	_, _, err := store.ReconcileReceipt(operationID, manifestDigest)
+	return err
+}
+
+// frontendOnlyConfirmationPending distinguishes a crash during host verification
+// from a restart after its durable receipt. StageVerifying alone is insufficient:
+// it is checkpointed before the frontend digest and public-edge probes finish.
+func (store *JournalStore) frontendOnlyConfirmationPending(journal Journal) (bool, error) {
+	if journal.SchemaVersion != ScopedJournalSchema || journal.ExecutionMode != ExecutionModeFrontendOnly || journal.Stage != StageVerifying {
+		return false, nil
+	}
+	reconciled, _, err := store.ReconcileReceipt(journal.OperationID, journal.ManifestDigest)
+	if err != nil {
+		if errors.Is(err, ErrJournalNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if reconciled.Stage == StageSucceeded {
+		// Confirm may race a duplicate resume after the initial journal read. The
+		// operation is already terminal and no recovery work remains.
+		return false, nil
+	}
+	if reconciled.SchemaVersion != journal.SchemaVersion || reconciled.Stage != journal.Stage || !sameScopeEvidence(
+		reconciled.ExecutionMode,
+		reconciled.PlanDigest,
+		reconciled.BaselineStateDigest,
+		reconciled.TouchedServices,
+		reconciled.ConfirmedDeploymentVersion,
+		journal.ExecutionMode,
+		journal.PlanDigest,
+		journal.BaselineStateDigest,
+		journal.TouchedServices,
+		journal.ConfirmedDeploymentVersion,
+	) {
+		return false, ErrReceiptMismatch
+	}
+	return true, nil
+}
+
+func cloneReceipt(receipt *Receipt) *Receipt {
+	if receipt == nil {
+		return nil
+	}
+	copy := *receipt
+	copy.Services = append([]string(nil), receipt.Services...)
+	copy.TouchedServices = append([]string(nil), receipt.TouchedServices...)
+	copy.ObservedImages = make(map[string]string, len(receipt.ObservedImages))
+	for service, digest := range receipt.ObservedImages {
+		copy.ObservedImages[service] = digest
+	}
+	return &copy
+}
+
+func (store *JournalStore) currentPath() string {
+	return filepath.Join(store.root, CurrentStateFile)
+}
+
+func (store *JournalStore) historyPath(operationID string) string {
+	return filepath.Join(store.root, HistoryDirectory, operationID+".json")
+}
+
+func (store *JournalStore) load(path string) (Journal, error) {
+	if store == nil {
+		return Journal{}, fmt.Errorf("journal store is nil")
+	}
+	if err := store.validatePrivateLayout(); err != nil {
+		return Journal{}, fmt.Errorf("%w: %v", ErrJournalCorrupt, err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Journal{}, ErrJournalNotFound
+		}
+		return Journal{}, fmt.Errorf("stat journal: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+		return Journal{}, ErrJournalCorrupt
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Journal{}, fmt.Errorf("read journal: %w", err)
+	}
+	var journal Journal
+	if err := decodeStrict(data, &journal); err != nil {
+		return Journal{}, fmt.Errorf("%w: %v", ErrJournalCorrupt, err)
+	}
+	if err := journal.Validate(); err != nil {
+		return Journal{}, fmt.Errorf("%w: %v", ErrJournalCorrupt, err)
+	}
+	return journal, nil
+}
+
+// validatePrivateLayout is intentionally strict after construction. The
+// constructor may establish the private directories, but later reads/writes
+// must refuse a chmod'ed directory or symlink instead of silently repairing a
+// privileged path that may have been replaced by another process.
+func (store *JournalStore) validatePrivateLayout() error {
+	if store == nil || store.root == "" {
+		return fmt.Errorf("journal store is not configured")
+	}
+	paths := []string{
+		store.root,
+		filepath.Join(store.root, HistoryDirectory),
+		filepath.Join(store.root, ReceiptDirectory),
+		filepath.Join(store.root, PlanDirectory),
+	}
+	if store.manifestCache {
+			paths = append(paths,
+				filepath.Join(store.root, ManifestDirectory),
+				filepath.Join(store.root, CompositionDirectory),
+				filepath.Join(store.root, DeploymentAssetDirectory),
+				filepath.Join(store.root, PreheatManifestDirectory),
+			filepath.Join(store.root, DeploymentSnapshotDirectory),
+		)
+	}
+	for _, path := range paths {
+		if err := validatePrivateDirectoryMode(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validatePrivateDirectoryMode(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		return fmt.Errorf("private upgrader directory must be a 0700 directory")
+	}
+	return nil
+}
+
+func decodeStrict(data []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("trailing JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
+func atomicWrite(path string, data []byte, mode os.FileMode) error {
+	directory := filepath.Dir(path)
+	base := filepath.Base(path)
+	temporary, err := os.OpenFile(filepath.Join(directory, "."+base+".tmp"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			// A leftover temporary file is not safe to reuse. Fall back to a
+			// unique name without touching the pre-existing path.
+			temporary, err = os.CreateTemp(directory, "."+base+".tmp-")
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+	// OpenFile applies the process umask before returning. Set the requested
+	// mode on the temporary handle so the renamed public override remains
+	// readable by the deployment user while private files stay restrictive.
+	if err := temporary.Chmod(mode.Perm()); err != nil {
+		_ = temporary.Close()
+		_ = os.Remove(temporary.Name())
+		return err
+	}
+	temporaryName := temporary.Name()
+	removeTemporary := true
+	defer func() {
+		if removeTemporary {
+			_ = os.Remove(temporaryName)
+		}
+	}()
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporaryName, path); err != nil {
+		return err
+	}
+	removeTemporary = false
+	// Avoid chmod'ing the destination after rename: a hostile replacement between
+	// those two syscalls could make chmod follow a symlink outside the private
+	// directory.
+	return syncDirectory(directory)
+}
+
+func ensurePrivateDirectory(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("upgrader directory path is required")
+	}
+	info, err := os.Lstat(path)
+	if err == nil {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("upgrader path must be a regular directory")
+		}
+		if err := os.Chmod(path, 0o700); err != nil {
+			return fmt.Errorf("secure upgrader directory: %w", err)
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat upgrader directory: %w", err)
+	}
+	// Create one component at a time after inspecting the parent. MkdirAll can
+	// follow a hostile pre-created symlink in a privileged deployment root.
+	parent := filepath.Dir(path)
+	parentInfo, parentErr := os.Lstat(parent)
+	if parentErr != nil {
+		return fmt.Errorf("stat upgrader parent: %w", parentErr)
+	}
+	if !parentInfo.IsDir() || parentInfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("upgrader parent must be a regular directory")
+	}
+	if err := os.Mkdir(path, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return fmt.Errorf("create upgrader directory: %w", err)
+	}
+	info, err = os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("stat upgrader directory: %w", err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("upgrader path must be a regular directory")
+	}
+	if err := os.Chmod(path, 0o700); err != nil {
+		return fmt.Errorf("secure upgrader directory: %w", err)
+	}
+	return nil
+}
+
+func syncDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	if err := directory.Sync(); err != nil {
+		_ = directory.Close()
+		return err
+	}
+	return directory.Close()
+}

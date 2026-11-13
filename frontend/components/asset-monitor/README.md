@@ -1,0 +1,29 @@
+# Asset monitor screen
+
+The launcher is a regular authenticated workbench route. It keeps selection across paged organization searches and lets users choose the palette before confirming. Confirmation opens a real, `noopener noreferrer` new-tab link containing selected organization IDs and the palette. Every dataset and refresh is scoped by that selection and the authenticated user. Changing selection uses a different query key and never reuses previous organization data.
+
+The screen is an explicit standalone authenticated canvas, not a public dashboard. `ProtectedAuthLayout` keeps session renewal and the upgrade boundary while omitting navigation chrome on the exact `/asset-monitor/screen/` route. All API access remains in hooks/services.
+
+The screen consumes five scoped palettes from `styles/themes/asset-monitor.css`: gold, ocean, violet, the original teal and black. `monitor.css` owns composition only. Shared typography, buttons and TianqiongMark inherit scoped product tokens. The launcher stores the preference locally and puts the chosen palette in the display URL, so each opened tab keeps its own selection even if another tab changes the preference. Older URLs without a palette use the saved preference; invalid or unavailable storage falls back to gold. Theme changes never modify data. The latest discoveries scroll continuously only when the list exceeds its viewport; motion pauses on hover/focus and reduced-motion users can scroll manually. Empty selections, provider gaps, empty organizations, initial errors, and stale refreshes have distinct states. Discovery charts represent actual daily new observations in Beijing time, not an invented inventory history. Risk counts mean recorded findings, not verified active exploitation or unresolved remediation status.
+
+The presentation is a quiet operations workspace: one compact brand/title header, an unboxed metric strip, a central map with composition/ports on the left and severity/technology on the right, then trends and recent discoveries. No decorative English eyebrows, numbered metric tiles, glowing edges or repeated promotional footer. Only the total inventory is the featured KPI. Severity uses a stacked distribution and explicit counts; the high/critical summary does not imply remediation status. Asset and risk discoveries use separate, clearly labelled plots with independent scales so low-volume risk changes remain readable. Their totals are sums of the displayed seven-day observations, never historical inventory estimates.
+
+The root owns a keyboard-focusable viewport-height scroll container. On desktop, the data workspace fills the height remaining below the header: the map row and lower charts share extra space instead of leaving a blank bottom area. Short or narrow windows scroll without clipping data or controls. There is no bottom organization-scope strip or explanatory footer. The map keeps full world geometry and uses neutral land, without an unconditional country highlight. Every selected marker exposes its pressed state, while geographic precision and freshness stay visible in the readout.
+
+The Domains KPI reports the subdomain category from the same scoped inventory used by asset composition, not root domains, target count, or a map-coverage percentage. A present but empty inventory means zero; older responses can use their existing asset-category/type projection. The latest-discovery list measures its rendered rows against the available viewport before enabling the marquee, so a taller display never scrolls or duplicates a list that already fits.
+
+The retained discovery marquee is the single bounded motion entry `motion-asset-monitor-recent-discoveries` in `foundation-exceptions.json`. It applies only to this list, with row-count timing, hover/focus pause, and static/manual reduced-motion behavior verified by the browser acceptance script.
+
+World geometry is bundled locally from `world-atlas`; the Asia-Pacific-centered equirectangular view fits all included land (excluding Antarctica) in the SVG. Country polygons and points share that projection. Recorded country attribution uses country centroids, public-IP lookups use the main accent, and DNS-derived estimates use dashed markers in a distinct color. Marker size encodes asset count, not traffic. DNS estimates use current public answers and do not assert the scanned IP or port state; the DNS legend retains that explanation as a tooltip. Coordinates are approximate; unsupported/missing geography is shown as unlocated. Old successful results remain labelled expired. No third-party map tiles, map API keys, credentials, or asset targets are sent from the browser to a map provider.
+
+The map supports wheel/pinch zoom, bounded dragging, zoom buttons and reset. Geographic paths and asset positions share one projection and transform. Markers and labels keep a stable on-screen size as the map zooms; label collision checks run in the current viewport and reveal city labels when selected or zoomed in. Off-screen markers leave the keyboard tab order. Provider city names are displayed with their country/region, while country-only coordinates never gain a fabricated city label.
+
+For Chinese displays the screen converts provider names to Simplified Chinese,
+or matches the provider's city and country against the locally bundled
+GeoNames/Natural Earth gazetteer using coordinates to distinguish homonyms.
+When the provider supplies no city or its name cannot be translated, a nearby same-country city is used only for
+an unambiguous close match and is explicitly marked as an inference. Country
+centroids never acquire a city. Unmatched names remain visibly unavailable in
+Chinese rather than displaying an English name or inventing a location. The
+browser sends no asset data to the gazetteer sources; attribution and data
+licenses are documented in `lib/asset-monitor-data/README.md`.

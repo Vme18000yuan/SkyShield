@@ -1,0 +1,10 @@
+ALTER TABLE ai_task DROP CONSTRAINT ai_task_worker_count_check;
+ALTER TABLE ai_task DROP CONSTRAINT ai_task_max_turns_check;
+ALTER TABLE ai_task DROP CONSTRAINT ai_task_timeout_seconds_check;
+ALTER TABLE ai_task ALTER COLUMN worker_count SET DEFAULT 0;
+ALTER TABLE ai_task ALTER COLUMN max_turns SET DEFAULT 0;
+ALTER TABLE ai_task ALTER COLUMN timeout_seconds SET DEFAULT 0;
+ALTER TABLE ai_task ADD CONSTRAINT ai_task_worker_count_check CHECK(worker_count BETWEEN 0 AND 50);
+ALTER TABLE ai_task ADD CONSTRAINT ai_task_max_turns_check CHECK(max_turns BETWEEN 0 AND 1000);
+ALTER TABLE ai_task ADD CONSTRAINT ai_task_timeout_seconds_check CHECK(timeout_seconds BETWEEN 0 AND 2147483647);
+ALTER TABLE ai_task ADD COLUMN plan_heartbeat_seconds INTEGER NOT NULL DEFAULT 600 CHECK(plan_heartbeat_seconds>=600);

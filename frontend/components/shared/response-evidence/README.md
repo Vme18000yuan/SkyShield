@@ -1,0 +1,50 @@
+# Response Evidence Panel
+
+`ResponseEvidencePanel` owns the shared tabbed inspection of captured HTTP
+response values. It is domain-neutral: callers provide response strings and
+localized labels, while search and website modules keep their own surrounding
+identity, metadata, screenshots, and navigation.
+
+## Contract
+
+- `body` is the default pane and `headers` is always the second tab.
+- `location` is rendered as the third tab only when its value is non-empty.
+- `emptyLabel` is required and is shown for an empty selected response value;
+  the panel does not silently replace missing content with a hyphen.
+- `showMetadata` gates the optional content-type/response-size footer. Search
+  cards keep those summaries in their own header badges; website relation
+  evidence enables the footer.
+- The panel intentionally has no copy action. Detail drawers retain their own
+  existing vertical response fields and copy behavior.
+- Long values stay inside the panel's bounded `ScrollArea` and use the shared
+  `textRole.code` typography with wrapping for long lines.
+  Apply the height cap to the actual viewport as well as the root: capping only
+  the root can clip an intrinsically tall viewport that has no scroll range,
+  leaving wheel scrolling and thumb dragging ineffective.
+- `ResponseEvidencePanelLoadingState` reuses the same panel frame, tab rhythm,
+  bounded body region, and optional metadata footer without exposing response
+  data. Consumers with a paired loading handoff should use it instead of
+  approximating the panel with fixed-height rectangles.
+
+Consumers must import the shared panel through `@/components/shared/response-evidence`
+and must not pass website/search domain objects or translation hooks into it.
+
+## Raw HTTP review
+
+`HttpRawMessage` and `HttpRawExchange` own the full HTTP text view used by
+vulnerability details and AI traffic. Callers pass protocol strings and labels.
+They preserve start lines, duplicate headers, empty lines and body text. Copy
+uses the original value, including CRLF; syntax coloring and line numbers must
+never enter copied text. Raw defaults to horizontal scrolling; wrapping is an
+explicit display toggle. Paired messages use the available container width.
+Body-only, incomplete and paged evidence must be labeled. Missing protocol,
+status, headers or body must not be inferred from a URL or from report prose.
+The existing response-body/headers panel and its default tab remain unchanged.
+
+## Browser Regression
+
+Run `pnpm run storybook` and open **Shared / Response Evidence Panel / Long Responses**.
+Its play function checks that all three tabs have a bounded viewport with a real
+scroll range and can reach their final lines. **Short Response** covers content
+that fits without scrolling. Thumb dragging should also be checked with a real
+pointer; DOM-only tests do not exercise browser layout or pointer capture.

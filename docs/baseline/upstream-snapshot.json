@@ -1,0 +1,704 @@
+{
+  "schema_version": 1,
+  "product": "天穹（SkyShield）",
+  "audit_period": "2026-10-28～2026-10-29",
+  "generated_at_utc": "2026-10-29T00:10:09.379737+00:00",
+  "artifact_status": "源码核查与实施设计基线；不表示产品已经融合或构建成功",
+  "repositories": [
+    {
+      "directory": "lunafox",
+      "commit": "6252e7455e3bb0d8ea7dcb1a2f01e10d9cd5fc8a",
+      "commit_date": "2026-10-22",
+      "working_tree_status": "",
+      "tracked_files": 4480,
+      "tracked_go_files": 2015,
+      "tracked_go_test_files": 715,
+      "selected_files": [
+        {
+          "path": "lunafox/README.md",
+          "sha256": "0f7abf2719fc0911e83face654b4a6fab27f8385d930be6dd67c9aa7ae804270",
+          "bytes": 6859
+        },
+        {
+          "path": "lunafox/LICENSE",
+          "sha256": "d4ba55ba09b82c171fa292a2dd5a74ae5a894b2a375430fbfff5196b885b533d",
+          "bytes": 713
+        },
+        {
+          "path": "lunafox/server/go.mod",
+          "sha256": "c5dda4ed6a82c988452374f30a3206a80f473b9ff9c830cef882a4d3cdb8d6b0",
+          "bytes": 7519
+        },
+        {
+          "path": "lunafox/frontend/package.json",
+          "sha256": "495480986470571264e05cff31a2b1a2cc2bc0733363a5aacf32c284928fc0a4",
+          "bytes": 6125
+        },
+        {
+          "path": "lunafox/frontend/pnpm-lock.yaml",
+          "sha256": "c69491d285aeacb091a820f0ba2df924caeb9a5a86d39aa993746c70525f63d0",
+          "bytes": 340714
+        },
+        {
+          "path": "lunafox/server/internal/modules/AGENTS.md",
+          "sha256": "2a9d0affecd4111c2975ab9b331db340386bd6e2c6f4daeea53c42ffe0bbb623",
+          "bytes": 1166
+        },
+        {
+          "path": "lunafox/server/internal/bootstrap/routes.go",
+          "sha256": "c247ad0b220d5759aae22480dd20c91be897479df4c27f12782832f5a6a7e426",
+          "bytes": 3757
+        },
+        {
+          "path": "lunafox/server/internal/bootstrap/wiring.go",
+          "sha256": "c174bab19add311071f3eb298019e22dd98954e1b7058a23ca589d849d95387a",
+          "bytes": 64185
+        },
+        {
+          "path": "lunafox/server/internal/middleware/auth.go",
+          "sha256": "650430fb002852dcb2dc08ade84cc3898a98d415b235f55cbf9e63be93c83dcc",
+          "bytes": 1759
+        },
+        {
+          "path": "lunafox/server/internal/auth/jwt.go",
+          "sha256": "67892e181c7ecb1398c636b50821d741de4112ba2ed66b61d447b02d32225d5a",
+          "bytes": 3319,
+          "anchors": [
+            {
+              "symbol_or_text": "type Claims struct",
+              "line": 17
+            }
+          ]
+        },
+        {
+          "path": "lunafox/server/internal/modules/identity/repository/persistence/user_auth.go",
+          "sha256": "5ee47891cac2512e0c8071bef8fe1ff8d1917508b1cc34e141e7f52228e3788b",
+          "bytes": 1353
+        },
+        {
+          "path": "lunafox/server/internal/modules/identity/router/user_routes.go",
+          "sha256": "7f34ab1d963dbe80cfede7ef79ffb7ee8ad9f9899ac6aa2bd2be6c4dafb40d3a",
+          "bytes": 703
+        },
+        {
+          "path": "lunafox/server/cmd/server/migrations/000001_init_schema.up.sql",
+          "sha256": "a69f5de1be0b3c0feac1edfc79dbc213e1cdbc7c4a726e98964e0b69c959e920",
+          "bytes": 86038,
+          "anchors": [
+            {
+              "symbol_or_text": "CREATE TABLE IF NOT EXISTS organization (",
+              "line": 114
+            },
+            {
+              "symbol_or_text": "CREATE TABLE IF NOT EXISTS organization_target (",
+              "line": 169
+            },
+            {
+              "symbol_or_text": "CREATE TABLE IF NOT EXISTS endpoint (",
+              "line": 708
+            },
+            {
+              "symbol_or_text": "CREATE TABLE IF NOT EXISTS host_port_mapping (",
+              "line": 646
+            }
+          ]
+        },
+        {
+          "path": "lunafox/server/cmd/server/migrations/000003_scheduled_scan_time_zone.up.sql",
+          "sha256": "b8927d69e7153e45ca3781185b6929cd8e121cf599cb2789905b4cb274d50a31",
+          "bytes": 365
+        },
+        {
+          "path": "lunafox/server/cmd/server/migrations/000008_widen_web_observation_numbers.up.sql",
+          "sha256": "feb833976c753ca5ae23888d1fb4707c3275535e3ef3fbf03d7d3f612922ff75",
+          "bytes": 897
+        },
+        {
+          "path": "lunafox/server/cmd/server/migrations/000009_agent_license.up.sql",
+          "sha256": "12581cde5e9f6b5c72a1854061ef94d223f5c0221ce6111afa5ef1fc2460d79b",
+          "bytes": 313
+        },
+        {
+          "path": "lunafox/server/cmd/server/migrations/manifest.json",
+          "sha256": "fc5ba3dc7d9a1d3ca3fba1445fe90d42a6590ae974ee04597bc84f22852e6f5c",
+          "bytes": 2666
+        },
+        {
+          "path": "lunafox/server/cmd/server/migrations/policy.json",
+          "sha256": "53331d701d9b7cbac5f6eab5cd02d7b6859b0e3959cee4c1cb1dad636567aefc",
+          "bytes": 582
+        },
+        {
+          "path": "lunafox/server/cmd/server/migrations/README.md",
+          "sha256": "0801405514ced6b5d4fab2db63bbb990edb7acbcc1f6b790f895fffdcbc48a1e",
+          "bytes": 19558
+        },
+        {
+          "path": "lunafox/server/internal/modules/asset/application/README.md",
+          "sha256": "ceac2f9b878657055bea54d0015ac6e477e87f4222383885d2570f872ddf6860",
+          "bytes": 10779
+        },
+        {
+          "path": "lunafox/server/internal/modules/asset/application/website_command.go",
+          "sha256": "73a45ea7b74f3cb36314beb537537bd5b2af886c274e31316feb2355fdae33f6",
+          "bytes": 7887
+        },
+        {
+          "path": "lunafox/server/internal/modules/asset/router/routes.go",
+          "sha256": "9a270789ddbf22b3bcd2ecd7853c94d610576edd08262d241167aa9fb7de5ee3",
+          "bytes": 3132
+        },
+        {
+          "path": "lunafox/server/internal/modules/resultingest/application/facade_result_ingest.go",
+          "sha256": "fe0d006e061a720a4c5fe726c7fc50415bf322b6f9364143dd716249cece0323",
+          "bytes": 5883,
+          "anchors": [
+            {
+              "symbol_or_text": "func (facade *ResultIngestFacade) Ingest",
+              "line": 49
+            }
+          ]
+        },
+        {
+          "path": "lunafox/server/internal/modules/resultingest/application/result_ingest_inputs.go",
+          "sha256": "3d78c8ed46cf8d406f4a00f52148f1d3d7dc17d20eff9b5c46592e6717005364",
+          "bytes": 1329
+        },
+        {
+          "path": "lunafox/server/internal/bootstrap/wiring/resultingest/wiring_resultingest_materialization_coordinator.go",
+          "sha256": "e826a61ebc0748335dd5e578b5428514bd945bac46c42f46847819e444671a75",
+          "bytes": 4304,
+          "anchors": [
+            {
+              "symbol_or_text": "func lockActiveResultExecution",
+              "line": 63
+            }
+          ]
+        },
+        {
+          "path": "lunafox/server/internal/bootstrap/wiring/snapshot/wiring_snapshot_website_asset_sync_adapter.go",
+          "sha256": "db87493a16ad88b7db969e983c79d385d8c30d911b0196a7c4dab58324a0a620",
+          "bytes": 742
+        },
+        {
+          "path": "lunafox/server/internal/modules/scheduledscan/application/scheduler.go",
+          "sha256": "9b7005277b100ea5422d849568bd827098ef88adad998ce4cf2f86fb345e948c",
+          "bytes": 7882
+        },
+        {
+          "path": "lunafox/server/internal/modules/scheduledscan/repository/scheduled_scan_execution.go",
+          "sha256": "f1a7c2465302c30093d1a832f7476bdb13846f28b1b9b5b173a3acd0c3acce5b",
+          "bytes": 18013
+        },
+        {
+          "path": "lunafox/server/internal/mcp/README.md",
+          "sha256": "5e7bc2abc935e3b14d07e8d2bdfe73233029a7694a1aeb0e5ce28c740f159a90",
+          "bytes": 6369
+        },
+        {
+          "path": "lunafox/server/internal/agentlicense/README.md",
+          "sha256": "869267faeef1f9f66cfdf3fa2aee1039a871bd455101c6421f06111b7060f4c2",
+          "bytes": 1712
+        },
+        {
+          "path": "lunafox/contracts/results/observed_url.go",
+          "sha256": "495baac3c6f0c2a78757e3572f101f1975409b268439a77dac5c91bc4d6af200",
+          "bytes": 4699
+        },
+        {
+          "path": "lunafox/contracts/results/registry.go",
+          "sha256": "abb98d594b8e97f808e7d1cbb84f6c9c488ef11d1ad61d9b2176c0657915802d",
+          "bytes": 35466
+        },
+        {
+          "path": "lunafox/frontend/components/app-sidebar.tsx",
+          "sha256": "d6a47a90d4c0fa3ba8db834ad8b7ae63032030139c8383f957f653aca30f15ec",
+          "bytes": 19894
+        },
+        {
+          "path": "lunafox/frontend/app/globals.css",
+          "sha256": "fc2a90894318a6f32c8c1e4c8a10ea114c5fade723d3dce7927babe8e86b94a3",
+          "bytes": 32707
+        },
+        {
+          "path": "lunafox/frontend/README.md",
+          "sha256": "94db4ba48290073e50fbdba1173eeae1206110caf9b08064c092f0e35e3c5367",
+          "bytes": 3773
+        },
+        {
+          "path": "lunafox/frontend/components/ui/README.md",
+          "sha256": "81054db371a134beb3be85f2543c82e603c7eb53525c363bdb5f161c82ca3c44",
+          "bytes": 118941
+        },
+        {
+          "path": "lunafox/frontend/services/README.md",
+          "sha256": "b4d5a51c347850e10dc4360051e44a80152e5d46c009c2ccbca729311db3dccb",
+          "bytes": 11883
+        },
+        {
+          "path": "lunafox/frontend/lib/api-client.ts",
+          "sha256": "4c5d12a6ace4600ff54fbc537f68d873fa28a3c5d1cda365f2e207f360dceecb",
+          "bytes": 14475
+        },
+        {
+          "path": "lunafox/frontend/hooks/use-notification-sse.ts",
+          "sha256": "6f320de20ae21733c6d3e0ff9de04edb01a46afb21b3fa0b4170c4d1d83ac833",
+          "bytes": 11225
+        },
+        {
+          "path": "lunafox/server/Makefile",
+          "sha256": "5365645159cd49a13b7636526944152fa3d25bac025768e2116513997ebf0dc1",
+          "bytes": 3516
+        },
+        {
+          "path": "lunafox/server/Dockerfile",
+          "sha256": "a097dbdc20d2f60d313dd169b6a2d6d1803776e94070ab6acd9af5be4d9387c6",
+          "bytes": 2385
+        },
+        {
+          "path": "lunafox/docker/agent/Dockerfile",
+          "sha256": "7a3b440c3cc79c9c1d75099b07afacabec805dfe4117862e7faa0804f66f9107",
+          "bytes": 2353
+        },
+        {
+          "path": "lunafox/compose.yaml",
+          "sha256": "b3adbf4b1bb448c01ba2838191f2f8c220d83054995797ba7082b1f3a57cf468",
+          "bytes": 18490
+        }
+      ],
+      "scan_agent_source_available": false,
+      "scan_agent_artifacts": [
+        "lunafox/agent/bin/sha256-e3d7dcbc55bf8652650a1543d1bfb9262fddf369d3fb4e544e9988896f96e96e"
+      ],
+      "license_scope_note": "LICENSE 声明 GPL-3.0-only 及特定适用范围，明确排除闭源 Agent 等材料；Server/Frontend 完整授权范围另行核实。"
+    },
+    {
+      "directory": "ARTEX",
+      "commit": "e740334b9042d6da64156b0adb37a293117e140e",
+      "commit_date": "2026-10-26",
+      "working_tree_status": "",
+      "tracked_files": 684,
+      "tracked_go_files": 387,
+      "tracked_go_test_files": 186,
+      "selected_files": [
+        {
+          "path": "ARTEX/README.md",
+          "sha256": "7a0a2a71a74c3607c59460d0db372ad1e9e239dc6f9a9e390782835cd82abcba",
+          "bytes": 38382
+        },
+        {
+          "path": "ARTEX/LICENSE",
+          "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0",
+          "bytes": 34523
+        },
+        {
+          "path": "ARTEX/web/LICENSE",
+          "sha256": "d4f2f6115637639342e10780a8c4ebf4ea54239662aa362554ede12fe1d0beaa",
+          "bytes": 1076
+        },
+        {
+          "path": "ARTEX/go.mod",
+          "sha256": "9ccdf13f66e2380714fbf268eacaaf687f3d143c13a2c2a7939cd4761fe0c757",
+          "bytes": 2631
+        },
+        {
+          "path": "ARTEX/go.sum",
+          "sha256": "a5812cd2a1491f9ddaf67162db1ae6a727bf92696406799d09876674768e0f4a",
+          "bytes": 14291
+        },
+        {
+          "path": "ARTEX/web/package.json",
+          "sha256": "bda9836eee82e8e9ae4d5a86dcf61f5b5d97c5f1905555e5ca9f27469a176b13",
+          "bytes": 2332
+        },
+        {
+          "path": "ARTEX/web/package-lock.json",
+          "sha256": "517c4b6b5dc0fb4dff99cd8bf88cf9217fd359bb550a88a496a31db7254cdeff",
+          "bytes": 406230
+        },
+        {
+          "path": "ARTEX/agent/chat.go",
+          "sha256": "e4c071c0fd68595359a55f4515736961c55afadf0ae598ca39f40b01fbe19025",
+          "bytes": 9081,
+          "anchors": [
+            {
+              "symbol_or_text": "type ChatAgent struct",
+              "line": 25
+            },
+            {
+              "symbol_or_text": "func (c *ChatAgent) Chat",
+              "line": 105
+            }
+          ]
+        },
+        {
+          "path": "ARTEX/agent/mainagent.go",
+          "sha256": "115a437e4187b9f7d201c2c10b976813c8a3bac1e263b3c2280358f912b16218",
+          "bytes": 12551
+        },
+        {
+          "path": "ARTEX/agent/goals.go",
+          "sha256": "78702ba4026dce389c93b184894339fce483e329f662cf82103a7255d03c4fe7",
+          "bytes": 10755
+        },
+        {
+          "path": "ARTEX/agent/planner.go",
+          "sha256": "d2d9f611d9beb38f75eef553067f26198a580018d36053e475f10c00e1b44fc6",
+          "bytes": 33698
+        },
+        {
+          "path": "ARTEX/agent/worker.go",
+          "sha256": "3b23500bc9025876f1c06fdfd3d60b43965de7f62b718b3d010ce3c67c62b0cf",
+          "bytes": 31619
+        },
+        {
+          "path": "ARTEX/agent/assembly.go",
+          "sha256": "9940bdda81f9e1830b7e5032bb2ab7a6a850b5b701fae2cc4fdc753d42c20181",
+          "bytes": 4279,
+          "anchors": [
+            {
+              "symbol_or_text": "var ToolAugment",
+              "line": 37
+            }
+          ]
+        },
+        {
+          "path": "ARTEX/agent/toolcatalog.go",
+          "sha256": "d565e365670df88dd485e601e9b9abd61af7c8ded6c4b9df0a0658cde06f5afc",
+          "bytes": 8393,
+          "anchors": [
+            {
+              "symbol_or_text": "var ToolResolve",
+              "line": 107
+            }
+          ]
+        },
+        {
+          "path": "ARTEX/agent/prompt.go",
+          "sha256": "1c9766ad1f59c2528c00e5258db54fb58f6576e7c3d2bac2d6e41f468a72bbc4",
+          "bytes": 2760,
+          "anchors": [
+            {
+              "symbol_or_text": "var PromptOverride",
+              "line": 13
+            }
+          ]
+        },
+        {
+          "path": "ARTEX/agent/runinfo.go",
+          "sha256": "04516a6a97c73c9708bee600616230ad22fa8ada75a0e0302d5590258109323a",
+          "bytes": 1660
+        },
+        {
+          "path": "ARTEX/agent/provider.go",
+          "sha256": "1d8b7b2acc97cf31f869a22b50ee45c1a8840b7499e78afacb09e202b3ff4838",
+          "bytes": 21686
+        },
+        {
+          "path": "ARTEX/agent/compaction.go",
+          "sha256": "4b2aff279786e516e89846f8d41589336e21f7fba5604ff8c18bffe6fb164d16",
+          "bytes": 17672
+        },
+        {
+          "path": "ARTEX/agent/noa.go",
+          "sha256": "54e02ede1119c0bc9b37dad33f9acab2f1a80fe62a6fe420286241cc6f385dd8",
+          "bytes": 2055
+        },
+        {
+          "path": "ARTEX/agent/tools.go",
+          "sha256": "c7a30b809f5462216b768d82c660840c54349e42d21a96c1154819d03edfcc66",
+          "bytes": 94245
+        },
+        {
+          "path": "ARTEX/agent/tools_insert.go",
+          "sha256": "44c037754d3d6238bd90977f9c8488cef816422ead3cc3023d2bca54c89559ef",
+          "bytes": 28793
+        },
+        {
+          "path": "ARTEX/server/server.go",
+          "sha256": "4045562cf78dc0aee9e48508634e786b9f4f7408266ff79eadfcba6ef7ac35c2",
+          "bytes": 156793
+        },
+        {
+          "path": "ARTEX/server/auth.go",
+          "sha256": "8a212a23a76afde016ee0c2be9fa09f0aed51eac3dfb8b1dccf9b9e994940208",
+          "bytes": 9439
+        },
+        {
+          "path": "ARTEX/server/engine.go",
+          "sha256": "a187b0a81e8abfaa8dd4b29567f94036f12dfa2493e11e641595e4d0408a4165",
+          "bytes": 54120,
+          "anchors": [
+            {
+              "symbol_or_text": "type Engine struct",
+              "line": 93
+            }
+          ]
+        },
+        {
+          "path": "ARTEX/server/manager.go",
+          "sha256": "4e802633bd2e2b5370b19552c0410cd9219e2ebd6ea960a7678f97b504a9d0c6",
+          "bytes": 68688
+        },
+        {
+          "path": "ARTEX/server/assembly.go",
+          "sha256": "63333b89d6c5bf40ff756762151003b3f9f06706483c630c32fad7612fc7ef31",
+          "bytes": 14556
+        },
+        {
+          "path": "ARTEX/server/conversations.go",
+          "sha256": "9ba5da52c1d883396b977c0a307ae81ea73d038da0090bae0523b33907c103df",
+          "bytes": 29780
+        },
+        {
+          "path": "ARTEX/server/commands.go",
+          "sha256": "6203a2c9d8ab0459d703c658f499898534438d2b765d8e73fd463e0781946d28",
+          "bytes": 4921
+        },
+        {
+          "path": "ARTEX/server/customtool.go",
+          "sha256": "dee2ffdbf46e5735e7f02c24b40a7cfb4d4bdd44885a20e5cbf66942ffe9b841",
+          "bytes": 17461
+        },
+        {
+          "path": "ARTEX/server/calendar_schedule.go",
+          "sha256": "85c091b05d5fcc49d21e5f443b839378df0a6d897374b2abf4f8b688cd001a78",
+          "bytes": 8428,
+          "anchors": [
+            {
+              "symbol_or_text": "func (sc *Scheduler) fireTaskSchedulesAt",
+              "line": 195
+            }
+          ]
+        },
+        {
+          "path": "ARTEX/server/scheduler.go",
+          "sha256": "bfd58863bcbefb8d96ff6537dc7f148057223dfa0b818f4255a1ad103dd27a52",
+          "bytes": 11455
+        },
+        {
+          "path": "ARTEX/server/schedules.go",
+          "sha256": "fd39b5e07dd370f9a0c1c2a8c335410d5775da73a0e50d76ec1c91d67f3c9568",
+          "bytes": 7983
+        },
+        {
+          "path": "ARTEX/server/mcpdiscover.go",
+          "sha256": "7fddf6feb93f36a6e50cdbaad7be52df0d597ba481f45bdefeb41c167785012b",
+          "bytes": 2811
+        },
+        {
+          "path": "ARTEX/server/task_llm.go",
+          "sha256": "3f0c142003243df7f0c8069a9e9b1cffe140fdfb756675f6da00a45ef0190901",
+          "bytes": 28400
+        },
+        {
+          "path": "ARTEX/server/task_templates.go",
+          "sha256": "831f996411ac64bb126eded6ecc177f95657b43c77c923be6c46ad0c652ffa93",
+          "bytes": 7344
+        },
+        {
+          "path": "ARTEX/server/task_archives.go",
+          "sha256": "fec95e9ff83154a8a024b7b2394d18b4a94516befb1b0ea35cd58691edfa6b56",
+          "bytes": 21085
+        },
+        {
+          "path": "ARTEX/server/task_assets.go",
+          "sha256": "01325e9086b5bedbe8ed6a3c25ac0fb22e0a2f0fb5d9c8b12e0a0887350c6451",
+          "bytes": 2991
+        },
+        {
+          "path": "ARTEX/server/task_intercept.go",
+          "sha256": "6b9948a39ca5ab97c90c5cfdf90e74b632800261a00e16c8d607867ebd80af1b",
+          "bytes": 4751
+        },
+        {
+          "path": "ARTEX/server/intelligence.go",
+          "sha256": "8a11a8d2490676e551ab5cf96402952a47eac68ef21f5292e476589d9fe9934c",
+          "bytes": 3382
+        },
+        {
+          "path": "ARTEX/server/skill_zip.go",
+          "sha256": "70c130787619d0ca4de0c6459d9b0d9632a3cfac68ed66f3ff77946cf5209ca8",
+          "bytes": 4324
+        },
+        {
+          "path": "ARTEX/server/sync_scopesentry.go",
+          "sha256": "e4664d2834db8715a0e089bc4956cb23cd1a7db67e2b3dc98e4d986ae72112ab",
+          "bytes": 14750
+        },
+        {
+          "path": "ARTEX/db/db.go",
+          "sha256": "05a8955ba9c4d592aa07cb8001b99a826cc55994650001103b3310d796c62e13",
+          "bytes": 26121
+        },
+        {
+          "path": "ARTEX/db/schema.sql",
+          "sha256": "3034b392f91cfdab74f91bcf8916688b994913cb7ebfae49d11fdbdeb1ad29bf",
+          "bytes": 91659,
+          "anchors": [
+            {
+              "symbol_or_text": "CREATE TABLE IF NOT EXISTS assets (",
+              "line": 40
+            },
+            {
+              "symbol_or_text": "CREATE TABLE IF NOT EXISTS tasks (",
+              "line": 505
+            },
+            {
+              "symbol_or_text": "CREATE TABLE IF NOT EXISTS task_schedules (",
+              "line": 1042
+            },
+            {
+              "symbol_or_text": "CREATE TABLE IF NOT EXISTS conversations (",
+              "line": 963
+            }
+          ]
+        },
+        {
+          "path": "ARTEX/db/assets.go",
+          "sha256": "7f3871305145b3927597cdc2df1e758a638b2b6d7c40bc52c2bdcd1ce5afa0dc",
+          "bytes": 50066,
+          "anchors": [
+            {
+              "symbol_or_text": "func normalizeURL",
+              "line": 164
+            },
+            {
+              "symbol_or_text": "func (s *AssetStore) UpsertEndpoint",
+              "line": 963
+            }
+          ]
+        },
+        {
+          "path": "ARTEX/db/nkey.go",
+          "sha256": "64b55983d9e4f52f24939843468eee24d35ca92b09507826d69b95bcc7ed62d0",
+          "bytes": 3973
+        },
+        {
+          "path": "ARTEX/db/asset_dsl.go",
+          "sha256": "76302fb992bcf373c47c044e41c86b0fe242cc438e44db68a6bed12d7b410373",
+          "bytes": 17448
+        },
+        {
+          "path": "ARTEX/db/task_scope.go",
+          "sha256": "b9964a140d218b17723cde3e7385d2f8708525ff340dd310dfb14fe8cdf84302",
+          "bytes": 21042,
+          "anchors": [
+            {
+              "symbol_or_text": "func (s *AssetStore) TaskCoverage",
+              "line": 328
+            }
+          ]
+        },
+        {
+          "path": "ARTEX/db/task_assets.go",
+          "sha256": "943c09679595efe17bd0de93d3846f04a326cd489122c3a794482d5525b3145e",
+          "bytes": 14468
+        },
+        {
+          "path": "ARTEX/db/conversation.go",
+          "sha256": "327cecd36d54c728c08dc1fc739550f5279d9ab8a94451aff810f49c8e2d4d26",
+          "bytes": 11538
+        },
+        {
+          "path": "ARTEX/db/commands.go",
+          "sha256": "2fd0f6713c5bfe2b0ffb408070d226aa952216c68f1517a8f5852f516f588668",
+          "bytes": 11764,
+          "anchors": [
+            {
+              "symbol_or_text": "const llmRecordsSchema",
+              "line": 156
+            },
+            {
+              "symbol_or_text": "func (d *DB) ListCommands",
+              "line": 83
+            }
+          ]
+        },
+        {
+          "path": "ARTEX/db/llm_usage.go",
+          "sha256": "ae3c52a13a0640579f893e906e6c4d3164aff6594b7ae8c49079add58ee25bd6",
+          "bytes": 11630,
+          "anchors": [
+            {
+              "symbol_or_text": "const llmUsageSchema",
+              "line": 29
+            }
+          ]
+        },
+        {
+          "path": "ARTEX/db/schedules.go",
+          "sha256": "8a92c36d5b1bbae6033a404550702b8e963cf139fedb7f9591cf379a1193d077",
+          "bytes": 14450
+        },
+        {
+          "path": "ARTEX/db/findings.go",
+          "sha256": "a4b643f3263d0e7e14a84958670b9149e695f472ac8e1c728d777e6e627c2b32",
+          "bytes": 29547
+        },
+        {
+          "path": "ARTEX/db/credentials.go",
+          "sha256": "baeb9ad81ae0f5ed8e61e1a807a1eb4a8c417d1946fd0cf019e89b79e6ab1254",
+          "bytes": 9210
+        },
+        {
+          "path": "ARTEX/db/testmain_test.go",
+          "sha256": "64331ed5a9428f788b378ea01583b1ad8ca85e9935ec98cca78114d499f3d089",
+          "bytes": 922
+        },
+        {
+          "path": "ARTEX/llmpool/pool.go",
+          "sha256": "eb2d2487a13f776bc45747f3c31ed2c92787444fdfa32a021a582487a548e922",
+          "bytes": 10446
+        },
+        {
+          "path": "ARTEX/traffic/traffic.go",
+          "sha256": "44f4edec8b8106ccde90a0b898c93769c834e4f68d34581fb31fb8d262aa734d",
+          "bytes": 78921
+        },
+        {
+          "path": "ARTEX/web/src/lib/api.ts",
+          "sha256": "5e9ab55f0a2bee6153eaf04e19849b98c5ee567b8cea580b5bdc722db735b165",
+          "bytes": 72366
+        },
+        {
+          "path": "ARTEX/web/src/app/(main)/function/commands/page.tsx",
+          "sha256": "c9c3d1cd2b9f1f7b9bb61aa1534a04dfc387b8c2f4b3c46f197e1ffa257500ab",
+          "bytes": 16026
+        },
+        {
+          "path": "ARTEX/web/src/app/(main)/function/schedules/page.tsx",
+          "sha256": "c0c2006faf12954aa24a481bfec4f64f0c7dbcc09a2388f4aae1a1c10cc7e592",
+          "bytes": 38511
+        },
+        {
+          "path": "ARTEX/web/src/app/(main)/function/assets/page.tsx",
+          "sha256": "b4b57eefc46595e5463749a6bd4208aff9b4569f3594e08c15b346660b6a3afd",
+          "bytes": 48328
+        },
+        {
+          "path": "ARTEX/web/src/app/(main)/chat/page.tsx",
+          "sha256": "52af93b786636e708e32fcaa10922dda33d410fe15680af8d37921cd11a2b179",
+          "bytes": 62012
+        },
+        {
+          "path": "ARTEX/Dockerfile",
+          "sha256": "a1e4dff7340ff41dbbda1fab5505b70f35c87c427c5aeab7ed9dcd8dc90005e4",
+          "bytes": 2562
+        },
+        {
+          "path": "ARTEX/docker-compose.yml",
+          "sha256": "e3a858d39ec60a71bdc6f2155835ba00fa708cf6fab917772aaac55b30df1f33",
+          "bytes": 1552
+        }
+      ],
+      "license_scope_note": "根 LICENSE 为 AGPL-3.0；web/LICENSE 保留模板的 MIT 声明。"
+    }
+  ],
+  "limitations": [
+    "本模块 import 目录存在不代表编译通过。",
+    "LunaFox 扫描 Agent 为已签名二进制；本地没有其源码。",
+    "已核对本地许可声明，但没有据此断言完整再分发授权。",
+    "第三方 Norma 内部实现尚未通过兼容工具链编译和运行核验。"
+  ]
+}

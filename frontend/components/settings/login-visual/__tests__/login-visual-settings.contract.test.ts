@@ -1,0 +1,62 @@
+import { describe, expect, it } from "vitest"
+import { readFileSync } from "node:fs"
+import path from "node:path"
+
+const workspace = readFileSync(path.resolve(process.cwd(), "components/settings/login-visual/login-visual-settings-workspace.tsx"), "utf8")
+const loginPage = readFileSync(path.resolve(process.cwd(), "components/auth/visual-split-login.tsx"), "utf8")
+const route = readFileSync(path.resolve(process.cwd(), "app/settings/login-visual/page.tsx"), "utf8")
+const sidebar = readFileSync(path.resolve(process.cwd(), "components/app-sidebar.tsx"), "utf8")
+
+describe("login visual settings composition", () => {
+  it("exposes the System Settings route from the shared sidebar", () => {
+    expect(route).toContain('import { LoginVisualSettingsWorkspace }')
+    expect(route).toContain("return <LoginVisualSettingsWorkspace />")
+    expect(sidebar).toContain("title: t('loginVisual')")
+    expect(sidebar).toContain('url: "/settings/login-visual/"')
+  })
+
+  it("keeps replacement, draft publication, and recovery in the workspace", () => {
+    expect(workspace).toContain("<VisualSplitLogin")
+    expect(workspace).toContain("visual: previewVisualFor(asset)")
+    expect(workspace).toContain("useLoginPreviewScale")
+    expect(workspace).toContain("COMPACT_FULL_PAGE_SHELL_CLASS")
+    expect(workspace).toContain("COMPACT_CONTENT_GUTTER_CLASS")
+    expect(workspace).toContain('import { ScrollArea } from "@/components/ui/scroll-area"')
+    expect(workspace).toContain("COMPACT_PAGE_SCROLL_AREA_CLASS")
+    expect(workspace).toContain("COMPACT_PAGE_SCROLL_AREA_CONTENT_CLASS")
+    expect(workspace).toContain("COMPACT_PAGE_SCROLL_AREA_VIEWPORT_CLASS")
+    expect(workspace).toContain('type="always"')
+    expect(workspace).not.toContain("scrollbar-gutter:stable")
+    expect(workspace).toContain('className="flex w-full flex-1 flex-col justify-center"')
+    expect(workspace).toContain('role="button"')
+    expect(workspace).toContain('accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"')
+    expect(workspace).toContain("URL.createObjectURL(file)")
+    expect(workspace).toContain("URL.revokeObjectURL")
+    expect(workspace).toContain("useLoginVisualPreview")
+    expect(workspace).toContain("acceptedPreview.source")
+    expect(workspace).toContain("upload.mutate(file")
+    expect(workspace).toContain("onError: () =>")
+    expect(workspace).toContain("publish.mutate()")
+    expect(workspace).toContain("restore.mutate()")
+  })
+
+  it("keeps the first-screen preview behind the shared loading handoff", () => {
+    expect(workspace).toContain("HiddenReadinessRouteBoundary")
+    expect(workspace).toContain('owner="login-visual-settings-page-route"')
+    expect(workspace).toContain('getLoadingStructureSlotAttributes("login-visual-header")')
+    expect(workspace).toContain('getLoadingStructureSlotAttributes("login-visual-preview")')
+    expect(workspace).toContain('getLoadingStructureSlotAttributes("login-visual-publication-controls")')
+    expect(workspace).toContain("onReady={onReady}")
+    expect(workspace).toContain("deferInitialSkeleton={deferInitialSkeleton}")
+  })
+
+  it("reuses the full desktop login page and only layers the replacement control onto its visual panel", () => {
+    expect(loginPage).toContain("preview?: VisualSplitLoginPreview")
+    expect(loginPage).toContain("preview?.visualControl")
+    // Preview stays bounded; public login owns scrolling on short viewports.
+    expect(loginPage).toContain('preview ? "h-full min-h-0 overflow-hidden" : "h-svh overflow-x-hidden overflow-y-auto"')
+    expect(loginPage).toContain("product-login__preview-control")
+    expect(loginPage).toContain('preview && "pointer-events-none"')
+    expect(loginPage).toContain('id={preview ? "login-visual-preview-email" : "email"}')
+  })
+})

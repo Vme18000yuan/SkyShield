@@ -1,0 +1,94 @@
+"use client"
+
+import * as React from "react"
+import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area"
+
+import { cn } from "@/lib/utils"
+
+type ScrollAreaType = "auto" | "always" | "scroll" | "hover"
+
+type ScrollAreaStyle = React.CSSProperties & {
+  "--scroll-hide-delay"?: string
+}
+
+type ScrollAreaProps = ScrollAreaPrimitive.Root.Props & {
+  type?: ScrollAreaType
+  scrollHideDelay?: number
+  viewportClassName?: string
+  contentClassName?: string
+  contentStyle?: React.CSSProperties
+}
+
+const ScrollArea = React.forwardRef<
+  React.ElementRef<typeof ScrollAreaPrimitive.Root>,
+  ScrollAreaProps
+>(
+  (
+    {
+      className,
+      children,
+      viewportClassName,
+      contentClassName,
+      contentStyle,
+      type: scrollAreaType = "scroll",
+      scrollHideDelay = 600,
+      style,
+      ...props
+    },
+    ref
+  ) => (
+    <ScrollAreaPrimitive.Root
+      ref={ref}
+      data-slot="scroll-area"
+      data-scroll-type={scrollAreaType}
+      className={cn("relative overflow-hidden", className)}
+      style={
+        {
+          "--scroll-hide-delay": `${scrollHideDelay}ms`,
+          ...style,
+        } as ScrollAreaStyle
+      }
+      {...props}
+    >
+      <ScrollAreaPrimitive.Viewport data-slot="scroll-area-viewport" className={cn("h-full w-full rounded-[inherit]", viewportClassName)}>
+        <ScrollAreaPrimitive.Content data-slot="scroll-area-content" className={contentClassName} style={contentStyle}>{children}</ScrollAreaPrimitive.Content>
+      </ScrollAreaPrimitive.Viewport>
+      <ScrollBar scrollAreaType={scrollAreaType} />
+      <ScrollAreaPrimitive.Corner data-slot="scroll-area-corner" />
+    </ScrollAreaPrimitive.Root>
+  )
+)
+ScrollArea.displayName = "ScrollArea"
+
+type ScrollBarProps = ScrollAreaPrimitive.Scrollbar.Props & {
+  scrollAreaType?: ScrollAreaType
+}
+
+const ScrollBar = React.forwardRef<
+  React.ElementRef<typeof ScrollAreaPrimitive.Scrollbar>,
+  ScrollBarProps
+>(({ className, orientation = "vertical", scrollAreaType = "scroll", keepMounted, ...props }, ref) => (
+  <ScrollAreaPrimitive.Scrollbar
+    ref={ref}
+    data-slot="scroll-area-scrollbar"
+    orientation={orientation}
+    keepMounted={keepMounted ?? scrollAreaType === "always"}
+    className={cn(
+      "group/scrollbar flex touch-none select-none opacity-0 transition-[opacity,background-color] delay-(--scroll-hide-delay) duration-200 data-[has-overflow-y]:[--scrollbar-axis:vertical] data-[has-overflow-x]:[--scrollbar-axis:horizontal] data-[hovering]:delay-0 data-[scrolling]:delay-0 data-[scrolling]:opacity-100",
+      scrollAreaType === "always" &&
+        "data-[has-overflow-y]:opacity-100 data-[has-overflow-x]:opacity-100",
+      scrollAreaType === "hover" && "data-[hovering]:opacity-100",
+      orientation === "vertical" &&
+        "h-full w-2 bg-transparent hover:bg-(--scrollbar-track) active:bg-(--scrollbar-track) data-[scrolling]:bg-(--scrollbar-track) border-l border-l-transparent p-px",
+      orientation === "horizontal" &&
+        "h-2 flex-col bg-transparent hover:bg-(--scrollbar-track) active:bg-(--scrollbar-track) data-[scrolling]:bg-(--scrollbar-track) border-t border-t-transparent p-px",
+      className
+    )}
+    {...props}
+  >
+    <ScrollAreaPrimitive.Thumb data-slot="scroll-area-thumb" className="relative flex-1 rounded-full bg-(--scrollbar-thumb) transition-colors duration-200 group-hover/scrollbar:bg-(--scrollbar-thumb-hover) active:bg-(--scrollbar-thumb-active)" />
+  </ScrollAreaPrimitive.Scrollbar>
+))
+ScrollBar.displayName = "ScrollBar"
+
+export { ScrollArea, ScrollBar }

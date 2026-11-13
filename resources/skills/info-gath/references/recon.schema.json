@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "info-gath recon output 2.0",
+  "type": "object",
+  "required": ["schema_version", "target", "target_id", "status", "mode", "stats", "steps", "coverage", "ips", "networks", "services", "ports", "axfr", "evidence_errors"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "target": {"type": "string"},
+    "target_id": {"type": "string"},
+    "status": {"enum": ["completed", "partial", "failed", "interrupted", "unknown"]},
+    "mode": {"enum": ["fast", "normal", "deep", "unknown"]},
+    "stats": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "steps": {"type": "object", "additionalProperties": {"type": "object", "required": ["status"], "properties": {"status": {"enum": ["running", "success", "partial", "failed", "timeout", "skipped", "interrupted"]}}}},
+    "coverage": {"type": "object"},
+    "ips": {"type": "array", "items": {"type": "string"}},
+    "networks": {"type": "array", "items": {"type": "string"}},
+    "ports": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "object", "required": ["port", "protocol", "service", "version"]}}},
+    "services": {"type": "array", "items": {"type": "object", "required": ["ip", "port", "protocol", "state", "evidence"], "properties": {"ip": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535}, "protocol": {"enum": ["tcp", "udp"]}, "state": {"const": "open"}, "evidence": {"type": "string"}}}},
+    "axfr": {"type": "object"},
+    "evidence_errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

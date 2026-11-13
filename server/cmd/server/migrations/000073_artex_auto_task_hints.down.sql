@@ -1,0 +1,23 @@
+-- DESTRUCTIVE TEST TEARDOWN ONLY.
+DROP TRIGGER IF EXISTS tq_auto_hint_event ON public.ai_task_human_event;
+DROP TRIGGER IF EXISTS tq_guard_human_task_event ON public.ai_task_human_event;
+CREATE TRIGGER tq_guard_human_task_event BEFORE INSERT OR UPDATE ON public.ai_task_human_event FOR EACH ROW EXECUTE FUNCTION tianqiong_ai.guard_human_task_event();
+DROP TRIGGER IF EXISTS tq_auto_hint_anchor ON tianqiong_ai.exploration_anchors;
+DROP TRIGGER IF EXISTS tq_auto_hint_link ON tianqiong_ai.exploration_anchors;
+DROP TRIGGER IF EXISTS tq_anchor_task_asset ON tianqiong_ai.exploration_anchors;
+CREATE TRIGGER tq_anchor_task_asset AFTER INSERT ON tianqiong_ai.exploration_anchors FOR EACH ROW EXECUTE FUNCTION tianqiong_ai.link_anchored_asset();
+DROP TRIGGER IF EXISTS tq_graph_anchor_fence ON tianqiong_ai.exploration_anchors;
+CREATE TRIGGER tq_graph_anchor_fence BEFORE INSERT OR UPDATE OR DELETE ON tianqiong_ai.exploration_anchors FOR EACH ROW EXECUTE FUNCTION tianqiong_ai.guard_goal_dependent_write();
+DROP TRIGGER IF EXISTS tq_auto_hint_node ON tianqiong_ai.exploration_nodes;
+DROP TRIGGER IF EXISTS tq_stage_auto_hint_node ON tianqiong_ai.exploration_nodes;
+DROP TRIGGER IF EXISTS tq_graph_node_fence ON tianqiong_ai.exploration_nodes;
+CREATE TRIGGER tq_graph_node_fence BEFORE INSERT OR UPDATE OR DELETE ON tianqiong_ai.exploration_nodes FOR EACH ROW EXECUTE FUNCTION tianqiong_ai.guard_goal_node_write();
+DROP FUNCTION IF EXISTS tianqiong_ai.guard_auto_hint_event();
+DROP FUNCTION IF EXISTS tianqiong_ai.link_auto_hint_asset();
+DROP FUNCTION IF EXISTS tianqiong_ai.guard_auto_hint_anchor();
+DROP FUNCTION IF EXISTS tianqiong_ai.guard_auto_hint_node();
+DROP FUNCTION IF EXISTS tianqiong_ai.stage_auto_hint_node();
+DROP TRIGGER IF EXISTS tq_guard_auto_hint_staging ON tianqiong_ai.auto_hint_staging;
+DROP FUNCTION IF EXISTS tianqiong_ai.guard_auto_hint_staging();
+DROP TABLE IF EXISTS tianqiong_ai.auto_hint_staging;
+DROP FUNCTION IF EXISTS tianqiong_ai.assert_auto_hint_scope(BIGINT,BIGINT);

@@ -1,0 +1,241 @@
+"use client"
+
+import React from "react"
+import { FormDrawer } from "@/components/shared/form-drawer"
+import { useEditScheduledScanDialogState } from "@/components/scan/scheduled/edit-scheduled-scan-dialog-state"
+import {
+  InitiateScanConfigStep,
+  InitiateScanExecutionOptions,
+  InitiateScanWorkflowSelection,
+} from "@/components/scan/initiate-scan-dialog-sections"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  EditScheduledScanNameField,
+  EditScheduledScanTargetSection,
+  EditScheduledScanCronSection,
+  EditScheduledScanDialogFooter,
+} from "@/components/scan/scheduled/edit-scheduled-scan-dialog-sections"
+import { ScheduledScanOccurrencesTab } from "@/components/scan/scheduled/scheduled-scan-occurrences-tab"
+import { Button } from "@/components/ui/button"
+import {
+  COMPACT_FORM_OVERLAY_HORIZONTAL_INSET_CLASS,
+  COMPACT_FORM_OVERLAY_INSET_CLASS,
+} from "@/components/shared/layout/page-shell-density"
+import { cn, formatDate } from "@/lib/utils"
+import { useLocale, useTranslations } from "next-intl"
+import type { Locale } from "@/i18n/config"
+import type { ScheduledScan } from "@/types/scheduled-scan.types"
+
+export type ScheduledScanEditTab = "basic" | "configuration" | "occurrences"
+
+interface EditScheduledScanDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  scheduledScan: ScheduledScan | null
+  /** Initial tab; the management list opens the run-history tab directly from the handoff metric. */
+  initialTab?: ScheduledScanEditTab
+  onSuccess?: () => void
+}
+
+export function EditScheduledScanDialog({
+  open,
+  onOpenChange,
+  scheduledScan,
+  initialTab = "basic",
+  onSuccess,
+}: EditScheduledScanDialogProps) {
+  const t = useTranslations("scan.scheduled")
+  const tInitiate = useTranslations("scan.initiate")
+  const locale = useLocale() as Locale
+  const [activeTab, setActiveTab] = React.useState("basic")
+  const {
+    cronPresets,
+    displayName,
+    setDisplayName,
+    scanWorkflow,
+    selectedTargetId,
+    selectedAgentID,
+    inputSource,
+    timeZone,
+    cronExpression,
+    setCronExpression,
+    configuration,
+    isConfigEdited,
+    isYamlValid,
+    selectedWorkflows,
+    engineCatalogDetails,
+    isEngineCatalogLoading,
+    isEngineCatalogError,
+    configValidationRef,
+    targets,
+    workflows,
+    isPending,
+    isLoadingWorkflows,
+    isWorkflowsError,
+    isWorkflowConfigLoading,
+    isWorkflowProfileLoading,
+    formValuesCacheRef,
+    workflowProfileDraft,
+    handleWorkflowNamesChange,
+    handleConfigSync,
+    handleManualConfigChange,
+    handleResetWorkflowConfig,
+    handleYamlValidationChange,
+    handleTargetSelect,
+    setSelectedAgentID,
+    setInputSource,
+    setTimeZone,
+    handleSubmit,
+    getCronDescription,
+    getNextExecutions,
+  } = useEditScheduledScanDialogState({
+    open,
+    scheduledScan,
+    locale,
+    onOpenChange,
+    onSuccess,
+    t,
+  })
+
+  const handleFormSubmit = React.useCallback(
+    (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      handleSubmit()
+    },
+    [handleSubmit]
+  )
+
+  React.useEffect(() => {
+    if (open) setActiveTab(initialTab)
+  }, [open, scheduledScan?.id, initialTab])
+
+  if (!scheduledScan) return null
+
+  return (
+    <FormDrawer
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t("editTitle")}
+      description={t("editDesc")}
+      closeDisabled={isPending}
+      bodyClassName="flex min-h-0 flex-col overflow-hidden p-0 gap-0"
+      formProps={{ onSubmit: handleFormSubmit }}
+      footer={
+        activeTab === "occurrences" ? (
+          <div className="flex w-full items-center justify-end">
+            <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+              {t("occurrences.close")}
+            </Button>
+          </div>
+        ) : (
+          <EditScheduledScanDialogFooter
+            t={t}
+            isPending={isPending || isWorkflowConfigLoading}
+          />
+        )
+      }
+    >
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col gap-0">
+        <TabsList
+          variant="content"
+          size="md"
+          className={cn("w-full shrink-0 justify-start border-b", COMPACT_FORM_OVERLAY_HORIZONTAL_INSET_CLASS)}
+          aria-label={t("editTabs.label")}
+        >
+          <TabsTrigger value="basic" variant="content">
+            {t("editTabs.basicInfo")}
+          </TabsTrigger>
+          <TabsTrigger value="configuration" variant="content">
+            {t("editTabs.scanConfiguration")}
+          </TabsTrigger>
+          <TabsTrigger value="occurrences" variant="content">
+            {t("editTabs.occurrences")}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="basic" keepMounted className={cn("min-h-0 flex-1 overflow-y-auto", COMPACT_FORM_OVERLAY_INSET_CLASS)}>
+          <div className="grid gap-3">
+            <EditScheduledScanNameField
+              t={t}
+              name={displayName}
+              onNameChange={setDisplayName}
+            />
+
+            <InitiateScanWorkflowSelection
+              t={tInitiate}
+              workflows={workflows}
+              selectedWorkflowNames={scanWorkflow ? [scanWorkflow] : []}
+              isLoadingWorkflows={isLoadingWorkflows}
+              isWorkflowsError={isWorkflowsError}
+              isSubmitting={isPending || isWorkflowConfigLoading}
+              onWorkflowNamesChange={handleWorkflowNamesChange}
+            />
+
+            <InitiateScanExecutionOptions
+              t={tInitiate}
+              inputSource={inputSource}
+              selectedAgentID={selectedAgentID}
+              isSubmitting={isPending || isWorkflowConfigLoading}
+              onInputSourceChange={setInputSource}
+              onAgentChange={setSelectedAgentID}
+            />
+
+            <EditScheduledScanTargetSection
+              t={t}
+              scheduledScan={scheduledScan}
+              targets={targets}
+              selectedTargetId={selectedTargetId}
+              onSelectTarget={handleTargetSelect}
+            />
+
+            <EditScheduledScanCronSection
+              t={t}
+              timeZone={timeZone}
+              onTimeZoneChange={setTimeZone}
+              cronExpression={cronExpression}
+              onCronChange={setCronExpression}
+              cronPresets={cronPresets}
+              onPresetSelect={setCronExpression}
+              getCronDescription={getCronDescription}
+              getNextExecutions={getNextExecutions}
+              disabled={isPending}
+            />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="configuration" keepMounted className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", COMPACT_FORM_OVERLAY_INSET_CLASS)}>
+          <InitiateScanConfigStep
+            t={tInitiate}
+            configuration={configuration}
+            selectedWorkflows={selectedWorkflows}
+            isConfigEdited={isConfigEdited}
+            isYamlValid={isYamlValid}
+            hasConfig={configuration.trim().length > 0}
+            selectMode="custom"
+            selectedWorkflowNames={scanWorkflow ? [scanWorkflow] : []}
+            locale={locale}
+            engineCatalogDetails={engineCatalogDetails}
+            isEngineCatalogLoading={isEngineCatalogLoading}
+            isEngineCatalogError={isEngineCatalogError}
+            isWorkflowProfileLoading={isWorkflowProfileLoading}
+            isSubmitting={isPending || isWorkflowConfigLoading}
+            onConfigSync={handleConfigSync}
+            onConfigChange={handleManualConfigChange}
+            onResetConfig={() => void handleResetWorkflowConfig()}
+            onYamlValidationChange={handleYamlValidationChange}
+            configValidationRef={configValidationRef}
+            formValuesCacheRef={formValuesCacheRef}
+            workflowProfileDraft={workflowProfileDraft}
+          />
+        </TabsContent>
+
+        <TabsContent value="occurrences" keepMounted className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", COMPACT_FORM_OVERLAY_INSET_CLASS)}>
+          <ScheduledScanOccurrencesTab
+            scheduledScanId={scheduledScan.id}
+            formatDate={formatDate}
+          />
+        </TabsContent>
+      </Tabs>
+    </FormDrawer>
+  )
+}

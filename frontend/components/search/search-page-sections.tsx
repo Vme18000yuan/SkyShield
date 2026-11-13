@@ -1,0 +1,542 @@
+"use client"
+
+import * as React from "react"
+import { History, LayoutGrid, Search, semanticIcons, X } from "@/components/icons"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Skeleton } from "@/components/ui/skeleton"
+import { AppErrorState } from "@/components/shared/feedback/app-error-state"
+import { ContentHandoff } from "@/components/shared/loading/content-handoff"
+import { ActionSkeleton } from "@/components/shared/loading/action-skeleton"
+import { CompactPaginationSkeleton } from "@/components/shared/loading/compact-pagination-skeleton"
+import { getLoadingStructureSlotAttributes } from "@/components/shared/loading/loading-owner"
+import { SelectShellSkeleton } from "@/components/shared/loading/select-shell-skeleton"
+import { COMPACT_CONTENT_GUTTER_CLASS } from "@/components/shared/layout/page-shell-density"
+import { normalizeError } from "@/lib/errors/normalize-error"
+import { textRole } from "@/lib/typography"
+import { cn } from "@/lib/utils"
+import { useIsMobile } from "@/hooks/use-mobile"
+import {
+  appendGlobalAssetSearchCondition,
+  getGlobalAssetSearchInlineCompletion,
+  SearchSyntaxManualContent,
+  SearchSyntaxGuidance,
+} from "./search-syntax-guidance"
+import type { GlobalAssetSearchField } from "@/lib/global-asset-search-query"
+import type { WebsiteSearchResult } from "@/types/search.types"
+import { SearchPagination } from "./search-pagination"
+import {
+  SearchWebsiteExportMenu,
+  SearchWebsitesDataTable,
+  SearchWebsitesDataTableLoadingState,
+  useSearchWebsitesResultModel,
+} from "./search-websites-data-table"
+import {
+  SearchEndpointColumnVisibilityMenu,
+  SearchEndpointExportMenu,
+  SearchResultsTable,
+  SearchResultsTableLoadingState,
+  useSearchEndpointsResultModel,
+} from "./search-results-table"
+import {
+  SearchAssetBarShell,
+  SearchInitialHeading,
+  SearchInitialPageShell,
+  SearchQuickTags,
+} from "./search-initial-page-shell"
+import type { SearchPageState } from "./search-page-state"
+import { useGlobalAssetSearchExport } from "@/hooks/use-global-asset-search-export"
+
+const EMPTY_WEBSITE_RESULTS: WebsiteSearchResult[] = []
+
+function SearchAssetTypeSelector({ state, integrated = false }: {
+  state: SearchPageState
+  integrated?: boolean
+}) {
+  const assetTypeLabel = state.assetType === "website" ? state.t("assetTypes.website") : state.t("assetTypes.endpoint")
+  return (
+    <Select value={state.assetType} onValueChange={state.handleAssetTypeChange}>
+      <SelectTrigger
+        size={integrated ? "default" : "sm"}
+        className={cn(
+          integrated
+            ? "radius-none w-40 border-0 border-r bg-muted/30 px-4 text-sm shadow-none hover:bg-muted/50 focus-visible:z-10 focus-visible:ring-0"
+            : "w-28"
+        )}
+      >
+        {integrated ? <LayoutGrid className="h-4 w-4 text-muted-foreground" /> : null}
+        <span className="truncate">{assetTypeLabel}</span>
+      </SelectTrigger>
+      <SelectContent width="content-fit">
+        <SelectItem value="website">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <semanticIcons.concept.website className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate">{state.t("assetTypes.website")}</span>
+          </span>
+        </SelectItem>
+        <SelectItem value="endpoint">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <semanticIcons.concept.endpoint className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate">{state.t("assetTypes.endpoint")}</span>
+          </span>
+        </SelectItem>
+      </SelectContent>
+    </Select>
+  )
+}
+
+export function SearchAssetBar({ state, className }: { state: SearchPageState; className?: string }) {
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const closeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isMobile = useIsMobile()
+  const [syntaxOpen, setSyntaxOpen] = React.useState(false)
+  const [manualOpen, setManualOpen] = React.useState(false)
+  const [caretIsAtDraftEnd, setCaretIsAtDraftEnd] = React.useState(true)
+  const inlineCompletion = React.useMemo(
+    () => caretIsAtDraftEnd ? getGlobalAssetSearchInlineCompletion(state.query) : "",
+    [caretIsAtDraftEnd, state.query]
+  )
+
+  const clearCloseTimer = React.useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+  }, [])
+
+  React.useEffect(() => clearCloseTimer, [clearCloseTimer])
+
+  const openSyntaxGuidance = React.useCallback(() => {
+    clearCloseTimer()
+    setSyntaxOpen(true)
+  }, [clearCloseTimer])
+
+  const scheduleCloseSyntaxGuidance = React.useCallback((event: React.FocusEvent<HTMLInputElement>) => {
+    const relatedTarget = event.relatedTarget as HTMLElement | null
+    if (relatedTarget?.closest('[data-slot="popover-content"]')) return
+    clearCloseTimer()
+    // A syntax shortcut receives the input blur before its select handler can restore focus.
+    closeTimerRef.current = setTimeout(() => {
+      setSyntaxOpen(false)
+      closeTimerRef.current = null
+    }, 150)
+  }, [clearCloseTimer])
+
+  const focusInput = React.useCallback((cursorPosition?: number) => {
+    window.requestAnimationFrame(() => {
+      const input = inputRef.current
+      if (!input) return
+      input.focus()
+      const position = cursorPosition ?? input.value.length
+      input.setSelectionRange(position, position)
+    })
+  }, [])
+
+  const handleManualOpenChange = React.useCallback((open: boolean) => {
+    setManualOpen(open)
+    if (!open) focusInput()
+  }, [focusInput])
+
+  const openManual = React.useCallback(() => {
+    clearCloseTimer()
+    setSyntaxOpen(false)
+    setManualOpen(true)
+  }, [clearCloseTimer])
+
+  const syncCaretPosition = React.useCallback((input: HTMLInputElement) => {
+    setCaretIsAtDraftEnd(
+      input.selectionStart === input.value.length && input.selectionEnd === input.value.length
+    )
+  }, [])
+
+  const handleInputChange = React.useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    state.setQuery(event.target.value)
+    syncCaretPosition(event.currentTarget)
+  }, [state, syncCaretPosition])
+
+  const handleInputSelection = React.useCallback((event: React.SyntheticEvent<HTMLInputElement>) => {
+    syncCaretPosition(event.currentTarget)
+  }, [syncCaretPosition])
+
+  const handleInputKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const caretIsAtEnd = input.selectionStart === input.value.length && input.selectionEnd === input.value.length
+    const acceptsCompletion = event.key === "Tab" || event.key === "ArrowRight"
+    if (!inlineCompletion || !acceptsCompletion || !caretIsAtEnd) return
+
+    event.preventDefault()
+    const nextQuery = `${state.query}${inlineCompletion}`
+    state.setQuery(nextQuery)
+    setCaretIsAtDraftEnd(true)
+    focusInput(nextQuery.length)
+  }, [focusInput, inlineCompletion, state])
+
+  const handleSelectField = React.useCallback((field: GlobalAssetSearchField) => {
+    const nextQuery = appendGlobalAssetSearchCondition(state.query, field)
+    state.setQuery(nextQuery)
+    openSyntaxGuidance()
+    focusInput(nextQuery.length - 1)
+  }, [focusInput, openSyntaxGuidance, state])
+
+  const handleSelectExample = React.useCallback((example: string) => {
+    state.setQuery(example)
+    openSyntaxGuidance()
+    focusInput()
+  }, [focusInput, openSyntaxGuidance, state])
+
+  const handleManualSelectExample = React.useCallback((example: string) => {
+    state.setQuery(example)
+    setManualOpen(false)
+    setSyntaxOpen(true)
+    focusInput()
+  }, [focusInput, state])
+
+  const manualContent = (
+    <SearchSyntaxManualContent
+      t={state.t}
+      onSelectExample={handleManualSelectExample}
+    />
+  )
+
+  return (
+    <div className={cn("min-w-0", className)}>
+      <Popover open={syntaxOpen} onOpenChange={setSyntaxOpen} modal={false}>
+        <SearchAssetBarShell>
+          <SearchAssetTypeSelector state={state} integrated />
+          <form
+            className="flex min-w-0 flex-1"
+            onSubmit={(event) => {
+              event.preventDefault()
+              state.handleSearch()
+            }}
+          >
+            <PopoverAnchor className="relative flex min-w-0 flex-1">
+              <Input
+                ref={inputRef}
+                type="search"
+                value={state.query}
+                onChange={handleInputChange}
+                onFocus={openSyntaxGuidance}
+                onClick={openSyntaxGuidance}
+                onBlur={scheduleCloseSyntaxGuidance}
+                onSelect={handleInputSelection}
+                onKeyDown={handleInputKeyDown}
+                placeholder={state.t("searchPlaceholder")}
+                aria-invalid={Boolean(state.queryError)}
+                className="radius-none h-9 min-w-0 border-0 bg-transparent px-3 text-sm shadow-none focus-visible:border-transparent focus-visible:ring-0"
+              />
+              {inlineCompletion ? (
+                <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center overflow-hidden px-3">
+                  <span className="whitespace-pre text-sm">
+                    <span className="invisible">{state.query}</span>
+                    <span className="text-muted-foreground/40">{inlineCompletion}</span>
+                  </span>
+                </div>
+              ) : null}
+            </PopoverAnchor>
+            <Button type="submit" size="default" className="radius-none shrink-0 border-y-0 border-r-0">
+              <Search className="h-4 w-4" />
+              <span className="hidden sm:inline">{state.t("searchAction")}</span>
+            </Button>
+          </form>
+        </SearchAssetBarShell>
+        <PopoverContent
+          align="start"
+          sideOffset={8}
+          collisionPadding={16}
+          initialFocus={false}
+          finalFocus={false}
+          className="max-h-[var(--available-height)] w-[min(32rem,var(--available-width))] max-w-[var(--available-width)] overflow-hidden p-0"
+        >
+          <ScrollArea
+            className="max-h-[var(--available-height)]"
+            viewportClassName="max-h-[var(--available-height)]"
+            contentClassName="min-w-0"
+          >
+            <SearchSyntaxGuidance
+              t={state.t}
+              onSelectField={handleSelectField}
+              onSelectExample={handleSelectExample}
+              onOpenManual={openManual}
+            />
+          </ScrollArea>
+        </PopoverContent>
+      </Popover>
+      {isMobile ? (
+        <Drawer open={manualOpen} onOpenChange={handleManualOpenChange} swipeDirection="down">
+          <DrawerContent className="flex max-h-[calc(100dvh-3rem)] flex-col p-0">
+            <DrawerHeader className="sr-only">
+              <DrawerTitle>{state.t("manual.title")}</DrawerTitle>
+            </DrawerHeader>
+            <DrawerClose
+              render={(
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="overlay-close-control absolute top-3 right-3 z-10"
+                  aria-label={state.t("manual.close")}
+                />
+              )}
+            >
+              <X className="h-4 w-4" />
+            </DrawerClose>
+            {manualContent}
+          </DrawerContent>
+        </Drawer>
+      ) : (
+        <Dialog open={manualOpen} onOpenChange={handleManualOpenChange}>
+          <DialogContent className="flex max-h-[min(80dvh,44rem)] w-[min(42rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0">
+            <DialogHeader className="sr-only">
+              <DialogTitle>{state.t("manual.title")}</DialogTitle>
+            </DialogHeader>
+            {manualContent}
+          </DialogContent>
+        </Dialog>
+      )}
+      {state.queryError ? (
+        <p role="alert" aria-label={state.t("queryErrorLabel")} className={cn("mt-1", textRole.caption, "text-destructive")}>
+          {state.queryError}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function SearchResultsToolbarRegion({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      {...getLoadingStructureSlotAttributes("search-results-toolbar")}
+      className={cn(
+        "sticky top-0 z-10 border-b bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/60",
+        COMPACT_CONTENT_GUTTER_CLASS,
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-3">{children}</div>
+    </div>
+  )
+}
+
+function SearchResultsBodyRegion({ children }: { children: React.ReactNode }) {
+  return <div {...getLoadingStructureSlotAttributes("search-results-body")} className="flex min-h-0 flex-1 flex-col">{children}</div>
+}
+
+function SearchResultsPaginationRegion({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      {...getLoadingStructureSlotAttributes("search-results-pagination")}
+      className={cn("border-t py-3", COMPACT_CONTENT_GUTTER_CLASS)}
+    >
+      {children}
+    </div>
+  )
+}
+
+function SearchResultsLoadingState({
+  showWebsiteExport,
+  showEndpointColumns = false,
+  showEndpointExport = false,
+  websiteLoadingRowCount,
+}: {
+  showWebsiteExport: boolean
+  showEndpointColumns?: boolean
+  showEndpointExport?: boolean
+  websiteLoadingRowCount: number
+}) {
+  const pagination = (
+    <SearchResultsPaginationRegion>
+      <CompactPaginationSkeleton mode="cursor" className="px-0" />
+    </SearchResultsPaginationRegion>
+  )
+
+  return (
+    <>
+      <SearchResultsToolbarRegion>
+        <SearchAssetBarShell className="w-full md:flex-1">
+          <SelectShellSkeleton
+            size="default"
+            widthClassName="radius-none w-40 border-0 border-r bg-muted/30 px-4 text-sm shadow-none"
+            valueWidthClassName="w-16"
+          />
+          <div className="relative flex min-w-0 flex-1 items-center">
+            <Input
+              type="search"
+              disabled
+              className="radius-none h-9 border-0 bg-transparent px-3 text-sm shadow-none disabled:cursor-default disabled:opacity-100 focus-visible:border-transparent focus-visible:ring-0"
+            />
+            <Skeleton className="pointer-events-none absolute left-3 h-4 w-32 rounded-full" />
+          </div>
+          <ActionSkeleton size="default" widthClassName="w-10 sm:w-20" className="radius-none border-y-0 border-r-0" />
+        </SearchAssetBarShell>
+        {showWebsiteExport ? <ActionSkeleton size="default" widthClassName="w-20" className="shrink-0" /> : null}
+        {showEndpointExport ? <ActionSkeleton size="default" widthClassName="w-20" className="shrink-0" /> : null}
+        {showEndpointColumns ? <ActionSkeleton size="default" widthClassName="w-28" className="shrink-0" /> : null}
+      </SearchResultsToolbarRegion>
+
+      <SearchResultsBodyRegion>
+        <div className={cn("flex-1 overflow-auto py-3", COMPACT_CONTENT_GUTTER_CLASS)}>
+          {showWebsiteExport ? (
+            <SearchWebsitesDataTableLoadingState pagination={pagination} rowCount={websiteLoadingRowCount} />
+          ) : (
+            <SearchResultsTableLoadingState rowCount={websiteLoadingRowCount} />
+          )}
+        </div>
+      </SearchResultsBodyRegion>
+
+      {!showWebsiteExport ? pagination : null}
+    </>
+  )
+}
+
+export function SearchPageContent({ state }: { state: SearchPageState }) {
+  const websiteResults = state.assetType === "website" && state.data ? state.data.results : EMPTY_WEBSITE_RESULTS
+  const { exportAll } = useGlobalAssetSearchExport(state.submittedQuery)
+  const websiteResultModel = useSearchWebsitesResultModel(websiteResults, {
+    onExportAll: () => exportAll("website"),
+  })
+  const endpointResultModel = useSearchEndpointsResultModel()
+  const showWebsiteExport = !state.error && state.assetType === "website" && Boolean(state.data?.results.length)
+  const showEndpointColumns = !state.error && state.assetType === "endpoint" && Boolean(state.data?.results.length)
+
+  return (
+    <div className="flex w-full flex-1 flex-col">
+      {state.searchState === "initial" ? (
+        <SearchInitialPageShell animated>
+          <SearchInitialHeading title={state.t("title")} hint={state.t("hint")} />
+          <div className="w-full"><SearchAssetBar state={state} /></div>
+          <SearchQuickTags onTagClick={state.handleQuickTagClick} />
+
+          {state.recentSearches.length > 0 ? (
+            <div className="mt-2 w-full max-w-xl animate-in fade-in delay-300 duration-300">
+              <div className={cn("mb-2 flex items-center gap-2", textRole.metadataLabel)}>
+                <History className="h-3.5 w-3.5" />
+                <span>{state.t("recentSearches")}</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {state.recentSearches.map((search) => (
+                  <Badge key={search} size="tag" variant="secondary" className="group gap-1 pr-1.5 pl-3 hover:bg-secondary/80">
+                    <button type="button" onClick={() => state.handleRecentSearchClick(search)} className="max-w-52 truncate text-left font-mono text-xs">
+                      {search}
+                    </button>
+                    <button type="button" onClick={(event) => state.handleRemoveRecentSearch(event, search)} className="ml-1 p-0.5 opacity-0 transition-opacity hover:bg-muted-foreground/20 group-hover:opacity-100" aria-label={state.t("removeRecentSearch")}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </SearchInitialPageShell>
+      ) : null}
+
+      {state.searchState === "results" || state.searchState === "searching" ? (
+        <ContentHandoff
+          owner="search-results-content"
+          isLoading={state.searchState === "searching" || state.isLoading}
+          skeleton={(
+            <SearchResultsLoadingState
+              showWebsiteExport={state.assetType === "website"}
+              showEndpointColumns={state.assetType === "endpoint"}
+              showEndpointExport={state.assetType === "endpoint"}
+              websiteLoadingRowCount={state.pageSize}
+            />
+          )}
+          className="flex h-full flex-col"
+          skeletonClassName="flex h-full flex-col"
+          contentClassName="flex h-full flex-col"
+        >
+          <SearchResultsToolbarRegion>
+            <SearchAssetBar state={state} className="w-full md:flex-1" />
+            {showWebsiteExport ? <SearchWebsiteExportMenu model={websiteResultModel} /> : null}
+            {showEndpointColumns ? (
+              <>
+                <SearchEndpointExportMenu onExportAll={() => exportAll("endpoint")} />
+                <SearchEndpointColumnVisibilityMenu model={endpointResultModel} />
+              </>
+            ) : null}
+            {state.isFetching ? <span className={cn("whitespace-nowrap", textRole.bodySubtle)}>{state.t("loading")}</span> : null}
+          </SearchResultsToolbarRegion>
+
+          <SearchResultsBodyRegion>
+            {state.error ? (
+              <AppErrorState
+                error={normalizeError(state.error, { notFoundKind: "unexpected-error" })}
+                onRetry={state.refetch}
+                variant="section"
+                className={cn("flex-1", COMPACT_CONTENT_GUTTER_CLASS)}
+              />
+            ) : null}
+
+            {!state.error && state.data?.results.length === 0 ? (
+              <div className={cn("flex flex-1 flex-col items-center justify-center py-3", COMPACT_CONTENT_GUTTER_CLASS)}>
+                <div className="text-center">
+                  <Search className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+                  <h3 className={cn("mb-2", textRole.panelTitle)}>{state.t("noResults")}</h3>
+                  <p className={textRole.bodySubtle}>{state.t("noResultsHint")}</p>
+                </div>
+              </div>
+            ) : null}
+
+            {!state.error && state.data && state.data.results.length > 0 ? (
+              <div className={cn("flex-1 overflow-auto py-3", COMPACT_CONTENT_GUTTER_CLASS)}>
+                {state.assetType === "website" ? (
+                  <SearchWebsitesDataTable
+                    model={websiteResultModel}
+                    pagination={(
+                      <SearchResultsPaginationRegion>
+                        <SearchPagination
+                          pageSize={state.pageSize}
+                          canFirstPage={state.canFirstPage}
+                          canPreviousPage={state.canPreviousPage}
+                          canNextPage={state.canNextPage}
+                          onFirstPage={state.handleFirstPage}
+                          onPreviousPage={state.handlePreviousPage}
+                          onNextPage={state.handleNextPage}
+                          onPageSizeChange={state.handlePageSizeChange}
+                          summary={state.paginationSummary}
+                        />
+                      </SearchResultsPaginationRegion>
+                    )}
+                  />
+                ) : <SearchResultsTable results={state.data.results} model={endpointResultModel} />}
+              </div>
+            ) : null}
+          </SearchResultsBodyRegion>
+
+          {!state.error && state.data && state.data.results.length > 0 && state.assetType !== "website" ? (
+            <SearchResultsPaginationRegion>
+              <SearchPagination
+                pageSize={state.pageSize}
+                canFirstPage={state.canFirstPage}
+                canPreviousPage={state.canPreviousPage}
+                canNextPage={state.canNextPage}
+                onFirstPage={state.handleFirstPage}
+                onPreviousPage={state.handlePreviousPage}
+                onNextPage={state.handleNextPage}
+                onPageSizeChange={state.handlePageSizeChange}
+                summary={state.paginationSummary}
+              />
+            </SearchResultsPaginationRegion>
+          ) : null}
+        </ContentHandoff>
+      ) : null}
+    </div>
+  )
+}

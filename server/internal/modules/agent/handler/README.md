@@ -1,0 +1,22 @@
+# agent/handler
+
+agent 模块 handler 规范：
+
+- handler 层仅处理 HTTP 绑定、错误映射与响应组装，不承载业务编排。
+- 主资源 canonical collection list handler 使用 `List`，不要在 `AgentHandler` receiver 已表达资源时重复写 `ListAgents`。
+- `GET /v1/admin/agents` 是已迁移 canonical collection list：只接受 `pageSize`、`pageToken`、`filter`、`orderBy`，并 hard cut 拒绝 `page`、独立 `status`、`include`、`sort`、`sortBy`、`sortOrder`、`keyword`。列表响应默认包含页面卡片所需 heartbeat projection；不要恢复 `include=heartbeat` 列表开关。
+- `GET /v1/admin/agents/filterOptions?field=status|healthState` 返回后端聚合筛选项；路由必须注册在 `/:agent` 前面。
+- `GET /v1/admin/agentClusterSummaries/current` 返回覆盖完整 Agent identity 集合的 fixed read-only summary；Overview 与 Agent 管理页不得从分页 collection 重建全局总数、容量或集群结论。
+- 受认证保护的 `POST /v1/admin/agentLicenses/current:activate` 只接受 `{key}` 并返回 `agentLicenses/current` 的已验签投影；Gin 路由使用 `:licenseAction` 通配段，handler 必须拒绝除 `current:activate` 外的动作。Key 缺失、签名无效、已过期或尚未生效分别映射为 `lunafox.agentLicense` 域的标准 `ErrorInfo`，不得回显原始 Key。
+- `GET /v1/admin/agentLocationMaps/current` 返回完整、非分页的 current/expired Agent 位置投影和 nullable Server 最后成功快照；地图不得遍历 Agent collection、采样 marker 或补默认坐标。
+- `GET /v1/admin/agents/:agent` 直接返回观测来源 generation 与最后成功位置状态；详情不得暴露 GeoIP attempt/failure 诊断，也不得把旧位置 provenance 改写为当前观测 IP。
+- Agent 注册令牌管理使用 `POST /v1/admin/agentRegistrationTokens` 与 `GET /v1/admin/agentRegistrationTokens/:registrationToken`；旧 `/v1/admin/agents/registrationTokens` 创建路径已 hard cut。路径参数是非密钥数字资源 ID，不能使用 bearer secret。
+- Agent 安装脚本统一使用 `GET /v1/agents:downloadInstallScript?registrationToken=...&profile=...` custom method。
+- `profile` 只接受 `internal` / `external`：`internal` 使用内部 Agent control URL 并要求部署 Docker network；`external` 使用 `PUBLIC_URL` 且 network 可选。
+- 旧 `local` / `remote` profile 名称不得作为兼容输入或新文档示例。
+- Agent 安装脚本嵌入 `contracts/loggingplugin` 的发布策略和管理逻辑，在远程宿主管理专用 `lunafox-loki`。归属记录必须匹配实际插件 ID；仅安装入口可更新已确认归属且无任何容器引用的版本，不接管通用 `loki`，不强制删除或禁用。Server 只生成脚本，不操作宿主 Docker；插件不可用时不得静默降级启动。
+- `TestAgentInstallScriptRegistersAndConnects` 是 Linux Docker 的 opt-in 端到端冒烟测试：它下载并执行真实安装脚本、启动正式 Agent 镜像，并等待注册、control-plane session 和首个 heartbeat。独立的 `Docker Runtime E2E` workflow 会在相关 Agent/安装/契约/Docker 路径变更的 pull request 中运行 `LUNAFOX_RUN_AGENT_INSTALL_E2E=1 go test -count=1 ./internal/modules/agent/handler -run '^TestAgentInstallScriptRegistersAndConnects$' -v`，并保留 `workflow_dispatch` 供人工复跑；它不会仅因 pull request 合并后的分支 push 再重复运行。受保护分支应将该 workflow check 设为 required。它使用固定的 Agent 容器和 volume 名称，发现已有同名资源时必须 fail-fast。
+- `TestAgentInstallE2EImageBuildArgsMatchDockerfileContract` 校验私有 Agent Dockerfile 的 named contexts 和 provenance build args 与安装 E2E 构建命令保持一致。生成公开投影会以 `PUBLIC_PROVENANCE.json` 标识，并按设计省略私有 Agent Docker build context；仅在该标识存在且 Dockerfile 缺失时跳过，私有源仓缺少 Dockerfile 仍必须失败。
+- `GET /v1/admin/agents/:agent/logEntries` 是 Agent log viewer 的 operational contract：它返回 `nextPageToken`、`previousPageToken`、`hasOlder`、`hasNewer`、`caughtUp`、`gap` 等查看器元数据，用于 history hydration 与 live follow；当前阶段仍基于短周期拉取，不承诺 push streaming。`pageSize` 未传时为 200，必须为 `1..500`；`100/200/500/1000/2000/5000` 是前端 latest-N 窗口，后端每次只立即返回一页且不跨请求为 viewer 累积结果。
+
+- `POST /v1/agents:register` 满额返回 HTTP 429 / RESOURCE_EXHAUSTED，ErrorInfo.reason 为 AGENT_QUOTA_EXCEEDED；生成安装命令不预留名额，安装脚本保留 HTTP 错误正文并退出。

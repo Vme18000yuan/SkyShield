@@ -1,0 +1,26 @@
+-- DESTRUCTIVE TEST TEARDOWN ONLY.
+DROP TRIGGER IF EXISTS ai_review_original_finding ON tianqiong_ai.findings;
+DROP TRIGGER IF EXISTS ai_review_finding_case_suggestion_members ON tianqiong_ai.finding_case_suggestion_members;
+DROP TRIGGER IF EXISTS ai_review_finding_case_suggestions ON tianqiong_ai.finding_case_suggestions;
+DROP TRIGGER IF EXISTS ai_review_finding_case_events ON tianqiong_ai.finding_case_events;
+DROP TRIGGER IF EXISTS ai_review_finding_case_members ON tianqiong_ai.finding_case_members;
+DROP TRIGGER IF EXISTS ai_review_finding_cases ON tianqiong_ai.finding_cases;
+DROP TRIGGER IF EXISTS ai_cancel_deleted_finding_case_review ON public.ai_conversation;
+DROP TRIGGER IF EXISTS ai_cancel_deleted_finding_case_review_task ON public.ai_task;
+DROP TRIGGER IF EXISTS ai_finish_finding_case_review ON public.ai_run;
+DROP TRIGGER IF EXISTS ai_validate_finishing_finding_case_review ON public.ai_run;
+DROP TRIGGER IF EXISTS ai_fail_queued_finding_case_review ON public.ai_agent_trigger_job;
+DROP TRIGGER IF EXISTS ai_begin_finding_case_review ON public.ai_run;
+DROP TABLE IF EXISTS public.ai_finding_case_review CASCADE;
+DROP FUNCTION IF EXISTS tianqiong_ai.cancel_deleted_finding_case_review();
+DROP FUNCTION IF EXISTS tianqiong_ai.finish_finding_case_review();
+DROP FUNCTION IF EXISTS tianqiong_ai.validate_finishing_finding_case_review();
+DROP FUNCTION IF EXISTS tianqiong_ai.fail_queued_finding_case_review();
+DROP FUNCTION IF EXISTS tianqiong_ai.begin_finding_case_review();
+DROP FUNCTION IF EXISTS tianqiong_ai.finding_case_review_valid(BIGINT);
+DROP FUNCTION IF EXISTS tianqiong_ai.guard_finding_case_review();
+DROP FUNCTION IF EXISTS tianqiong_ai.cancel_deleted_finding_case_review_task();
+DROP FUNCTION IF EXISTS tianqiong_ai.finding_case_review_conversation_visible(UUID);
+DROP FUNCTION IF EXISTS tianqiong_ai.guard_review_original_finding();
+DROP FUNCTION IF EXISTS tianqiong_ai.finding_case_review_suggestion_allowed(BIGINT);
+DROP FUNCTION IF EXISTS tianqiong_ai.guard_finding_case_review_selection();

@@ -1,0 +1,364 @@
+"use client"
+
+import { useTranslations } from "next-intl"
+
+import { ActionSkeleton } from "@/components/shared/loading/action-skeleton"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { OverviewTokenUsageSkeleton } from "@/components/overview/overview-token-usage-skeleton"
+import {
+  OVERVIEW_ASSET_REGION_LOADING_SLOT,
+  OVERVIEW_ASSET_CHART_SHELL_CLASS,
+  OVERVIEW_ASSET_DISTRIBUTION_COLUMNS_CLASS,
+  OVERVIEW_ASSET_DISTRIBUTION_HEADER_GRID_CLASS,
+  OVERVIEW_ASSET_DISTRIBUTION_LIST_CLASS,
+  OVERVIEW_ASSET_DISTRIBUTION_ROW_CLASS,
+  OVERVIEW_ASSET_METRIC_CLASS,
+  OVERVIEW_ASSET_METRICS_GRID_CLASS,
+  OVERVIEW_ASSET_OVERVIEW_GRID_CLASS,
+  OVERVIEW_ASSET_SPARKLINE_CLASS,
+  OVERVIEW_ASSET_TREND_CHART_CLASS,
+  OVERVIEW_ASSET_TREND_PANEL_CLASS,
+  OVERVIEW_ASSET_TREND_STANDALONE_CLASS,
+  OVERVIEW_RISK_LEGEND_CLASS,
+  OVERVIEW_RISK_LEGEND_ROW_CLASS,
+  OVERVIEW_RISK_RING_CLASS,
+  OVERVIEW_RISK_RING_LEGEND_CLASS,
+  OVERVIEW_RISK_TREND_CHART_CLASS,
+  OVERVIEW_RISK_SUMMARY_DETAIL_ROW_CLASS,
+  OVERVIEW_RISK_SUMMARY_DETAILS_CLASS,
+  OVERVIEW_RISK_SUMMARY_GRID_CLASS,
+  OVERVIEW_RISK_SUMMARY_METRICS_CLASS,
+  OVERVIEW_TREND_HEADER_CLASS,
+  OVERVIEW_OPERATIONAL_REGION_LOADING_SLOT,
+  OVERVIEW_RUNTIME_DATABASE_METRIC_CLASS,
+  OVERVIEW_RUNTIME_DATABASE_METRIC_GRID_CLASS,
+  OVERVIEW_RUNTIME_DATABASE_DIAGNOSTIC_CLASS,
+  OVERVIEW_RUNTIME_DATABASE_DIAGNOSTIC_GRID_CLASS,
+  OVERVIEW_RUNTIME_DATABASE_BODY_CLASS,
+  OVERVIEW_RUNTIME_DATABASE_STATUS_ANCHOR_CLASS,
+  OVERVIEW_RUNTIME_DATABASE_PROGRESS_CLASS,
+  OVERVIEW_RUNTIME_DETAILS_CARD_SECTION_CLASS,
+  OVERVIEW_SYSTEM_DETAILS_CARD_SECTION_CLASS,
+  OVERVIEW_RUNTIME_DETAILS_CARD_HEADER_CLASS,
+  OVERVIEW_RUNTIME_SCAN_CARD_CONTENT_CLASS,
+  OVERVIEW_RUNTIME_RESOURCE_HEADER_CLASS,
+  OVERVIEW_RUNTIME_RESOURCE_LIST_CLASS,
+  OVERVIEW_RUNTIME_RESOURCE_ROW_CLASS,
+  OVERVIEW_RUNTIME_SCAN_RECENT_CLASS,
+  OVERVIEW_RUNTIME_SCAN_RECENT_COLUMN_HEADER_CLASS,
+  OVERVIEW_RUNTIME_SCAN_RECENT_LIST_CLASS,
+  OVERVIEW_RUNTIME_SCAN_RECENT_HEADER_CLASS,
+  OVERVIEW_RUNTIME_SCAN_RECENT_META_CLASS,
+  OVERVIEW_RUNTIME_SCAN_RECENT_ROWS_CLASS,
+  OVERVIEW_RUNTIME_SCAN_RECENT_ROW_CLASS,
+  OVERVIEW_RUNTIME_SCAN_BODY_CLASS,
+  OVERVIEW_RUNTIME_SCAN_STATUS_GRID_CLASS,
+  OVERVIEW_RUNTIME_SCAN_STATUS_ITEM_CLASS,
+  OVERVIEW_RUNTIME_REGION_LOADING_SLOT,
+  OVERVIEW_SECTIONS_SHELL_CLASS,
+  OverviewOperationalGrid,
+  OverviewRuntimeDetailsCard,
+  OverviewRuntimeDetailsLayout,
+  OverviewSectionPanel,
+} from "@/components/overview/overview-section-layouts"
+import { textRole } from "@/lib/typography"
+import { cn } from "@/lib/utils"
+import { COMPACT_SECTION_STACK_CLASS } from "@/components/shared/layout/page-shell-density"
+
+function OverviewTextSkeleton({
+  roleClassName,
+  className,
+  reserveText = "\u00a0",
+  inline = false,
+  featured = false,
+  skeletonClassName,
+}: {
+  roleClassName: string
+  className?: string
+  reserveText?: string
+  inline?: boolean
+  featured?: boolean
+  skeletonClassName?: string
+}) {
+  // Preserve the resolved text role's line box so skeletons cannot alter panel rhythm.
+  const Element = inline ? "span" : "div"
+
+  return (
+    <Element aria-hidden="true" data-featured={featured ? "true" : undefined} className={cn("relative", roleClassName, className)}>
+      <span className="invisible">{reserveText}</span>
+      <Skeleton className={cn(inline ? "absolute inset-y-0 left-0" : "absolute inset-0", skeletonClassName)} />
+    </Element>
+  )
+}
+
+function OverviewRiskDetailsActionSkeleton() {
+  // Match the resolved text action's line box so the lower regions do not shift after handoff.
+  return <ActionSkeleton size="content" widthClassName="w-24" className="h-6" />
+}
+
+function OverviewRiskSummarySkeleton({ className }: { className?: string } = {}) {
+  const t = useTranslations("overview.operational.risk")
+
+  return (
+    <OverviewSectionPanel
+      title={(
+        <div className="flex min-w-0 items-center gap-2">
+          <Skeleton className="size-4 shrink-0 rounded-none" />
+          <OverviewTextSkeleton
+            roleClassName={textRole.sectionTitle}
+            reserveText={t("title")}
+            className="min-w-0"
+          />
+        </div>
+      )}
+      action={<OverviewRiskDetailsActionSkeleton />}
+      className={cn("h-full", className)}
+      contentClassName="pt-1"
+    >
+      <div className={OVERVIEW_RISK_SUMMARY_GRID_CLASS}>
+        <div className={OVERVIEW_RISK_RING_LEGEND_CLASS}>
+          <div className={OVERVIEW_RISK_RING_CLASS}>
+            <Skeleton className="size-full rounded-full" />
+            <div className="absolute inset-7 flex flex-col items-center justify-center rounded-full bg-background text-center">
+              <OverviewTextSkeleton featured roleClassName={textRole.metricValueDisplay} className="w-12" />
+              <OverviewTextSkeleton roleClassName={textRole.badgeSubtle} className="mt-1 w-14" />
+            </div>
+          </div>
+          <div className={OVERVIEW_RISK_LEGEND_CLASS}>
+          {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className={OVERVIEW_RISK_LEGEND_ROW_CLASS}>
+                <div className="flex items-center gap-2">
+                  <Skeleton className="size-2.5 rounded-full" />
+                  <OverviewTextSkeleton roleClassName={textRole.bodySubtle} className="w-16" />
+                </div>
+                <OverviewTextSkeleton roleClassName={textRole.metadataValueStrong} className="w-10" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className={OVERVIEW_RISK_SUMMARY_METRICS_CLASS}>
+          <div className={cn("min-w-0", COMPACT_SECTION_STACK_CLASS)}>
+            <div className={OVERVIEW_TREND_HEADER_CLASS}>
+              <OverviewTextSkeleton roleClassName={textRole.sectionTitle} reserveText={t("trendTitle")} />
+            </div>
+            <Skeleton className={cn("w-full", OVERVIEW_RISK_TREND_CHART_CLASS)} />
+            <div className={OVERVIEW_RISK_SUMMARY_DETAILS_CLASS}>
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div key={index} className={OVERVIEW_RISK_SUMMARY_DETAIL_ROW_CLASS}>
+                  <OverviewTextSkeleton roleClassName={textRole.caption} className="w-20" />
+                  <OverviewTextSkeleton
+                    roleClassName={index === 0 ? textRole.bodyStrong : textRole.metadataValueStrong}
+                    className="w-10"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </OverviewSectionPanel>
+  )
+}
+
+function OverviewAssetOverviewSkeleton({ part = "all", className }: { part?: "all" | "metrics" | "trend"; className?: string } = {}) {
+  return (
+    <OverviewSectionPanel
+      className={className}
+      contentClassName={part === "trend" ? "h-full pt-1" : "pt-1"}
+    >
+      <div className={part === "all" ? OVERVIEW_ASSET_OVERVIEW_GRID_CLASS : "h-full min-w-0"}>
+        {part !== "trend" && <div className={COMPACT_SECTION_STACK_CLASS}>
+          <div className={OVERVIEW_ASSET_METRICS_GRID_CLASS}>
+            {Array.from({ length: 2 }).map((_, index) => (
+              <div key={index} className={OVERVIEW_ASSET_METRIC_CLASS}>
+                <div className="flex items-center gap-2">
+                  <Skeleton className="size-4" />
+                  <OverviewTextSkeleton roleClassName={textRole.caption} className="w-20" />
+                </div>
+                <OverviewTextSkeleton roleClassName={textRole.metricValueDisplay} className="w-24" />
+                <OverviewTextSkeleton roleClassName={textRole.caption} className="w-16" />
+              </div>
+            ))}
+          </div>
+          <div className={OVERVIEW_ASSET_DISTRIBUTION_HEADER_GRID_CLASS}>
+            <OverviewTextSkeleton roleClassName={textRole.tableHeader} className="w-10" />
+            <OverviewTextSkeleton roleClassName={textRole.tableHeader} className="w-8 justify-self-end" />
+            <OverviewTextSkeleton roleClassName={textRole.tableHeader} className="w-7 justify-self-end" />
+            <OverviewTextSkeleton roleClassName={textRole.tableHeader} className="w-14 justify-self-end" />
+          </div>
+          <div className={OVERVIEW_ASSET_DISTRIBUTION_LIST_CLASS}>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className={OVERVIEW_ASSET_DISTRIBUTION_ROW_CLASS}>
+                <div className={OVERVIEW_ASSET_DISTRIBUTION_COLUMNS_CLASS}>
+                  <OverviewTextSkeleton roleClassName={textRole.metadataLabel} className="w-12" />
+                  <OverviewTextSkeleton roleClassName={textRole.metadataValueStrong} className="w-12 justify-self-end" />
+                  <OverviewTextSkeleton roleClassName={textRole.metadataLabel} className="w-8 justify-self-end" />
+                  <OverviewTextSkeleton roleClassName={textRole.metadataValueStrong} className="w-12 justify-self-end" />
+                </div>
+                <Skeleton className={cn(OVERVIEW_ASSET_SPARKLINE_CLASS, "rounded-sm")} />
+              </div>
+            ))}
+          </div>
+        </div>}
+        {part !== "metrics" && <div className={part === "all" ? OVERVIEW_ASSET_TREND_PANEL_CLASS : OVERVIEW_ASSET_TREND_STANDALONE_CLASS}>
+          <div className="flex items-center justify-between gap-3">
+            <OverviewTextSkeleton roleClassName={textRole.sectionTitle} className="w-40" />
+            <OverviewTextSkeleton roleClassName={textRole.caption} className="w-8" />
+          </div>
+          <Skeleton className={cn("w-full", OVERVIEW_ASSET_TREND_CHART_CLASS, OVERVIEW_ASSET_CHART_SHELL_CLASS)} />
+        </div>}
+      </div>
+    </OverviewSectionPanel>
+  )
+}
+
+function OverviewScanQueueSkeleton() {
+  return (
+    <section className={OVERVIEW_RUNTIME_DETAILS_CARD_SECTION_CLASS}>
+      <OverviewRuntimeDetailsCard contentClassName={OVERVIEW_RUNTIME_SCAN_CARD_CONTENT_CLASS}>
+        <div className={OVERVIEW_RUNTIME_DETAILS_CARD_HEADER_CLASS}>
+          <Skeleton className="size-4 rounded-none" />
+          <OverviewTextSkeleton roleClassName={textRole.sectionTitle} className="w-16" />
+          <Skeleton className="ml-auto h-[19.5px] w-24 rounded-none" />
+        </div>
+        <div className={OVERVIEW_RUNTIME_SCAN_BODY_CLASS}>
+          <div className={OVERVIEW_RUNTIME_SCAN_STATUS_GRID_CLASS}>
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className={OVERVIEW_RUNTIME_SCAN_STATUS_ITEM_CLASS}>
+                <OverviewTextSkeleton roleClassName={textRole.metricValueDisplay} className="w-10" />
+                <div className="flex min-w-0 items-center gap-1.5">
+                  {index < 2 ? <Skeleton className="size-3.5 shrink-0 rounded-none" /> : null}
+                  <OverviewTextSkeleton roleClassName={textRole.caption} className="w-8" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className={OVERVIEW_RUNTIME_SCAN_RECENT_LIST_CLASS}>
+            <div className={OVERVIEW_RUNTIME_SCAN_RECENT_CLASS}>
+              <div className={OVERVIEW_RUNTIME_SCAN_RECENT_COLUMN_HEADER_CLASS}>
+                <div className={OVERVIEW_RUNTIME_SCAN_RECENT_META_CLASS}>
+                  <OverviewTextSkeleton roleClassName={textRole.caption} className="w-8" />
+                  <OverviewTextSkeleton roleClassName={textRole.caption} className="w-10" />
+                  <OverviewTextSkeleton roleClassName={textRole.caption} className="w-16" />
+                </div>
+                <Skeleton className="size-8 shrink-0 rounded-none" />
+              </div>
+              <ScrollArea className="min-h-0 flex-1" contentClassName="min-w-0">
+                <div className={OVERVIEW_RUNTIME_SCAN_RECENT_ROWS_CLASS}>
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <div key={index} className={OVERVIEW_RUNTIME_SCAN_RECENT_ROW_CLASS}>
+                      <div className={OVERVIEW_RUNTIME_SCAN_RECENT_HEADER_CLASS}>
+                        <div className={OVERVIEW_RUNTIME_SCAN_RECENT_META_CLASS}>
+                          <OverviewTextSkeleton roleClassName={textRole.bodyStrong} className="w-24" />
+                          <OverviewTextSkeleton roleClassName={textRole.bodyStrong} className="w-10" />
+                          <OverviewTextSkeleton roleClassName={textRole.bodyStrong} className="w-28" />
+                        </div>
+                        <Skeleton className="size-8 shrink-0 rounded-none" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
+        </div>
+      </OverviewRuntimeDetailsCard>
+    </section>
+  )
+}
+
+function OverviewRuntimeDetailsSkeleton() {
+  return (
+    <OverviewRuntimeDetailsLayout>
+      <section className={OVERVIEW_SYSTEM_DETAILS_CARD_SECTION_CLASS}>
+        <OverviewRuntimeDetailsCard>
+          <div className={OVERVIEW_RUNTIME_DETAILS_CARD_HEADER_CLASS}>
+            <Skeleton className="size-4 rounded-none" />
+            <OverviewTextSkeleton roleClassName={textRole.sectionTitle} className="w-14" />
+            <Skeleton className="ml-auto size-8 rounded-none" />
+          </div>
+          <div className={OVERVIEW_RUNTIME_DATABASE_BODY_CLASS}>
+            <div className={OVERVIEW_RUNTIME_DATABASE_STATUS_ANCHOR_CLASS}>
+              <OverviewTextSkeleton roleClassName={textRole.caption} className="w-10" />
+              <OverviewTextSkeleton roleClassName={textRole.bodyStrong} className="w-16" />
+            </div>
+            <div className={OVERVIEW_RUNTIME_DATABASE_METRIC_GRID_CLASS}>
+              {Array.from({ length: 2 }).map((_, index) => (
+                <div key={index} className={OVERVIEW_RUNTIME_DATABASE_METRIC_CLASS}>
+                  <OverviewTextSkeleton roleClassName={textRole.caption} className="w-14" />
+                  <OverviewTextSkeleton roleClassName={textRole.metricValueDisplay} className="w-16" />
+                </div>
+              ))}
+            </div>
+            <Skeleton className={cn(OVERVIEW_RUNTIME_DATABASE_PROGRESS_CLASS, "w-full")} />
+            <div className={OVERVIEW_RUNTIME_DATABASE_DIAGNOSTIC_GRID_CLASS}>
+              {Array.from({ length: 2 }).map((_, index) => (
+                <div key={index} className={OVERVIEW_RUNTIME_DATABASE_DIAGNOSTIC_CLASS}>
+                  <OverviewTextSkeleton roleClassName={textRole.caption} className="w-14" />
+                  <OverviewTextSkeleton roleClassName={textRole.bodyStrong} className="w-12" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </OverviewRuntimeDetailsCard>
+      </section>
+
+      <section className={OVERVIEW_SYSTEM_DETAILS_CARD_SECTION_CLASS}>
+        <OverviewRuntimeDetailsCard>
+          <div className={OVERVIEW_RUNTIME_RESOURCE_HEADER_CLASS}>
+            <Skeleton className="size-4 rounded-none" />
+            <OverviewTextSkeleton roleClassName={textRole.sectionTitle} className="w-20" />
+            <OverviewTextSkeleton roleClassName={textRole.caption} className="ml-auto w-16" />
+          </div>
+          <div className={OVERVIEW_RUNTIME_RESOURCE_LIST_CLASS}>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className={cn(OVERVIEW_RUNTIME_RESOURCE_ROW_CLASS, "space-y-1")}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="size-3.5 rounded-none" />
+                    <OverviewTextSkeleton roleClassName={textRole.caption} className="w-8" />
+                  </div>
+                  <OverviewTextSkeleton roleClassName={textRole.caption} className="w-16" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex h-2 min-w-0 flex-1 gap-0.5">
+                    {Array.from({ length: 18 }).map((_, segmentIndex) => (
+                      <Skeleton key={segmentIndex} className="min-w-0 flex-1 rounded-none" />
+                    ))}
+                  </div>
+                  <div className="shrink-0 text-right tabular-nums">
+                    <OverviewTextSkeleton roleClassName={textRole.metadataValueStrong} inline skeletonClassName="w-8" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </OverviewRuntimeDetailsCard>
+      </section>
+    </OverviewRuntimeDetailsLayout>
+  )
+}
+
+export function OverviewSectionsSkeleton() {
+  return (
+    <div className={OVERVIEW_SECTIONS_SHELL_CLASS}>
+      <OverviewOperationalGrid data-loading-slot={OVERVIEW_RUNTIME_REGION_LOADING_SLOT}>
+        <OverviewRiskSummarySkeleton />
+        <OverviewAssetOverviewSkeleton part="metrics" className="pt-4 xl:pt-0" />
+      </OverviewOperationalGrid>
+
+      <OverviewOperationalGrid data-loading-slot={OVERVIEW_OPERATIONAL_REGION_LOADING_SLOT}>
+        <OverviewTokenUsageSkeleton />
+        <OverviewScanQueueSkeleton />
+      </OverviewOperationalGrid>
+
+      <OverviewOperationalGrid data-loading-slot={OVERVIEW_ASSET_REGION_LOADING_SLOT}>
+        <section className="min-w-0">
+          <OverviewRuntimeDetailsSkeleton />
+        </section>
+        <OverviewAssetOverviewSkeleton part="trend" className="h-full pt-4 xl:pt-0" />
+      </OverviewOperationalGrid>
+    </div>
+  )
+}

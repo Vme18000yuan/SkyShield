@@ -1,0 +1,239 @@
+"use client"
+
+import { semanticIcons } from "@/components/icons"
+import {
+  SelectedRowActionBar,
+  type SelectedRowActionBarAction,
+} from "@/components/shared/data-table"
+import { UnifiedDataTable } from "@/components/shared/data-table/unified-data-table"
+import { DataTableFacetPanel, type DataTableFacetPanelFacet } from "@/components/shared/data-table/faceted-filter"
+import { SimpleSearchToolbar } from "@/components/shared/data-table/simple-search-toolbar"
+import type { TargetScannedFilter } from "@/components/target/all-targets-detail-view-state"
+import type { ColumnDef, SortingState } from "@tanstack/react-table"
+import type { Target } from "@/types/target.types"
+import type { TargetType } from "@/types/target.types"
+import type {
+  CursorPaginationNavigation,
+  DataTableLoadingSlots,
+} from "@/types/data-table.types"
+import { useTargetTargetsDataTableState } from "./targets-data-table-state"
+
+const RunIcon = semanticIcons.action.run
+const DeleteIcon = semanticIcons.action.delete
+
+interface TargetsDataTableProps {
+  data: Target[]
+  columns: ColumnDef<Target>[]
+  onAddNew?: () => void
+  onAddHover?: () => void
+  onBulkDelete?: () => void
+  onBulkInitiateScan?: () => void
+  onSelectionChange?: (selectedRows: Target[]) => void
+  selectedRows?: Target[]
+  searchPlaceholder?: string
+  searchValue?: string
+  onSearch?: (value: string) => void
+  isSearching?: boolean
+  addButtonText?: string
+  // Pagination related props
+  pagination?: { pageIndex: number, pageSize: number }
+  paginationNavigation?: CursorPaginationNavigation
+  onPaginationChange?: (pagination: { pageIndex: number, pageSize: number }) => void
+  totalCount?: number
+  manualPagination?: boolean
+  sorting?: SortingState
+  onSortingChange?: (sorting: SortingState) => void
+  // Type filter
+  typeFilter?: TargetType[]
+  onTypeFilterChange?: (value: TargetType[]) => void
+  scannedFilter?: TargetScannedFilter[]
+  onScannedFilterChange?: (value: TargetScannedFilter[]) => void
+  // Styling
+  className?: string
+  tableClassName?: string
+  hideToolbar?: boolean
+  hidePagination?: boolean
+  loading?: boolean
+  loadingRowCount?: number
+  stableSurfaceRowCount?: number
+  loadingSlots?: DataTableLoadingSlots
+}
+
+/**
+ * Targets data table component (target version)
+ * Uses UnifiedDataTable unified component
+ */
+export function TargetsDataTable({
+  data = [],
+  columns,
+  onAddNew,
+  onAddHover,
+  onBulkDelete,
+  onBulkInitiateScan,
+  onSelectionChange,
+  selectedRows = [],
+  searchPlaceholder,
+  searchValue,
+  onSearch,
+  isSearching = false,
+  addButtonText,
+  pagination: externalPagination,
+  paginationNavigation,
+  onPaginationChange,
+  totalCount,
+  manualPagination = false,
+  sorting,
+  onSortingChange,
+  typeFilter,
+  onTypeFilterChange,
+  scannedFilter,
+  onScannedFilterChange,
+  className,
+  tableClassName,
+  hideToolbar = false,
+  hidePagination = false,
+  loading = false,
+  loadingRowCount,
+  stableSurfaceRowCount,
+  loadingSlots,
+}: TargetsDataTableProps) {
+  const state = useTargetTargetsDataTableState({
+    searchValue,
+    onSearch,
+    externalPagination,
+    onPaginationChange,
+    manualPagination,
+    totalCount,
+    sorting,
+    onSortingChange,
+  })
+  const targetFilterFacets: DataTableFacetPanelFacet[] = []
+  if (onTypeFilterChange) {
+    targetFilterFacets.push({
+      id: "type",
+      label: state.tColumns("common.type"),
+      values: typeFilter ?? [],
+      onValuesChange: (values) => onTypeFilterChange(values.filter((value): value is TargetType => (
+        value === "domain" || value === "ip" || value === "cidr"
+      ))),
+      options: [
+        { value: "domain", label: state.tTarget("types.domain") },
+        { value: "ip", label: state.tTarget("types.ip") },
+        { value: "cidr", label: state.tTarget("types.cidr") },
+      ],
+      emptyLabel: state.tActions("all"),
+      clearLabel: state.tDataTable("clearFilter"),
+    })
+  }
+  if (onScannedFilterChange) {
+    targetFilterFacets.push({
+      id: "scanned",
+      label: state.tTarget("scannedFilter.title"),
+      values: scannedFilter ?? [],
+      onValuesChange: (values) => onScannedFilterChange(values.filter((value): value is TargetScannedFilter => (
+        value === "true" || value === "false"
+      ))),
+      options: [
+        { value: "true", label: state.tTarget("scannedFilter.scanned") },
+        { value: "false", label: state.tTarget("scannedFilter.notScanned") },
+      ],
+      emptyLabel: state.tActions("all"),
+      clearLabel: state.tDataTable("clearFilter"),
+    })
+  }
+  const selectedRowActions: SelectedRowActionBarAction[] = [
+    ...(onBulkInitiateScan
+      ? [{
+          key: "initiate-scan",
+          label: state.tTooltips("initiateScan"),
+          icon: RunIcon,
+          group: "scan",
+          onClick: onBulkInitiateScan,
+        }]
+      : []),
+    ...(onBulkDelete
+      ? [{
+          key: "delete",
+          label: state.tActions("delete"),
+          icon: DeleteIcon,
+          tone: "destructive" as const,
+          group: "danger",
+          onClick: onBulkDelete,
+        }]
+      : []),
+  ]
+
+  return (
+    <>
+      <UnifiedDataTable
+        data={data}
+        columns={columns}
+        getRowId={(row) => String(row.id)}
+        state={{
+          pagination: state.pagination,
+          setPagination: onPaginationChange ? undefined : state.setInternalPagination,
+          cursorPaginationSummary: state.cursorPaginationSummary,
+          paginationNavigation,
+          onPaginationChange: state.handlePaginationChange,
+          sortingMode: "server",
+          sorting: state.sorting,
+          onSortingChange: state.onSortingChange,
+          onSelectionChange,
+          selectedRows,
+        }}
+        behavior={{
+          expandColumnIds: ["name", "organizations"],
+          columnLayout: "fixed",
+        }}
+        actions={{
+          showBulkDelete: false,
+          onAddNew,
+          onAddHover,
+          addButtonLabel: addButtonText || state.tTarget("addTarget"),
+          showAddButton: !!onAddNew,
+        }}
+        ui={{
+          emptyMessage: state.t("noData"),
+          showColumnVisibility: false,
+          rowDensity: "dense",
+          toolbarLeft: (
+            <SimpleSearchToolbar
+              value={state.localSearchValue}
+              onChange={state.handleSearchInputChange}
+              onSubmit={state.commitSearch}
+              loading={isSearching}
+              placeholder={searchPlaceholder || state.tTarget("title")}
+              toolbarDensity="compact"
+              after={targetFilterFacets.length > 0 ? (
+                <DataTableFacetPanel
+                  title={state.tDataTable("filter")}
+                  activeCount={(typeFilter?.length ?? 0) + (scannedFilter?.length ?? 0)}
+                  facets={targetFilterFacets}
+                />
+              ) : null}
+            />
+          ),
+          className,
+          tableClassName,
+          toolbarDensity: "compact",
+          initialLoadingToolbarFilterCount: targetFilterFacets.length > 0 ? 1 : 0,
+          hideToolbar,
+          hidePagination,
+          loading,
+          loadingPresentation: loading ? "initial" : undefined,
+          loadingRowCount,
+          stableSurfaceRowCount,
+          loadingSlots,
+        }}
+      />
+      <SelectedRowActionBar
+        selectedCount={selectedRows.length}
+        ariaLabel={state.tDataTable("selected", { count: selectedRows.length })}
+        countLabel={state.tDataTable("selected", { count: selectedRows.length })}
+        actions={selectedRowActions}
+        onClearSelection={onSelectionChange ? () => onSelectionChange([]) : undefined}
+        clearSelectionLabel={state.tDataTable("deselectAll")}
+      />
+    </>
+  )
+}

@@ -1,0 +1,565 @@
+{
+  "schema_version": 1,
+  "product": "天穹（SkyShield）",
+  "recorded_at_utc": "2026-10-29T11:21:47.216792+00:00",
+  "checks": [
+    {
+      "name": "独立 PostgreSQL 迁移与融合契约",
+      "status": "通过",
+      "command": "TIANQIONG_GO=<Go1.26.10> bash scripts/test-postgres-contracts.sh",
+      "scope": [
+        "000001–000016 编号与摘要、空库迁移和可重复运行",
+        "资产注册、原表投影、目标范围、事务回滚与幂等",
+        "ARTEX/Norma 对话与 Planner/Worker 模拟 Provider 任务闭环",
+        "新资产与任务意图原子关联、发现到原风险表",
+        "任务租约与跨运行工具结果配对、JWT 权限隔离",
+        "一次性和每周计划、多窗口并集、人工暂停、多实例竞争及领取栅栏"
+      ],
+      "evidence": ".local/logs/postgres-contracts.log"
+    },
+    {
+      "name": "数据库融合契约与竞态检测",
+      "status": "通过",
+      "command": "GOFLAGS=-race TIANQIONG_GO=<Go1.26.10> bash scripts/test-postgres-contracts.sh",
+      "evidence": ".local/logs/postgres-contracts-race.log"
+    },
+    {
+      "name": "Go 编译、架构和模块竞态检查",
+      "status": "通过",
+      "command": "go build ./cmd/server；make check-architecture；go test -race -short ./internal/airuntime ./internal/modules/{assetregistry,aiworkbench,aisettings}/...",
+      "evidence": ".local/logs/go-race.log"
+    },
+    {
+      "name": "前端类型、UI 设计约束和生产构建",
+      "status": "通过",
+      "command": "corepack pnpm typecheck；corepack pnpm check:ui-foundation；corepack pnpm build",
+      "evidence": ".local/logs/frontend-build.log"
+    },
+    {
+      "name": "对话与任务切换异步响应隔离",
+      "status": "通过",
+      "command": "corepack pnpm exec vitest run hooks/__tests__/use-ai-tasks.activities.test.tsx hooks/__tests__/use-ai-chat.activities.test.tsx",
+      "evidence": ".local/logs/frontend-ai-tests.log"
+    },
+    {
+      "name": "Docker Compose 结构校验",
+      "status": "通过",
+      "command": "docker compose -f compose.tianqiong.yaml config --quiet",
+      "evidence": ".local/logs/compose-config.log"
+    },
+    {
+      "name": "原部署卷保护",
+      "status": "按预期拒绝",
+      "reason": "当前 Docker daemon 的 lunafox_data 属于既有 LunaFox 项目；未挂载或修改。"
+    }
+  ],
+  "not_completed": [
+    "任务内 MainAgent 对话、原生扫描桥接、完整资产覆盖与冷图压缩",
+    "Agent/MCP/Skill/工具设置及隔离宿主执行器",
+    "完整多租户与 RBAC、事件触发器、归档和风险复测闭环",
+    "完整 Docker 栈与真实扫描 Agent 验收",
+    "真实供应商 LLM 联调"
+  ],
+  "source_files": [
+    {
+      "path": "frontend/app/ai/chat/page.tsx",
+      "sha256": "a1f1b6294e036772e9df85892a2c367d72cef6c5be8e152538acd9161961f0ce"
+    },
+    {
+      "path": "frontend/app/ai/schedules/page.tsx",
+      "sha256": "3dbd884cb543ea0a1e59599aec35b02d7cc3d243f717498f2c7f85ccaf151bc4"
+    },
+    {
+      "path": "frontend/app/ai/tasks/[id]/page.tsx",
+      "sha256": "b70a1b42fb0f42b76089cb2e4f1aafa2dfa009053b8eff13651fd4080775f4dd"
+    },
+    {
+      "path": "frontend/app/ai/tasks/page.tsx",
+      "sha256": "df8ca05544d8c7d71465e3ac087c43cf782df769b48b119ccbea7000b712c19f"
+    },
+    {
+      "path": "frontend/app/ai/tool-executions/page.tsx",
+      "sha256": "ee9a6572d5515573e2ba082611b44dd7b85280a2dd080e013d5ffdfd8d0ae780"
+    },
+    {
+      "path": "frontend/components/ai/ai-chat-workbench.tsx",
+      "sha256": "51008795e44f171875c1d558fd39e7aad191b468d2e8be49ce00bc72d32d2ed2"
+    },
+    {
+      "path": "frontend/components/ai/ai-schedule-dialog.tsx",
+      "sha256": "4d7e6d075bb7e0f819ee29896d19168eda9b2514df3f09cd17260c6225631bb9"
+    },
+    {
+      "path": "frontend/components/ai/ai-schedule-list.tsx",
+      "sha256": "f96ea051099dd00a3eabbbba37d76c28c7e60b0775bf1ea7499bccd4e661b214"
+    },
+    {
+      "path": "frontend/components/ai/ai-task-create-dialog.tsx",
+      "sha256": "bd778ad459250891662904cac3cdca6f0dffc4b1c8acf087d893d11a1b0964bc"
+    },
+    {
+      "path": "frontend/components/ai/ai-task-detail.tsx",
+      "sha256": "76fb7308167aaeb7176a955050dda26802a9ed005e8db39194d3772bc00d7deb"
+    },
+    {
+      "path": "frontend/components/ai/ai-task-list.tsx",
+      "sha256": "7207c438cff8e9e4d60b5432f7ab7bc09a7dd58e262ca0ff394f1ec6f772a309"
+    },
+    {
+      "path": "frontend/components/ai/ai-tool-execution-list.tsx",
+      "sha256": "2ca310753d7761415583948cbfe0b52c459e40c213ea88ddde8cb7322ad9e760"
+    },
+    {
+      "path": "frontend/components/app-sidebar.tsx",
+      "sha256": "179b588e55f3df9d8a48fcf82f5f2fa723e1da8e3f9a3f762dd1678cdf56c9df"
+    },
+    {
+      "path": "frontend/components/assets/asset-entity-list.tsx",
+      "sha256": "5b6b4c0a267d9fa2ca19c92e33250798f86d486d42374a2f49fc37dc1414ff1d"
+    },
+    {
+      "path": "frontend/components/assets/asset-registration-dialog.tsx",
+      "sha256": "c2d0dd010955f6fb1c7e70cd1a869a2a1026e7da13e08d172f71b7b69009d8d5"
+    },
+    {
+      "path": "frontend/hooks/__tests__/use-ai-chat.activities.test.tsx",
+      "sha256": "ee9b5d14b3bb2babc44b8447aa4ec19233999d0c9e51859bd3094d50fa7fb7bd"
+    },
+    {
+      "path": "frontend/hooks/__tests__/use-ai-tasks.activities.test.tsx",
+      "sha256": "702a45dd123293b86c6880b3e7689593c977acd31e135a3c3e84cfc7189110e2"
+    },
+    {
+      "path": "frontend/hooks/use-ai-chat.ts",
+      "sha256": "9ae4bee007e36febe0c9f4806dc8f0bb9e1b3ba9666bde30f5f242b1b8068479"
+    },
+    {
+      "path": "frontend/hooks/use-ai-llm-profiles.ts",
+      "sha256": "d9457b4bdaa5fc03c80b452b4349cf4e001510adfbbd94b7203b04b537337ca9"
+    },
+    {
+      "path": "frontend/hooks/use-ai-schedules.ts",
+      "sha256": "80b126782c69eb465b4b6234b59547a017b8cbbd147e71c5f627700fbb401056"
+    },
+    {
+      "path": "frontend/hooks/use-ai-tasks.ts",
+      "sha256": "1c379b9b6ab82bcd39fe187fc6912ead1b2fb65d952c9962eaf1dec6f2be2568"
+    },
+    {
+      "path": "frontend/hooks/use-ai-tool-executions.ts",
+      "sha256": "1c5f60ab7a1e269f2600284cadd2bb2ea6c3d185a87df09b8fe60ba045882e5a"
+    },
+    {
+      "path": "frontend/messages/en.json",
+      "sha256": "5ac924499050332e6f226eb515e3be0368539f5516f196c41dbb772e629aced6"
+    },
+    {
+      "path": "frontend/messages/zh.json",
+      "sha256": "81ea00175e12093a2bd30e3d711526a91d32bafaa39eea4779623726bacedf00"
+    },
+    {
+      "path": "frontend/scripts/loading-route-contracts.mjs",
+      "sha256": "5c2ae2775663265884314d3aa52b12e302c837a2ce65a758d468020a03547866"
+    },
+    {
+      "path": "frontend/scripts/tianqiong-ai-ui-smoke.mjs",
+      "sha256": "7702aad00d660081d231464bccf569b31e860ab556bc40e5a06d05f465afb7a8"
+    },
+    {
+      "path": "frontend/services/ai-chat.service.ts",
+      "sha256": "8ac81e3ec15f9d1b6147d031360e8395976da6708e0220e13b91ed0cd966f6ad"
+    },
+    {
+      "path": "frontend/services/ai-llm-profile.service.ts",
+      "sha256": "2be7f98fc7e9f10628450b5a08e214f9f0a3e8901dd28c57034c8032b3d86293"
+    },
+    {
+      "path": "frontend/services/ai-schedule.service.ts",
+      "sha256": "8f1effc9fc336fd7ef21cf33f9f9a95b0323d972d05c23080d316d98bb0c8732"
+    },
+    {
+      "path": "frontend/services/ai-task.service.ts",
+      "sha256": "0a822b42e64143b7010e4b7395bd368b981e22a049a91d69f7b7756bd9235b24"
+    },
+    {
+      "path": "frontend/services/ai-tool-execution.service.ts",
+      "sha256": "74750463f8b41a0933e35498364b5e451bca8cfc0d4b2ae3d502e403e9fd8014"
+    },
+    {
+      "path": "frontend/types/ai-chat.types.ts",
+      "sha256": "c4d4bbe69ae788ce930dadb23af29a7bfefc0de70b7265dac92d99bd474899f4"
+    },
+    {
+      "path": "frontend/types/ai-llm-profile.types.ts",
+      "sha256": "515e5a73ed229c3835b9060945aab3ca30221dc115b221c47a4a854a4a92f826"
+    },
+    {
+      "path": "frontend/types/ai-schedule.types.ts",
+      "sha256": "8eff01df09cbbc73a35f04b314d16bd554cfdaa8219e58aa9de513bf132e6939"
+    },
+    {
+      "path": "frontend/types/ai-task.types.ts",
+      "sha256": "1d87be0b1bb58055576115c4fd7ef580a9c3a13b732af01e94adb00fe3861745"
+    },
+    {
+      "path": "frontend/types/ai-tool-execution.types.ts",
+      "sha256": "c8ad0b6e56094b1ea043a8ad9e1a637ec92cc581d258d6fdc57dc792a5e9c555"
+    },
+    {
+      "path": "server/cmd/server/ai_conversation_postgres_integration_test.go",
+      "sha256": "72df8d6468a52342b4d681dfaea7e314dc5b71834ce06afe450ae768a8f1cb10"
+    },
+    {
+      "path": "server/cmd/server/ai_conversation_runtime_integration_test.go",
+      "sha256": "7c05f9637ed1a7fb172ac18f74a924555b9b36254787a5baf77496b6678e0ea2"
+    },
+    {
+      "path": "server/cmd/server/ai_llm_profile_postgres_integration_test.go",
+      "sha256": "018ec23832894ac408f480c0653774f3b500ad581b4542e1a6b6f027662bc074"
+    },
+    {
+      "path": "server/cmd/server/ai_schedule_postgres_integration_test.go",
+      "sha256": "039a54981392eaf6d2a14c51ccde2f2da627b483fc43ef54f42c013fca84e0cc"
+    },
+    {
+      "path": "server/cmd/server/ai_task_http_integration_test.go",
+      "sha256": "cc4447d21faff4dc3e4950ef832e9c39638b72fce679958e7e937d35ebc189db"
+    },
+    {
+      "path": "server/cmd/server/ai_task_postgres_integration_test.go",
+      "sha256": "f247d72d00e8e2fadd011f29d33b5d2b03c235c30efa30207001752ee35ad7e4"
+    },
+    {
+      "path": "server/cmd/server/ai_task_runtime_integration_test.go",
+      "sha256": "86e4835927ecf1be66be6376e49fa0d3d51059b03fea6104fd72432c65037f66"
+    },
+    {
+      "path": "server/cmd/server/asset_registration_postgres_integration_test.go",
+      "sha256": "a6a2e5adfde6f230276076fb1d377bd9b4553a5688104cab387abc6723268ece"
+    },
+    {
+      "path": "server/cmd/server/migrations/000010_asset_registry.down.sql",
+      "sha256": "85b751bed286e8e1f30c8568045369ae8bed9d97a27a8847f5b5bd93cf7e6313"
+    },
+    {
+      "path": "server/cmd/server/migrations/000010_asset_registry.up.sql",
+      "sha256": "04e61650112febde5d8d588e296dae318a16cf9162cb90ef3efa526c46f3d407"
+    },
+    {
+      "path": "server/cmd/server/migrations/000011_ai_conversations.down.sql",
+      "sha256": "ceb270f4de586bb87e7a9099c38609777ac3af4b68821cbef1b4db20f787683a"
+    },
+    {
+      "path": "server/cmd/server/migrations/000011_ai_conversations.up.sql",
+      "sha256": "f58aec3314cb8d7d817a26f498071e092217485d5cee982a91e6c5d082a2756b"
+    },
+    {
+      "path": "server/cmd/server/migrations/000012_ai_llm_profiles.down.sql",
+      "sha256": "70aa68342ab79c77a2635eb4e2503065fa666ddc79273335eba8293f832baf2c"
+    },
+    {
+      "path": "server/cmd/server/migrations/000012_ai_llm_profiles.up.sql",
+      "sha256": "a696e5cda7f42ac3846509d2c5078e30bb84fd1f89ebeb3d77beaca8e9580242"
+    },
+    {
+      "path": "server/cmd/server/migrations/000013_asset_observations.down.sql",
+      "sha256": "8bfadbf3724334dafc40b7eb274db59291c8f3fbbfb8730f667d58ba156d3345"
+    },
+    {
+      "path": "server/cmd/server/migrations/000013_asset_observations.up.sql",
+      "sha256": "895be65121dde52a6f18276972d5d2ca93a939814f4549a999a31a70de1b0837"
+    },
+    {
+      "path": "server/cmd/server/migrations/000014_ai_task_graph.down.sql",
+      "sha256": "598ff54c6bcfd7319c9d597b9f590d145ac77f2dbd1a817c68858d3e22ea520f"
+    },
+    {
+      "path": "server/cmd/server/migrations/000014_ai_task_graph.up.sql",
+      "sha256": "8411eef5bf51a49d039bf1c01ef11e8b19901cb71beac083adc13c0069035a6d"
+    },
+    {
+      "path": "server/cmd/server/migrations/000015_ai_schedules.down.sql",
+      "sha256": "c1f698f73de34e8fe39e3801e0345b912263a2b3eb050e7bd91c92ef8302ae51"
+    },
+    {
+      "path": "server/cmd/server/migrations/000015_ai_schedules.up.sql",
+      "sha256": "214959256269be652a861f3d78b06a5855af25aa8952f56a9149b43beb913f2b"
+    },
+    {
+      "path": "server/cmd/server/migrations/000016_ai_task_tool_executions.down.sql",
+      "sha256": "437cf7e697c601f6c939899c3b8c663c2102679ac86515873fd6ce7a806dacc4"
+    },
+    {
+      "path": "server/cmd/server/migrations/000016_ai_task_tool_executions.up.sql",
+      "sha256": "85e9a768195545d2899d0ff7a8e8469a15aa4ce21376cf94464bd8b717677a07"
+    },
+    {
+      "path": "server/cmd/server/migrations/manifest.json",
+      "sha256": "046617e3cbb1759ebc544c8985c7ce5edac0db8c9193b8db79270172ed100761"
+    },
+    {
+      "path": "server/internal/airuntime/asset_tool.go",
+      "sha256": "27798a9e2ebb46d1c25729010a175ca88ab579dd203d86194e05af2f12f68566"
+    },
+    {
+      "path": "server/internal/airuntime/chat.go",
+      "sha256": "5db2865548740c03930526902ce70354b00292dfe44b23c62f24706e83e34b96"
+    },
+    {
+      "path": "server/internal/airuntime/chat_test.go",
+      "sha256": "8bbf2c890b93171613b969131c2d8f7459dad53a3016496b942ac4505505e1ac"
+    },
+    {
+      "path": "server/internal/airuntime/deferred_runner.go",
+      "sha256": "7106c3dd24aad23e792e06f5fe723271e17bb9bfc84e22fcc34e5303f77eec4b"
+    },
+    {
+      "path": "server/internal/airuntime/environment_provider.go",
+      "sha256": "136ec8ff5f9b7c38c39053d62594fa56166ff59f17b57ad5ac6fa5a3b7074b4b"
+    },
+    {
+      "path": "server/internal/airuntime/insert_assets_tool.go",
+      "sha256": "ccdf25cde125312f8646c124315d14c6b54b4173c5138046382372c24e6cc99a"
+    },
+    {
+      "path": "server/internal/airuntime/insert_assets_tool_test.go",
+      "sha256": "f8fdfcc2642b8b467df37d11595731ce2f7de95b18e8c22346cd420c3511f0c0"
+    },
+    {
+      "path": "server/internal/airuntime/run_identity.go",
+      "sha256": "5cceddc7b00357db513cf450032bc3f7f35e1c2f592c8d1b70eae1f25e875672"
+    },
+    {
+      "path": "server/internal/airuntime/secretbox.go",
+      "sha256": "14ee8c041137c29b6dda26894c1399c7dc6d61fa539d4fd7bcb990d97520b12d"
+    },
+    {
+      "path": "server/internal/airuntime/secretbox_test.go",
+      "sha256": "a6904f524d7d86b222631bae1bd51b6e1268105bbdec5247ec33b82b8c28f864"
+    },
+    {
+      "path": "server/internal/airuntime/task_graph_connection.go",
+      "sha256": "7d4a43a343a352d34645fbc6f19c9e28910903619a94e5e27538d853018b9db3"
+    },
+    {
+      "path": "server/internal/airuntime/task_runner.go",
+      "sha256": "1f8c00b17a034c87c03768d10ab854166696f48e876d5a3dc5453cb82a3253f3"
+    },
+    {
+      "path": "server/internal/bootstrap/routes.go",
+      "sha256": "2cf14dafe952ec61cdb1e816bc154c1a51ea88ccd71a92c9726c84207f24ad3e"
+    },
+    {
+      "path": "server/internal/bootstrap/run.go",
+      "sha256": "dc072d6a461570b4985de814c6d0d34bb9eafa6a91ed4caeb16f272ba5cf9a8f"
+    },
+    {
+      "path": "server/internal/bootstrap/wiring.go",
+      "sha256": "e43d0a6d4d565348df1e521dffe3e909b69935532e213e1e7e3da24106097feb"
+    },
+    {
+      "path": "server/internal/bootstrap/wiring/aiworkbench/exports.go",
+      "sha256": "0fd73adccfe57e097cc06a7ab4e7911b256df4be023fc7ddf92c8670a3b08da8"
+    },
+    {
+      "path": "server/internal/modules/aisettings/application/llm_profile_facade.go",
+      "sha256": "e1d09cc7af70f938a5d02450f5cc68936f896d80e6947eac791f1dceb7e32249"
+    },
+    {
+      "path": "server/internal/modules/aisettings/application/llm_profile_ports.go",
+      "sha256": "28d18b3ebdf44a053cdfe4d39c7bf1d537dfa051de09a4ff6538a608f6e62177"
+    },
+    {
+      "path": "server/internal/modules/aisettings/handler/llm_profile_handler.go",
+      "sha256": "e9a1385491ff927617b4da776a3923bd41575047416adb94e8f5b1e310495a4e"
+    },
+    {
+      "path": "server/internal/modules/aisettings/infrastructure/llm_resolver.go",
+      "sha256": "39563d13b934421f776be952cd0ac1d131b2956a168655f7582c5537d0bce18e"
+    },
+    {
+      "path": "server/internal/modules/aisettings/repository/llm_profile.go",
+      "sha256": "e138843776cb5f479e3c0d91382255483b2028c1de653afb6d88d875a7f0f4b4"
+    },
+    {
+      "path": "server/internal/modules/aisettings/repository/persistence/llm_profile.go",
+      "sha256": "d2862ab337b28032ad7d89fa3a5ed15515d3fd11751dfd111dcc8c9cd2689442"
+    },
+    {
+      "path": "server/internal/modules/aisettings/router/routes.go",
+      "sha256": "27221eff330752b4a61802e7b9a56e4612895f7ef4f7942e3f1ed5bda0756c57"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/application/calendar_window.go",
+      "sha256": "6e963ff67e48e7ebd3ff1877cbeb97ec7eaf7b46b29cfe9d1de73f0aa17c93eb"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/application/calendar_window_startup_test.go",
+      "sha256": "b48360f719c9c3a8536f2db71e55df300e1b0a294c98bb8cc5e94c4d0d16455a"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/application/calendar_window_test.go",
+      "sha256": "1eb5755df35bb0b2deb4d58d3c6f5c8db539d368895613cf9caef1d5ff73fc33"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/application/conversation_facade.go",
+      "sha256": "f771e8aab8cf01a4b3c73d74a7fa0955bd27be20d4511d0f9610d0aff59803f7"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/application/conversation_ports.go",
+      "sha256": "cda2331ee338d909a4c6d81d3d978641b6c2628280512e522fd4a86fbb24ea0c"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/application/schedule_controller.go",
+      "sha256": "bda99ee01a0e40416cb7c1f4bbad4e949e25a05fc3b84eef63325fab8a367981"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/application/schedule_facade.go",
+      "sha256": "8103c74eb29ef975e8ddec79a68dfa5f56e6a4e8cde06c0148ec3ce532269388"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/application/schedule_ports.go",
+      "sha256": "8a3b3fb1cf0d59ab4c21dbd3ce4726ee06c319b46842d81898101fc6d06e37ef"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/application/task_controller.go",
+      "sha256": "116358cee5b63942a081fc30c30070579d7b076112c21e68abfb13a91c0e5354"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/application/task_facade.go",
+      "sha256": "0c27dfb6714fa5d8d8d3a8b91520315cbe6fd58eea611a0e02c3cc24888e9d6c"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/application/task_ports.go",
+      "sha256": "97dd188471e6321c00303d0cf3a7732e91da18c92e285b8af76ae693b947c3bb"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/handler/conversation_handler.go",
+      "sha256": "f56bde039f91640d62f10da985e792f36f212efcae9ac2e849be0597eff3a83b"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/handler/schedule_handler.go",
+      "sha256": "8b5e465647f6bbe12de4d7c332cf83211b394b61c33617ede65b843a6a3faa96"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/handler/task_handler.go",
+      "sha256": "4fe185226a5a083da8c71c20be6924f0ebfcda90624aa4f565c4a1080a3d34ac"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/repository/conversation.go",
+      "sha256": "314fc6b4f855737e0d26218c664abbbfcf3cf2a0cbc53bba5cb24407848107bc"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/repository/persistence/conversation.go",
+      "sha256": "03272e5b3fec32e61760d0426d7f6c6974ae765be166dc5af1e686c03f7ef9c2"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/repository/schedule.go",
+      "sha256": "8d0406e84d4d1232a6b2b2f1febdc13fa6cf50228fdafb95cedbea9e453e3099"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/repository/schedule_tick.go",
+      "sha256": "48ad79b4e84f88adfeaea3b1cc4ab9dce10c4284a2b299e013541d1e78279581"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/repository/task.go",
+      "sha256": "7dbc959883578d2e276e94ee93170dd17712fae772e535164fa7c5955ab8a849"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/repository/task_tool_execution.go",
+      "sha256": "caa17e52637bd64f848880179a2606bbfe02a9ea199897088b69534debb8954c"
+    },
+    {
+      "path": "server/internal/modules/aiworkbench/router/routes.go",
+      "sha256": "489ebdf0e7c8dc75fbb74f55ddfbfc8033a7919dfc021d400b7a99e8c1506930"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/application/asset_facade.go",
+      "sha256": "805a3dd1989010eb1116871a67377a163110816e1a31179ca19827f24949ac59"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/application/asset_facade_test.go",
+      "sha256": "8f4f4b74674ac1cf543dd7efa5117a3cab2cc60491d417b808a8b0708051ebd2"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/application/asset_registry_ports.go",
+      "sha256": "cc45758614b28402860b347c1ec41e3e4e4bd8cd80b1b14371a6e78276259e33"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/application/backfill.go",
+      "sha256": "53be0b7d48c6e2c10c6455116d8cd1641c21d27ffe8f0c269eef2bfe77573fb8"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/application/registration_facade.go",
+      "sha256": "5d103a739aa7c6fd5c73d25dadd9c72aa532c64f7cfdacc171fece948ada9e11"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/application/registration_ports.go",
+      "sha256": "7abaac721ba692da802812b93a9c769302d4f51e1bdbbb01a7feeb9e628244fe"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/application/registration_scope.go",
+      "sha256": "9ce4b4927aa2838a79483b9d48b187bd7a8bd45c38d424fcf60cdfe627a7d2f0"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/application/registration_test.go",
+      "sha256": "9ab77dc8677ee87c0b9582fc962009c86341ce7d62f5e1388c07c56f9274edca"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/handler/asset_entity.go",
+      "sha256": "2972c21b077387510d0728bd330270178409b2ea5522d71f82137266312e8739"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/handler/asset_registration_handler.go",
+      "sha256": "b0a74a8eaed2e3dc32bab9a73ff2e09b08be06555fe583f3bf5fe7a9efe007e1"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/repository/asset_registration.go",
+      "sha256": "152216953b92a10395f0573db73ccef2823a15164410e958866b3b7488c61a19"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/repository/asset_registry.go",
+      "sha256": "c88276162b7f884a9a65f6da78f1520443f83303b498a7b71fa192fb64c673d1"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/repository/persistence/backfill_cursor.go",
+      "sha256": "f0feb559e5c2a61db98024f8a3f73d21c4c92754f13a185d498ce1dd3861c930"
+    },
+    {
+      "path": "server/internal/modules/assetregistry/router/routes.go",
+      "sha256": "220593074aa03730518be873383b18e848e9230b227e76ddfe0bd5e38506b9c4"
+    },
+    {
+      "path": "server/internal/modules/httpdto/resource_name.go",
+      "sha256": "4a5a20d78e033bd1f17d2795f0a20a896965451d84adfaadf61c7164c219f9f5"
+    },
+    {
+      "path": "server/scripts/check-router-boundaries.sh",
+      "sha256": "195881d0b3277126055af31c3338ae925a30dd06666a3a123287a75f0f758edc"
+    },
+    {
+      "path": "third_party/artex/agent/assembly.go",
+      "sha256": "6537df8492b8e842bb9fff38ef73cb2ab46d78de6cb3148ca281e6920cc22412"
+    },
+    {
+      "path": "third_party/artex/agent/chat.go",
+      "sha256": "2ae3eab64e45c7d4f011dc898c02c6c4e01cd6c6ff08cf8e6ca525cd5d35302e"
+    },
+    {
+      "path": "third_party/artex/agent/host_policy.go",
+      "sha256": "0f930038157626ad3b8340c77884bb2feea6b33e12267037c6121b319fe34f2a"
+    },
+    {
+      "path": "third_party/artex/agent/mainagent.go",
+      "sha256": "74a882897829fc54cbcf6dbd623b6fa8df98b0855689f0dbe5a2e2f2099c298d"
+    },
+    {
+      "path": "third_party/artex/agent/planner.go",
+      "sha256": "0979ef40b2e5f9a3536207df028986c2776af216b3dc96f505e9a96df60773e2"
+    },
+    {
+      "path": "third_party/artex/agent/worker.go",
+      "sha256": "65b1d76df059e845d6c5cfc86d87cdff5e30d302abeae91166054d1e5eb5dd3d"
+    }
+  ]
+}

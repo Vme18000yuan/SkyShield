@@ -1,0 +1,3 @@
+-- DESTRUCTIVE TEST TEARDOWN ONLY.
+DROP INDEX IF EXISTS idx_vuln_asset_id;
+ALTER TABLE vulnerability DROP COLUMN IF EXISTS asset_id;

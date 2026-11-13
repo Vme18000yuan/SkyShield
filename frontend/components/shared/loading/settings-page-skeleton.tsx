@@ -1,0 +1,68 @@
+import { Skeleton } from "@/components/ui/skeleton"
+import { cn } from "@/lib/utils"
+import { ActionSkeleton } from "@/components/shared/loading/action-skeleton"
+import { Input } from "@/components/ui/input"
+import {
+  getLoadingOwnerAttributes,
+  type LoadingLayer,
+} from "@/components/shared/loading/loading-owner"
+import {
+  COMPACT_CONTENT_GUTTER_CLASS,
+  COMPACT_PAGE_RHYTHM_CLASS,
+} from "@/components/shared/layout/page-shell-density"
+
+interface SettingsPageSkeletonProps {
+  owner?: string
+  layer?: LoadingLayer
+  className?: string
+}
+
+export function SettingsPageSkeleton({
+  owner,
+  layer = "route",
+  className,
+}: SettingsPageSkeletonProps) {
+  if (owner !== undefined && !owner.trim()) {
+    throw new Error("SettingsPageSkeleton requires a non-empty owner.")
+  }
+
+  return (
+    <div
+      {...(owner ? getLoadingOwnerAttributes({ owner, layer, intent: "route" }) : {})}
+      data-slot="settings-page-skeleton"
+      className={cn("flex flex-col", COMPACT_CONTENT_GUTTER_CLASS, COMPACT_PAGE_RHYTHM_CLASS, className)}
+    >
+      <div className="space-y-3">
+        <Skeleton className="h-8 w-52" />
+        <Skeleton className="h-4 w-80 max-w-full" />
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="rounded-xl border border-border bg-card/70 p-4 shadow-2xs">
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-32" />
+            <Input size="sm" aria-hidden="true" disabled tabIndex={-1} className="disabled:opacity-100" />
+            <Skeleton className="h-24 w-full rounded-xl" />
+            <ActionSkeleton size="lg" widthClassName="w-28" />
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div className="rounded-xl border border-border bg-card/70 p-4 shadow-2xs">
+            <div className="space-y-3">
+              <Skeleton className="h-5 w-24" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-4/5" />
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-card/70 p-4 shadow-2xs">
+            <div className="space-y-3">
+              <Skeleton className="h-5 w-28" />
+              <Input size="sm" aria-hidden="true" disabled tabIndex={-1} className="disabled:opacity-100" />
+              <ActionSkeleton size="lg" widthClassName="w-32" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

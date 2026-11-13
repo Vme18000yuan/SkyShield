@@ -1,0 +1,74 @@
+{
+  "engine": {
+    "description": "Discover target-scoped directory paths with FFUF and a selected wordlist.",
+    "displayName": "Directory Scan"
+  },
+  "sections": {
+    "ffuf": {
+      "description": "Configure FFUF directory discovery.",
+      "name": "FFUF",
+      "params": {
+        "auto-calibration": {
+          "description": "Enable FFUF automatic calibration."
+        },
+        "auto-calibration-mode": {
+          "description": "Select FFUF ac or per-host-and-parent-path ach automatic calibration."
+        },
+        "concurrency": {
+          "description": "Maximum number of Website scans running at once."
+        },
+        "delay": {
+          "description": "Fixed or ranged request delay in seconds passed unchanged to FFUF."
+        },
+        "denoise-auth-redirect": {
+          "description": "Drop redirect results whose resolved Location points at a known login/SSO path (default false)."
+        },
+        "denoise-backup-html": {
+          "description": "Drop backup-suffixed results served as text/html (default false)."
+        },
+        "follow-redirects": {
+          "description": "Follow HTTP redirects during scanning."
+        },
+        "headers": {
+          "description": "HTTP request headers in Name: Value form, each mapped to a separate -H argument."
+        },
+        "http2": {
+          "description": "Allow HTTP/2 for HTTPS requests with HTTP/1 fallback."
+        },
+        "match-codes": {
+          "description": "HTTP status matcher expression passed unchanged to FFUF."
+        },
+        "rate": {
+          "description": "Per-process request rate limit; zero keeps FFUF unlimited."
+        },
+        "recursion": {
+          "description": "Enable recursive directory discovery."
+        },
+        "recursion-depth": {
+          "description": "Maximum recursive discovery depth."
+        },
+        "recursion-strategy": {
+          "description": "FFUF recursion strategy."
+        },
+        "request-timeout": {
+          "description": "Per-request timeout in seconds."
+        },
+        "target-variants": {
+          "description": "Append target-derived backup filename variants to each Website wordlist."
+        },
+        "threads": {
+          "description": "FFUF worker threads for each Website process."
+        },
+        "timeout": {
+          "description": "Deadline in seconds for each Website FFUF process."
+        },
+        "waf-smart-skip": {
+          "description": "Skip a Website's FFUF scan when a two-request pre-scan detects an obvious WAF block (default false)."
+        },
+        "wordlist": {
+          "description": "Server-managed wordlist selected for directory discovery."
+        }
+      }
+    }
+  }
+}

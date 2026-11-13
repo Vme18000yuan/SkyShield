@@ -1,0 +1,252 @@
+package application
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	scanapp "github.com/yyhuni/lunafox/server/internal/modules/scan/application"
+	"go.uber.org/zap"
+)
+
+const (
+	schedulerIdleInterval = time.Minute
+	handoffDeadline       = 5 * time.Minute
+)
+
+type HandoffDispatcher interface {
+	Dispatch(ctx context.Context, input FrozenDispatchInput) (*scanapp.BatchScanResult, error)
+}
+
+type SchedulerPassResult struct {
+	Materialized    int
+	Attempted       bool
+	PreAttemptError bool
+	FailureStage    string
+	Err             error
+}
+
+func (result SchedulerPassResult) Progressed() bool {
+	return result.Materialized > 0 || result.Attempted
+}
+
+type SchedulerController struct {
+	repository ExecutionRepository
+	dispatcher HandoffDispatcher
+	clock      RuntimeClock
+	waiter     RuntimeWaiter
+	logger     EventLogger
+	startOnce  sync.Once
+	stateMu    sync.RWMutex
+	paused     bool
+	done       chan struct{}
+}
+
+func NewSchedulerController(repository ExecutionRepository, dispatcher HandoffDispatcher) *SchedulerController {
+	return &SchedulerController{
+		repository: repository,
+		dispatcher: dispatcher,
+		clock:      systemRuntimeClock{},
+		waiter:     systemRuntimeWaiter{},
+		logger:     packageEventLogger{},
+		done:       make(chan struct{}),
+	}
+}
+
+func (controller *SchedulerController) WithRuntime(clock RuntimeClock, waiter RuntimeWaiter, logger EventLogger) *SchedulerController {
+	if controller == nil {
+		return nil
+	}
+	if clock != nil {
+		controller.clock = clock
+	}
+	if waiter != nil {
+		controller.waiter = waiter
+	}
+	if logger != nil {
+		controller.logger = logger
+	}
+	return controller
+}
+
+func (controller *SchedulerController) Start(ctx context.Context) {
+	if controller == nil {
+		return
+	}
+	controller.startOnce.Do(func() {
+		go controller.run(ctx)
+	})
+}
+
+func (controller *SchedulerController) Done() <-chan struct{} {
+	if controller == nil {
+		closed := make(chan struct{})
+		close(closed)
+		return closed
+	}
+	return controller.done
+}
+
+// Pause prevents new scheduled occurrences from being materialized or handed
+// off while a maintenance operation is preparing to update the deployment.
+func (controller *SchedulerController) Pause() {
+	if controller == nil {
+		return
+	}
+	controller.stateMu.Lock()
+	controller.paused = true
+	controller.stateMu.Unlock()
+}
+
+func (controller *SchedulerController) Resume() {
+	if controller == nil {
+		return
+	}
+	controller.stateMu.Lock()
+	controller.paused = false
+	controller.stateMu.Unlock()
+}
+
+func (controller *SchedulerController) IsPaused() bool {
+	if controller == nil {
+		return false
+	}
+	controller.stateMu.RLock()
+	defer controller.stateMu.RUnlock()
+	return controller.paused
+}
+
+func (controller *SchedulerController) run(ctx context.Context) {
+	defer close(controller.done)
+	for ctx.Err() == nil {
+		result := controller.RunPass(ctx)
+		if result.Err != nil {
+			fields := []zap.Field{
+				zap.Int("scheduled_scan.materialized_count", result.Materialized),
+				zap.Bool("scheduled_scan.attempted", result.Attempted),
+				zap.String("failure.stage", result.FailureStage),
+			}
+			controller.logger.Error("Scheduled scan controller pass failed", append(fields, diagnosticErrorFields("error", result.Err)...)...)
+		}
+		if result.Progressed() && !result.PreAttemptError {
+			continue
+		}
+		if err := controller.waiter.Wait(ctx, controller.idleWait(ctx)); err != nil {
+			return
+		}
+	}
+}
+
+// idleWait keeps the fixed one-minute idle interval but shortens it to the
+// earliest pending bounded-retry deadline, so a 30-second backoff is not
+// stretched to the next full minute. Controller infrastructure errors keep the
+// normal minute; the repository query failing must not busy-loop the pass.
+func (controller *SchedulerController) idleWait(ctx context.Context) time.Duration {
+	wait := schedulerIdleInterval
+	deadline, err := controller.repository.EarliestRetryDeadline(ctx)
+	if err != nil || deadline == nil {
+		return wait
+	}
+	until := deadline.Sub(controller.clock.Now().UTC())
+	if until >= wait {
+		return wait
+	}
+	if until < 0 {
+		until = 0
+	}
+	return until
+}
+
+func (controller *SchedulerController) RunPass(ctx context.Context) SchedulerPassResult {
+	if controller == nil || controller.repository == nil || controller.dispatcher == nil || controller.clock == nil {
+		return SchedulerPassResult{PreAttemptError: true, FailureStage: "controller_configuration", Err: fmt.Errorf("scheduled scan controller is not configured")}
+	}
+	if controller.IsPaused() {
+		return SchedulerPassResult{PreAttemptError: true, FailureStage: "controller_paused", Err: fmt.Errorf("scheduled scan controller is paused")}
+	}
+	evaluationAt := controller.clock.Now().UTC()
+	dueSchedules, err := controller.repository.ListDueSchedules(ctx, evaluationAt)
+	if err != nil {
+		return SchedulerPassResult{PreAttemptError: true, FailureStage: "list_due_schedules", Err: err}
+	}
+	result := SchedulerPassResult{}
+	for _, due := range dueSchedules {
+		committed, materializeErr := controller.repository.MaterializeDue(ctx, due.ID, evaluationAt)
+		if committed {
+			result.Materialized++
+		}
+		if materializeErr != nil {
+			result.PreAttemptError = true
+			result.FailureStage = "materialize_due"
+			result.Err = materializeErr
+			return result
+		}
+	}
+
+	candidate, err := controller.repository.SelectAttemptCandidate(ctx)
+	if err != nil {
+		result.PreAttemptError = true
+		result.FailureStage = "select_attempt_candidate"
+		result.Err = err
+		return result
+	}
+	if candidate == nil {
+		return result
+	}
+	attemptedAt := controller.clock.Now().UTC()
+	frozen, err := controller.repository.StartAttempt(ctx, *candidate, attemptedAt)
+	if err != nil {
+		result.PreAttemptError = true
+		result.FailureStage = "start_attempt"
+		result.Err = err
+		return result
+	}
+	if frozen == nil {
+		return result
+	}
+	result.Attempted = true
+
+	attemptCtx, cancel := context.WithTimeout(ctx, handoffDeadline)
+	batchResult, dispatchErr := controller.dispatcher.Dispatch(attemptCtx, *frozen)
+	cancel()
+	outcome := ClassifyHandoff(batchResult, dispatchErr, frozen.TargetScoped)
+	recordedAt := controller.clock.Now().UTC()
+	recorded, recordErr := controller.repository.RecordOutcome(ctx, frozen.OccurrenceID, outcome, recordedAt)
+	duration := recordedAt.Sub(attemptedAt)
+	if duration < 0 {
+		duration = 0
+	}
+	fields := []zap.Field{
+		zap.Int("scheduled_scan.id", frozen.ScheduledScanID),
+		zap.Int64("scheduled_scan.occurrence.id", frozen.OccurrenceID),
+		zap.Time("scheduled_scan.scheduled_for", frozen.ScheduledFor),
+		zap.String("outcome", string(outcome.Kind)),
+		zap.Duration("duration", duration),
+		zap.Time("scheduled_scan.attempted_at", attemptedAt),
+		zap.Int("scheduled_scan.attempt_number", frozen.RetryCount+1),
+		zap.Duration("scheduled_scan.handoff_deadline", handoffDeadline),
+		zap.Bool("outcome.recorded", recorded && recordErr == nil),
+	}
+	if !outcome.Completed() && outcome.Cause != "" {
+		fields = append(fields, zap.String("scheduled_scan.failure_cause", string(outcome.Cause)))
+	}
+	if recordErr != nil {
+		result.FailureStage = "record_outcome"
+		result.Err = fmt.Errorf("record scheduled scan handoff outcome: %w", recordErr)
+		fields = append(fields, diagnosticErrorFields("outcome.error", recordErr)...)
+	}
+	if !outcome.Completed() {
+		fields = append(fields, zap.String("failure.stage", "scan_create"))
+		controller.logger.Error("Scheduled scan handoff did not complete", append(fields, handoffDiagnosticFields(*frozen, batchResult, dispatchErr)...)...)
+	} else if recordErr != nil {
+		fields = append(fields, handoffDiagnosticFields(*frozen, batchResult, dispatchErr)...)
+		fields = append(fields, zap.String("failure.stage", "record_outcome"))
+		controller.logger.Error("Scheduled scan handoff outcome could not be recorded", fields...)
+	} else if recorded {
+		controller.logger.Info("Scheduled scan handoff completed", fields...)
+	} else {
+		controller.logger.Debug("Scheduled scan handoff occurrence no longer exists", fields...)
+	}
+	return result
+}

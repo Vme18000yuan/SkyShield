@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "product": "天穹（SkyShield）",
+  "recorded_at_utc": "2026-10-29 00:10:52 UTC",
+  "scope": "设计阶段对上游静态约束与工具链可执行条件的核验；不是天穹产品验收",
+  "environment": {
+    "node": "v22.22.0",
+    "pnpm_on_path": "11.7.0",
+    "lunafox_declared_pnpm": "10.30.3",
+    "go_on_path": false,
+    "cached_go": "1.24.6",
+    "lunafox_required_go": "1.26.0",
+    "artex_required_go": "1.26.10",
+    "docker_daemon_available": true
+  },
+  "checks": [
+    {
+      "id": "后端架构边界",
+      "cwd": "upstream/lunafox/server",
+      "cmd": "make check-architecture",
+      "kind": "静态检查",
+      "status": "通过",
+      "exit_code": 0,
+      "output": "bash ./scripts/check-no-legacy-layer.sh\n✅ legacy 层检查通过（无 modules/**/service 与 modules/**/model）\nbash ./scripts/check-layer-dependencies.sh\n✅ layer 依赖检查通过\nbash ./scripts/check-domain-purity.sh\n✅ domain 纯度检查通过\nbash ./scripts/check-ddd-boundaries.sh\n✅ layer 依赖检查通过\n✅ domain 纯度检查通过\n✅ DDD 边界检查通过\nbash ./scripts/check-dto-boundaries.sh\n✅ DTO 边界检查通过（DTO 文件无 shared 业务别名，snapshot/dto 无 asset/security 依赖，且未使用 *_models.go 旧命名）\nbash ./scripts/check-repository-boundaries.sh\n✅ repository 边界检查通过\nbash ./scripts/check-naming-conventions.sh\n✅ 命名规范检查通过\nbash ./scripts/check-mapper-naming.sh\n✅ Mapper 命名守卫检查通过\nbash ./scripts/check-router-boundaries.sh\n✅ router 边界检查通过\nbash ./scripts/check-handler-boundaries.sh\n✅ handler 边界检查通过\nbash ./scripts/check-wiring-conventions.sh\n✅ wiring 规范检查通过\nbash ./scripts/check-no-module-httpdto-adapters.sh\n✅ module-local HTTP DTO adapters are absent\n",
+      "session_id": null
+    },
+    {
+      "id": "前端UI边界",
+      "cwd": "upstream/lunafox/frontend",
+      "cmd": "node scripts/check-ui-boundary.mjs --mode verify",
+      "kind": "静态检查",
+      "status": "通过",
+      "exit_code": 0,
+      "output": "UI boundary check mode: verify\n\nDisallowed files under components/ui\n  none\n\nDisallowed legacy imports\n  none\n",
+      "session_id": null
+    },
+    {
+      "id": "LunaFox定向Go测试预检",
+      "cwd": "upstream/lunafox/server",
+      "cmd": "GOTOOLCHAIN=local go test -short ./internal/modules/identity/application ./internal/modules/asset/domain",
+      "kind": "工具链预检",
+      "status": "版本阻断，测试未开始执行",
+      "exit_code": 1,
+      "output": "go: go.mod requires go >= 1.26.0 (running go 1.24.6; GOTOOLCHAIN=local)\n",
+      "session_id": null
+    },
+    {
+      "id": "ARTEX定向Go测试预检",
+      "cwd": "upstream/ARTEX",
+      "cmd": "GOTOOLCHAIN=local go test -short ./agent ./db ./server",
+      "kind": "工具链预检",
+      "status": "版本阻断，测试未开始执行",
+      "exit_code": 1,
+      "output": "go: go.mod requires go >= 1.26.10 (running go 1.24.6; GOTOOLCHAIN=local)\n",
+      "session_id": null
+    }
+  ],
+  "not_executed": [
+    "兼容 Go 版本下的单元测试、集成测试与生产构建",
+    "前端依赖安装、TypeScript/Vitest/Next 生产构建与浏览器联调",
+    "真实 PostgreSQL 迁移/导入/回填/备份恢复演练",
+    "真实扫描 Agent/Engine 执行",
+    "真实 LLM、MCP 和 AI 工具联调",
+    "天穹运行时多租户隔离和融合端到端验证"
+  ],
+  "artifact_validation": {
+    "status": "通过",
+    "markdown_files": 5,
+    "valid_local_links": 64,
+    "matched_upstream_file_hashes": 107,
+    "json_files": 2,
+    "upstream_revisions_unchanged": true,
+    "upstream_working_trees_clean": true,
+    "errors": []
+  },
+  "source_changes": "ARTEX 与 LunaFox 目录未修改；本轮仅在 SkyShield 写入中文设计及基线文件。",
+  "path_redaction": "Machine-specific paths were replaced with descriptive relative names; historical results are unchanged."
+}

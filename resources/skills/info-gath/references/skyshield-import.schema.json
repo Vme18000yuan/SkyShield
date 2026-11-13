@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skyshield.local/schemas/info-gath-import-1.0.json",
+  "title": "SkyShield information collection import envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run", "assets", "vulnerabilities", "observations"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "run": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "target", "kind", "status", "mode"],
+      "properties": {
+        "id": {"type": "string"}, "target": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["HOST", "IP", "CIDR"]},
+        "status": {"enum": ["completed", "partial", "failed", "interrupted", "unknown"]},
+        "mode": {"enum": ["fast", "normal", "deep", "unknown"]}
+      }
+    },
+    "assets": {"type": "array", "items": {"$ref": "#/$defs/asset"}},
+    "vulnerabilities": {"type": "array", "items": {"$ref": "#/$defs/vulnerability"}},
+    "observations": {"type": "array", "items": {"$ref": "#/$defs/observation"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "scope": {"enum": ["in_scope", "associated", "out_of_scope", "unverified"]},
+    "evidence": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\]+$"}},
+    "asset": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "type", "value", "scope", "evidence"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "type": {"enum": ["domain", "ip", "service", "endpoint"]},
+        "value": {"type": "string", "minLength": 1, "maxLength": 4096}, "scope": {"$ref": "#/$defs/scope"},
+        "evidence": {"$ref": "#/$defs/evidence"}, "bound_domains": {"type": "array", "uniqueItems": true, "items": {"type": "string", "maxLength": 253}},
+        "cdn": {"type": "boolean"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "protocol": {"enum": ["tcp", "udp"]}, "service_name": {"type": "string", "maxLength": 64},
+        "status_code": {"type": "integer", "minimum": 100, "maximum": 599}, "confidence": {"const": "candidate"},
+        "page_title": {"type": "string", "maxLength": 512},
+        "technologies": {"type": "array", "maxItems": 100, "uniqueItems": true, "items": {"type": "string", "maxLength": 120}}
+      }
+    },
+    "vulnerability": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "type", "url", "title", "severity", "confidence", "status", "scope", "description", "evidence"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "type": {"enum": ["ANONYMOUS_DATA", "REVIEW_TOKEN_DIFFERENCE", "PUBLIC_LISTING", "DNS_ZONE_TRANSFER"]},
+        "url": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "HTTP(S) 风险使用实际 URL；DNS_ZONE_TRANSFER 可使用 dns://域名。"}, "title": {"type": "string", "maxLength": 200},
+        "severity": {"const": "info"}, "confidence": {"const": "candidate"}, "status": {"const": "needs_review"},
+        "scope": {"$ref": "#/$defs/scope"}, "description": {"type": "string", "maxLength": 2000}, "evidence": {"$ref": "#/$defs/evidence"}
+      }
+    },
+    "observation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "category", "value", "scope", "status", "evidence"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "category": {"enum": ["ANONYMOUS_DATA", "REVIEW_TOKEN_DIFFERENCE", "PUBLIC_LISTING", "DNS_ZONE_TRANSFER"]},
+        "value": {"type": "string", "minLength": 1, "maxLength": 4096}, "scope": {"$ref": "#/$defs/scope"},
+        "status": {"const": "needs_review"}, "evidence": {"$ref": "#/$defs/evidence"}
+      }
+    }
+  }
+}

@@ -1,0 +1,481 @@
+package domain
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+	"unicode"
+)
+
+// Status is the durable user-visible lifecycle of one system upgrade.
+// Migration and Agent verification are deliberately terminally distinct from
+// a generic failed preflight so recovery tooling can apply the right policy.
+type Status string
+
+const (
+	StatusQueued         Status = "queued"
+	StatusStopping       Status = "stopping"
+	StatusPreflight      Status = "preflight"
+	StatusUpdating       Status = "updating"
+	StatusMigrating      Status = "migrating"
+	StatusRestarting     Status = "restarting"
+	StatusAgentVerifying Status = "agent_verifying"
+	StatusVerifying      Status = "verifying"
+	StatusSucceeded      Status = "succeeded"
+	StatusFailed         Status = "failed"
+	StatusNeedsRecovery  Status = "needs_recovery"
+	StatusNeedsAttention Status = "needs_attention"
+)
+
+type MigrationStatus string
+
+const (
+	MigrationStatusNotStarted MigrationStatus = "not_started"
+	MigrationStatusRunning    MigrationStatus = "running"
+	MigrationStatusSucceeded  MigrationStatus = "succeeded"
+	MigrationStatusFailed     MigrationStatus = "failed"
+	MigrationStatusUnknown    MigrationStatus = "unknown"
+)
+
+type AgentSummary struct {
+	Expected  int `json:"expected"`
+	Ready     int `json:"ready"`
+	Missing   int `json:"missing"`
+	Unhealthy int `json:"unhealthy"`
+}
+
+// AgentDiagnosticSource identifies who produced the evidence shown to an
+// operator. It is provenance only; readiness remains defined by Ready().
+type AgentDiagnosticSource string
+
+const (
+	AgentDiagnosticSourceHeartbeat  AgentDiagnosticSource = "agent_heartbeat"
+	AgentDiagnosticSourceServer     AgentDiagnosticSource = "server_observation"
+	AgentDiagnosticSourceHistorical AgentDiagnosticSource = "historical"
+)
+
+const (
+	AgentReasonNotRegistered    = "not_registered"
+	AgentReasonHeartbeatMissing = "heartbeat_missing_or_stale"
+	AgentReasonPaused           = "paused"
+	AgentReasonHealthReported   = "health_reported"
+	AgentReasonHealthUnhealthy  = "health_unhealthy"
+	AgentReasonClaimNotReady    = "claim_not_ready"
+	AgentReasonVersionMismatch  = "version_mismatch"
+	AgentReasonLegacyUnknown    = "legacy_unknown"
+)
+
+// Valid reports whether source is one of the durable provenance values. Empty
+// remains valid only for legacy expectations that have no structured reason.
+func (source AgentDiagnosticSource) Valid() bool {
+	switch source {
+	case AgentDiagnosticSourceHeartbeat, AgentDiagnosticSourceServer, AgentDiagnosticSourceHistorical:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsKnownAgentDiagnosticReasonCode keeps persisted evidence and strict API
+// decoders on one closed set of operator-facing reason codes.
+func IsKnownAgentDiagnosticReasonCode(value string) bool {
+	switch value {
+	case AgentReasonNotRegistered, AgentReasonHeartbeatMissing, AgentReasonPaused,
+		AgentReasonHealthReported, AgentReasonHealthUnhealthy, AgentReasonClaimNotReady,
+		AgentReasonVersionMismatch, AgentReasonLegacyUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// AgentExpectation is the immutable-at-start snapshot and subsequent
+// verification projection for one enabled Agent. It intentionally contains
+// only operational evidence; authentication material is never copied into an
+// Upgrade Operation.
+type AgentExpectation struct {
+	AgentID             int                   `json:"agentId"`
+	DisplayNameSnapshot string                `json:"displayNameSnapshot,omitempty"`
+	DesiredVersion      string                `json:"desiredVersion"`
+	TargetDigest        string                `json:"targetDigest"`
+	ObservedVersion     string                `json:"observedVersion,omitempty"`
+	ObservedDigest      string                `json:"observedDigest,omitempty"`
+	Connected           bool                  `json:"connected"`
+	Healthy             bool                  `json:"healthy"`
+	Paused              bool                  `json:"paused"`
+	ClaimReady          bool                  `json:"claimReady"`
+	LastObservedAt      *time.Time            `json:"lastObservedAt,omitempty"`
+	ReasonCode          string                `json:"reasonCode,omitempty"`
+	DiagnosticSource    AgentDiagnosticSource `json:"diagnosticSource,omitempty"`
+	Diagnostic          string                `json:"diagnostic,omitempty"`
+}
+
+// Validate accepts legacy rows with no structured diagnostic metadata while
+// rejecting malformed metadata on new writes. Readiness intentionally remains
+// independent from these explanatory fields.
+func (expectation AgentExpectation) Validate() error {
+	if expectation.AgentID <= 0 {
+		return fmt.Errorf("agent expectation requires a positive agentId")
+	}
+	if expectation.DisplayNameSnapshot != strings.TrimSpace(expectation.DisplayNameSnapshot) || len([]rune(expectation.DisplayNameSnapshot)) > 100 || strings.IndexFunc(expectation.DisplayNameSnapshot, unicode.IsControl) >= 0 {
+		return fmt.Errorf("agent expectation display name snapshot is invalid")
+	}
+	if expectation.ReasonCode == "" && expectation.DiagnosticSource != "" {
+		return fmt.Errorf("agent expectation diagnostic source requires a reason code")
+	}
+	if expectation.ReasonCode != "" {
+		if !IsKnownAgentDiagnosticReasonCode(expectation.ReasonCode) {
+			return fmt.Errorf("agent expectation reason code is invalid")
+		}
+		if !expectation.DiagnosticSource.Valid() {
+			return fmt.Errorf("agent expectation diagnostic source is invalid")
+		}
+	}
+	if strings.ContainsAny(expectation.Diagnostic, "\r\n") || strings.IndexFunc(expectation.Diagnostic, unicode.IsControl) >= 0 || len([]rune(expectation.Diagnostic)) > 512 {
+		return fmt.Errorf("agent expectation diagnostic is invalid")
+	}
+	return nil
+}
+
+// Ready reports whether the Agent has supplied enough authenticated runtime
+// evidence to participate in a completed upgrade. The current control-plane
+// heartbeat exposes the Agent version but not its container image digest; an
+// empty ObservedDigest is therefore kept unknown rather than fabricated. When
+// a future heartbeat supplies a digest, it is compared strictly to the target.
+func (expectation AgentExpectation) Ready() bool {
+	if !expectation.Connected || !expectation.Healthy || expectation.Paused || !expectation.ClaimReady {
+		return false
+	}
+	if strings.TrimSpace(expectation.DesiredVersion) == "" || expectation.ObservedVersion != expectation.DesiredVersion {
+		return false
+	}
+	if expectation.ObservedDigest != "" && expectation.TargetDigest != "" && expectation.ObservedDigest != expectation.TargetDigest {
+		return false
+	}
+	return true
+}
+
+// Operation contains only bounded, non-secret operational evidence. Free-form
+// command output and credentials must never be copied into Diagnostic fields.
+type Operation struct {
+	OperationID              string
+	RequestID                string
+	OperatorID               int
+	ManifestID               string
+	ManifestDigest           string
+	ReleaseVersion           string
+	CompatibilityRange       string
+	MaintenanceWindowMinutes int
+	Status                   Status
+	MigrationStatus          MigrationStatus
+	MigrationType            string
+	MigrationID              string
+	MigrationChecksum        string
+	// ExecutionMode and WorkDisposition are set from a host-approved scope
+	// plan. Empty values occur only on pre-v2 rows and are interpreted through
+	// EffectiveExecutionMode/EffectiveWorkDisposition as full/legacy_unknown.
+	ExecutionMode              ExecutionMode
+	WorkDisposition            WorkDisposition
+	PlanSummary                PlanSummary
+	PlanDigest                 string
+	BaselineDeploymentDigest   string
+	ConfirmedDeploymentVersion string
+	CancelledScanCount         int
+	CancelledTaskCount         int
+	AgentDesiredVersion        string
+	AgentTargetDigest          string
+	AgentSummary               AgentSummary
+	AgentExpectations          []AgentExpectation
+	AgentVerificationDeadline  *time.Time
+	ObservedDigests            map[string]string
+	ProgressEvents             []ProgressEvent
+	// HostActivity is a current host-side wait snapshot. StageTimes remain the
+	// lifecycle/watchdog source of truth, even while this observation refreshes.
+	HostActivity *HostActivity
+	Diagnostic   string
+	StageTimes   map[Status]time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	CompletedAt  *time.Time
+}
+
+func (status Status) IsTerminal() bool {
+	switch status {
+	case StatusSucceeded, StatusFailed, StatusNeedsRecovery, StatusNeedsAttention:
+		return true
+	default:
+		return false
+	}
+}
+
+func (status Status) Valid() bool {
+	switch status {
+	case StatusQueued, StatusStopping, StatusPreflight, StatusUpdating,
+		StatusMigrating, StatusRestarting, StatusAgentVerifying, StatusVerifying,
+		StatusSucceeded, StatusFailed, StatusNeedsRecovery, StatusNeedsAttention:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidateTransition is the explicit lifecycle graph for an Upgrade Operation.
+// Host events are untrusted observations, so accepting arbitrary rank jumps
+// would allow a forged/late completion to skip stopping, migration, or health
+// verification. Recovery outcomes are the only cross-cutting exits.
+func ValidateTransition(from, to Status) error {
+	if !from.Valid() || !to.Valid() {
+		return fmt.Errorf("unsupported upgrade status transition %q -> %q", from, to)
+	}
+	if from.IsTerminal() {
+		// A terminal non-success outcome may be escalated when a later checkpoint
+		// proves migration failure/uncertainty. This preserves the safety priority
+		// of needs_recovery without reopening normal execution. A succeeded
+		// operation remains authoritative and cannot be rewritten by a late event.
+		if to == StatusNeedsRecovery && from != StatusSucceeded {
+			return nil
+		}
+		return fmt.Errorf("terminal upgrade operation cannot transition from %q to %q", from, to)
+	}
+	if from == to {
+		return nil
+	}
+	// Recovery outcomes are explicit safety fences and may be entered from any
+	// active phase. They are never a route back into normal execution.
+	if to == StatusNeedsRecovery || to == StatusNeedsAttention {
+		return nil
+	}
+	allowed := map[Status]map[Status]struct{}{
+		StatusQueued: {
+			StatusStopping: {},
+		},
+		StatusStopping: {
+			StatusPreflight: {},
+		},
+		StatusPreflight: {
+			StatusUpdating: {},
+			StatusFailed:   {},
+		},
+		StatusUpdating: {
+			StatusMigrating:  {},
+			StatusRestarting: {},
+			StatusFailed:     {},
+		},
+		StatusMigrating: {
+			StatusRestarting: {},
+		},
+		StatusRestarting: {
+			StatusAgentVerifying: {},
+			StatusVerifying:      {},
+		},
+		StatusAgentVerifying: {
+			StatusVerifying: {},
+		},
+		StatusVerifying: {
+			StatusSucceeded: {},
+			StatusFailed:    {},
+		},
+	}
+	if _, ok := allowed[from][to]; !ok {
+		return fmt.Errorf("upgrade operation transition from %q to %q is not allowed", from, to)
+	}
+	return nil
+}
+
+// ValidateJournalRecoveryTransition recognizes the narrow forward-only replay
+// path used after a Server restart interrupts a Compose upgrade. Callers must
+// establish journal provenance, operation identity, scope, and digest evidence
+// before invoking it; this function only protects the durable lifecycle shape.
+// It never grants success or reopens a terminal result.
+func ValidateJournalRecoveryTransition(mode ExecutionMode, migrationType string, migrationStatus MigrationStatus, from, to Status) error {
+	if mode == "" {
+		mode = ExecutionModeFull
+	}
+	if !mode.Valid() {
+		return fmt.Errorf("unsupported execution mode %q", mode)
+	}
+	if !from.Valid() || !to.Valid() {
+		return fmt.Errorf("unsupported journal recovery transition %q -> %q", from, to)
+	}
+	if from.IsTerminal() || to.IsTerminal() || !journalRecoveryCheckpoint(from) || !journalRecoveryCheckpoint(to) || journalRecoveryRank(to) <= journalRecoveryRank(from) {
+		return fmt.Errorf("journal recovery transition from %q to %q is not allowed", from, to)
+	}
+	if err := ValidateExecutionTransition(mode, from, to); err == nil {
+		return fmt.Errorf("journal recovery transition from %q to %q must be a forward replay", from, to)
+	}
+	if mode == ExecutionModeFrontendOnly && (frontendOnlyJournalRecoveryStageForbidden(from) || frontendOnlyJournalRecoveryStageForbidden(to)) {
+		return fmt.Errorf("frontend-only journal recovery transition from %q to %q is not allowed", from, to)
+	}
+	// Restarting after any migration is safe only after the durable journal has
+	// recorded success. The application also turns failed/unknown migration
+	// evidence into needs_recovery before this guard is reached.
+	if migrationType != "none" && journalRecoveryRank(to) >= journalRecoveryRank(StatusRestarting) && migrationStatus != MigrationStatusSucceeded {
+		return fmt.Errorf("journal recovery transition from %q to %q requires a succeeded migration", from, to)
+	}
+	return nil
+}
+
+func journalRecoveryCheckpoint(status Status) bool {
+	switch status {
+	case StatusQueued, StatusStopping, StatusPreflight, StatusUpdating,
+		StatusMigrating, StatusRestarting, StatusAgentVerifying, StatusVerifying:
+		return true
+	default:
+		return false
+	}
+}
+
+func journalRecoveryRank(status Status) int {
+	switch status {
+	case StatusQueued:
+		return 0
+	case StatusStopping:
+		return 1
+	case StatusPreflight:
+		return 2
+	case StatusUpdating:
+		return 3
+	case StatusMigrating:
+		return 4
+	case StatusRestarting:
+		return 5
+	case StatusAgentVerifying:
+		return 6
+	case StatusVerifying:
+		return 7
+	default:
+		return -1
+	}
+}
+
+func frontendOnlyJournalRecoveryStageForbidden(status Status) bool {
+	switch status {
+	case StatusStopping, StatusMigrating, StatusAgentVerifying:
+		return true
+	default:
+		return false
+	}
+}
+
+func (operation *Operation) Validate() error {
+	if operation == nil {
+		return fmt.Errorf("upgrade operation is required")
+	}
+	if strings.TrimSpace(operation.OperationID) == "" || strings.TrimSpace(operation.RequestID) == "" {
+		return fmt.Errorf("operationId and requestId are required")
+	}
+	if operation.OperatorID <= 0 {
+		return fmt.Errorf("operatorId is required")
+	}
+	if strings.TrimSpace(operation.ManifestID) == "" || strings.TrimSpace(operation.ManifestDigest) == "" {
+		return fmt.Errorf("manifest identity and digest are required")
+	}
+	if !operation.Status.Valid() {
+		return fmt.Errorf("unsupported upgrade status %q", operation.Status)
+	}
+	if operation.ExecutionMode != "" && !operation.ExecutionMode.Valid() {
+		return fmt.Errorf("unsupported execution mode %q", operation.ExecutionMode)
+	}
+	if operation.WorkDisposition != "" && !operation.WorkDisposition.Valid() {
+		return fmt.Errorf("unsupported work disposition %q", operation.WorkDisposition)
+	}
+	if operation.ExecutionMode != "" {
+		if err := ValidateScopePlan(operation.ExecutionMode, operation.PlanSummary, operation.PlanDigest, operation.BaselineDeploymentDigest, operation.ConfirmedDeploymentVersion); err != nil {
+			return err
+		}
+		if operation.ExecutionMode == ExecutionModeFrontendOnly {
+			if operation.WorkDisposition != WorkDispositionNotRequired {
+				return fmt.Errorf("frontend-only operation must not require cancellation")
+			}
+			if operation.MigrationType != "none" || operation.MigrationStatus != MigrationStatusNotStarted {
+				return fmt.Errorf("frontend-only operation cannot include a migration")
+			}
+			if len(operation.AgentExpectations) != 0 || operation.AgentSummary != (AgentSummary{}) || operation.AgentVerificationDeadline != nil {
+				return fmt.Errorf("frontend-only operation cannot include Agent lifecycle evidence")
+			}
+		}
+	}
+	if operation.WorkDisposition == WorkDispositionNotRequired && operation.EffectiveExecutionMode() != ExecutionModeFrontendOnly {
+		return fmt.Errorf("not_required work disposition is reserved for frontend-only operations")
+	}
+	if operation.WorkDisposition == WorkDispositionCancelled && (operation.CancelledScanCount < 0 || operation.CancelledTaskCount < 0) {
+		return fmt.Errorf("cancelled work counts cannot be negative")
+	}
+	if operation.MigrationStatus == "" {
+		return fmt.Errorf("migration status is required")
+	}
+	if operation.CreatedAt.IsZero() || operation.UpdatedAt.IsZero() {
+		return fmt.Errorf("operation timestamps are required")
+	}
+	if operation.AgentVerificationDeadline != nil && operation.AgentVerificationDeadline.Before(operation.CreatedAt) {
+		return fmt.Errorf("agent verification deadline cannot precede operation creation")
+	}
+	for _, expectation := range operation.AgentExpectations {
+		if err := expectation.Validate(); err != nil {
+			return fmt.Errorf("invalid agent expectation: %w", err)
+		}
+	}
+	if err := ValidateProgressEvents(operation.ProgressEvents); err != nil {
+		return fmt.Errorf("invalid upgrade progress events: %w", err)
+	}
+	if err := ValidateHostActivity(operation.HostActivity, operation.Status, operation.EffectiveExecutionMode(), operation.CreatedAt, operation.UpdatedAt, time.Now().UTC()); err != nil {
+		return fmt.Errorf("invalid host activity: %w", err)
+	}
+	return nil
+}
+
+func validSHA256Digest(value string) bool {
+	if len(value) != len("sha256:")+64 || !strings.HasPrefix(value, "sha256:") {
+		return false
+	}
+	for _, character := range value[len("sha256:"):] {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func validDeploymentVersion(value string) bool {
+	if value != strings.TrimSpace(value) || value == "" || len(value) > 64 {
+		return false
+	}
+	return !strings.ContainsAny(value, "\x00\r\n")
+}
+
+// Repository is the durable Server-side source of truth for user-visible
+// Upgrade Operations. Implementations must make requestId unique.
+type Repository interface {
+	CreateOrGet(context.Context, *Operation) (*Operation, bool, error)
+	Get(context.Context, string) (*Operation, error)
+	Update(context.Context, *Operation) error
+	FindActive(context.Context) (*Operation, error)
+}
+
+// TransitionRepository adds an atomic compare-and-set boundary without
+// breaking older in-memory repositories used by callers and tests. Production
+// event reconciliation MUST use this interface when available.
+type TransitionRepository interface {
+	Repository
+	UpdateTransition(context.Context, *Operation, Status) error
+}
+
+// JournalRecoveryTransitionRepository is the separate compare-and-set path for
+// a validated host journal checkpoint that advanced while Server was down. It
+// is intentionally distinct from UpdateTransition so normal host events cannot
+// weaken the strict lifecycle graph.
+type JournalRecoveryTransitionRepository interface {
+	TransitionRepository
+	UpdateJournalRecoveryTransition(context.Context, *Operation, Status) error
+}
+
+// RetryRepository adds the one operation that is intentionally allowed to
+// reopen a terminal, retryable operation.  It is separate from Update so a
+// normal event writer can never accidentally turn a terminal result back into
+// active work. Implementations must compare the persisted status and target
+// identity in the same transaction before applying the reset.
+type RetryRepository interface {
+	Repository
+	ResetForRetry(context.Context, *Operation, Status) error
+}

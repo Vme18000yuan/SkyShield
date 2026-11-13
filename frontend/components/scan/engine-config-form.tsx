@@ -1,0 +1,770 @@
+"use client";
+import React, { useCallback, useMemo } from "react";
+import { useTranslations } from "next-intl";
+import { ChevronDown, ChevronRight, Cpu, RefreshCw, } from "@/components/icons";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { FieldError } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NumberStepperInput } from "@/components/ui/number-stepper-input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger, } from "@/components/ui/collapsible";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, } from "@/components/ui/tooltip";
+import { EngineDurationInput } from "@/components/scan/engine-duration-input";
+import { EngineHttpHeadersPopover } from "@/components/scan/engine-http-headers-popover";
+import type { CompleteWordlistCatalogState } from "@/hooks/use-wordlists";
+import {
+    configResourceFieldId,
+    configResourceFieldKey,
+    type ConfigResourceFieldError,
+    type ConfigResourceFieldLocation,
+} from "@/lib/engine-config-resource-validation";
+import {
+    parseWorkflowConfigurationDraftStrict,
+    validateCompleteProfileEngineConfig,
+    WorkflowConfigurationDraftError,
+    type WorkflowProfileDraft,
+} from "@/lib/workflow-config";
+import { cn } from "@/lib/utils";
+import { textRole } from "@/lib/typography";
+import { toastFeedback } from "@/lib/toast-helpers";
+import type { EngineConfigFormValues, EngineConfigSectionDefinition, EngineConfigSectionFormValue, EngineConfigStepFormValue, EngineParamDefinition, EngineParamValue, ScanWorkflowWithEngines, WorkflowStageWithEngines, WorkflowStepWithEngine, } from "@/types/engine-config.types";
+// ---------------------------------------------------------------------------
+// Helpers: initialize / read / write form values
+// ---------------------------------------------------------------------------
+function defaultParamsForSection(section: EngineConfigSectionDefinition): Record<string, EngineParamValue> {
+    const params: Record<string, EngineParamValue> = {};
+    for (const param of section.params) {
+        if (param.default !== undefined) {
+            params[param.key] = Array.isArray(param.default) ? [...param.default] : param.default;
+        }
+        else if (param.type === "integer") {
+            params[param.key] = 0;
+        }
+        else if (param.type === "boolean") {
+            params[param.key] = false;
+        }
+        else if (param.type === "stringArray") {
+            params[param.key] = [];
+        }
+        else {
+            params[param.key] = "";
+        }
+    }
+    return params;
+}
+
+function findSection(workflow: ScanWorkflowWithEngines, stepId: string, sectionId: string): EngineConfigSectionDefinition | null {
+    for (const stage of workflow.stages) {
+        const step = stage.steps.find((candidate) => candidate.stepId === stepId);
+        const section = step?.engine.execution.configSections.find((candidate) => candidate.id === sectionId);
+        if (section) return section;
+    }
+    return null;
+}
+
+export function initFormValuesFromWorkflow(
+    workflow: ScanWorkflowWithEngines,
+    configuration?: unknown,
+    previousValues: EngineConfigFormValues = {},
+    workflowProfileDraft: WorkflowProfileDraft | null = null,
+): EngineConfigFormValues {
+    if (configuration === undefined || configuration === null || (typeof configuration === "string" && configuration.trim() === "")) {
+        return {};
+    }
+    const parsed = parseWorkflowConfigurationDraftStrict(configuration);
+    const rawSteps = parsed.steps;
+    if (!isRecord(rawSteps)) {
+        throw new WorkflowConfigurationDraftError("configuration.steps", "Profile steps must be an object");
+    }
+    const values: EngineConfigFormValues = {};
+    const expectedStepIds = new Set(workflow.stages.flatMap((stage) => stage.steps.map((step) => step.stepId)));
+    let profileEngineConfigs: Record<string, Record<string, unknown>> | null = null;
+    for (const stepId of Object.keys(rawSteps)) {
+        if (!expectedStepIds.has(stepId)) {
+            throw new WorkflowConfigurationDraftError(`configuration.steps["${stepId}"]`, "unknown Workflow Step");
+        }
+    }
+    for (const stage of workflow.stages) {
+        for (const step of stage.steps) {
+            const path = `configuration.steps["${step.stepId}"]`;
+            const rawStep = rawSteps[step.stepId];
+            if (!isRecord(rawStep) || typeof rawStep.enabled !== "boolean") {
+                throw new WorkflowConfigurationDraftError(`${path}.enabled`, "enabled must be an explicit boolean");
+            }
+            const previous = previousValues[step.stepId];
+            let engineConfig: Record<string, unknown>;
+            if (isRecord(rawStep.engineConfig)) {
+                engineConfig = rawStep.engineConfig;
+                validateCompleteProfileEngineConfig(engineConfig, step, `${path}.engineConfig`);
+            } else if (!rawStep.enabled && previous) {
+                if (!isRecord(previous.sections)) {
+                    throw new WorkflowConfigurationDraftError(`${path}.engineConfig`, "retained Engine configuration is invalid");
+                }
+                engineConfig = formSectionsToEngineConfig(previous.sections);
+                validateCompleteProfileEngineConfig(engineConfig, step, `${path}.engineConfig`);
+            } else if (!rawStep.enabled) {
+                profileEngineConfigs ??= getValidatedProfileEngineConfigs(workflow, workflowProfileDraft);
+                engineConfig = profileEngineConfigs[step.stepId];
+            } else {
+                throw new WorkflowConfigurationDraftError(`${path}.engineConfig`, "complete Engine configuration is required");
+            }
+
+            const sections: Record<string, EngineConfigSectionFormValue> = {};
+            for (const section of step.engine.execution.configSections) {
+                const rawSection = engineConfig[section.id];
+                if (!isRecord(rawSection) || typeof rawSection.enabled !== "boolean") {
+                    throw new WorkflowConfigurationDraftError(`${path}.engineConfig.${section.id}`, "Engine config section is required");
+                }
+                const params: Record<string, EngineParamValue> = {};
+                if (rawSection.enabled) {
+                    for (const param of section.params) {
+                        const value = rawSection[param.key];
+                        if (!isValidEngineParameterValue(value, param.type)) {
+                            throw new WorkflowConfigurationDraftError(`${path}.engineConfig.${section.id}.${param.key}`, "Engine config parameter is invalid");
+                        }
+                        params[param.key] = cloneEngineParamValue(value as EngineParamValue);
+                    }
+                }
+                sections[section.id] = { enabled: rawSection.enabled, params };
+            }
+            values[step.stepId] = { enabled: rawStep.enabled, sections };
+        }
+    }
+    return values;
+}
+
+/**
+ * A canonical disabled Step has no Engine object by design. Profile recovery is
+ * therefore permitted only after the whole retained Profile still proves its
+ * parent identity, exact Step coverage, and every Engine value against the
+ * current schema; catalog defaults must never fill this boundary.
+ */
+function getValidatedProfileEngineConfigs(
+    workflow: ScanWorkflowWithEngines,
+    workflowProfileDraft: WorkflowProfileDraft | null,
+): Record<string, Record<string, unknown>> {
+    const rawDraft = workflowProfileDraft as unknown;
+    if (!isRecord(rawDraft) || typeof rawDraft.scanWorkflow !== "string") {
+        throw new WorkflowConfigurationDraftError("profile", "a validated Workflow Profile draft is required");
+    }
+    if (workflowIdentity(rawDraft.scanWorkflow) !== workflowIdentity(workflow.scanWorkflowId)) {
+        throw new WorkflowConfigurationDraftError("scanWorkflow", "Profile parent does not match the selected Workflow");
+    }
+    if (!isRecord(rawDraft.steps)) {
+        throw new WorkflowConfigurationDraftError("profile.steps", "Profile steps must be an object");
+    }
+
+    const workflowSteps = workflow.stages.flatMap((stage) => stage.steps);
+    const expectedStepIds = new Set(workflowSteps.map((step) => step.stepId));
+    for (const stepId of Object.keys(rawDraft.steps)) {
+        if (!expectedStepIds.has(stepId)) {
+            throw new WorkflowConfigurationDraftError(`profile.steps["${stepId}"]`, "unknown Workflow Step");
+        }
+    }
+
+    const engineConfigs: Record<string, Record<string, unknown>> = {};
+    for (const step of workflowSteps) {
+        const path = `profile.steps["${step.stepId}"]`;
+        const rawStep = rawDraft.steps[step.stepId];
+        if (!isRecord(rawStep)) {
+            throw new WorkflowConfigurationDraftError(path, "Profile Step is required");
+        }
+        const keys = Object.keys(rawStep).sort();
+        if (keys.length !== 2 || keys[0] !== "enabled" || keys[1] !== "engineConfig") {
+            throw new WorkflowConfigurationDraftError(path, "Profile Step must contain enabled and engineConfig");
+        }
+        if (typeof rawStep.enabled !== "boolean") {
+            throw new WorkflowConfigurationDraftError(`${path}.enabled`, "Profile Step enabled must be an explicit boolean");
+        }
+        if (!isRecord(rawStep.engineConfig)) {
+            throw new WorkflowConfigurationDraftError(`${path}.engineConfig`, "Profile engineConfig must be an object");
+        }
+        validateCompleteProfileEngineConfig(rawStep.engineConfig, step, `${path}.engineConfig`);
+        engineConfigs[step.stepId] = rawStep.engineConfig;
+    }
+    return engineConfigs;
+}
+
+function workflowIdentity(value: string): string {
+    return value.startsWith("scanWorkflows/") ? value.slice("scanWorkflows/".length) : value;
+}
+
+function formSectionsToEngineConfig(sections: Record<string, EngineConfigSectionFormValue>): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(sections).map(([sectionId, section]) => [
+        sectionId,
+        section.enabled ? { enabled: true, ...section.params } : { enabled: false },
+    ]));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+export function serializeFormValuesToConfig(values: EngineConfigFormValues): Record<string, unknown> {
+    const steps: Record<string, unknown> = {};
+    for (const [stepId, stepValue] of Object.entries(values)) {
+        if (!stepValue.enabled) {
+            steps[stepId] = { enabled: false };
+            continue;
+        }
+        const engineConfig: Record<string, unknown> = {};
+        for (const [sectionId, sectionData] of Object.entries(stepValue.sections)) {
+            if (!sectionData.enabled) {
+                engineConfig[sectionId] = { enabled: false };
+                continue;
+            }
+            const sectionConfig: Record<string, unknown> = { enabled: true };
+            Object.assign(sectionConfig, sectionData.params);
+            engineConfig[sectionId] = sectionConfig;
+        }
+        steps[stepId] = { enabled: true, engineConfig };
+    }
+    return { steps };
+}
+// ---------------------------------------------------------------------------
+// Engine icon resolver
+// ---------------------------------------------------------------------------
+function getEngineIcon(engineId: string): React.ReactNode {
+    void engineId;
+    return <Cpu className="size-5"/>;
+}
+function WordlistResourceSelect({ fieldId, value, disabled, catalog, invalid, describedBy, onChange, }: {
+    fieldId: string;
+    value: EngineParamValue;
+    disabled: boolean;
+    catalog: CompleteWordlistCatalogState;
+    invalid: boolean;
+    describedBy?: string;
+    onChange: (value: string) => void;
+}) {
+    const tScanInitiate = useTranslations("scan.initiate");
+    const options = catalog.wordlists;
+    const fileNameByResourceName = useMemo(
+        () => new Map(options.map((wordlist) => [wordlist.name, wordlist.fileName])),
+        [options]
+    );
+    const currentValue = value === "" ? "" : String(value);
+    const catalogErrorId = `${fieldId}-catalog-error`;
+    const ariaDescribedBy = [describedBy, catalog.status === "failed" ? catalogErrorId : undefined].filter(Boolean).join(" ") || undefined;
+    const isComplete = catalog.status === "complete";
+    const placeholder = isComplete
+        ? tScanInitiate("engineConfigForm.selectWordlist")
+        : catalog.status === "failed"
+            ? tScanInitiate("engineConfigForm.wordlistLoadFailed")
+            : tScanInitiate("engineConfigForm.loading");
+    return (<div className="space-y-1.5">
+      <Select value={currentValue} onValueChange={onChange} disabled={disabled || !isComplete} itemToStringLabel={(resourceName) => {
+        if (typeof resourceName !== "string") {
+          return "";
+        }
+        return fileNameByResourceName.get(resourceName) ?? resourceName;
+      }}>
+      <SelectTrigger id={fieldId} size="sm" className="w-full" aria-invalid={invalid || undefined} aria-describedby={ariaDescribedBy}>
+        <SelectValue placeholder={placeholder}/>
+      </SelectTrigger>
+      <SelectContent>
+        {currentValue && !isComplete && !options.some((wordlist) => wordlist.name === currentValue) ? (<SelectItem value={currentValue}>{currentValue}</SelectItem>) : null}
+        {options.map((wordlist) => (<SelectItem key={wordlist.name} value={wordlist.name}>
+            {wordlist.fileName}
+          </SelectItem>))}
+      </SelectContent>
+      </Select>
+      {catalog.status === "failed" ? (<div className="flex min-w-0 items-center justify-between gap-2">
+        <FieldError id={catalogErrorId}>{tScanInitiate("engineConfigForm.wordlistLoadFailed")}</FieldError>
+        <Button type="button" variant="ghost" size="sm" onClick={catalog.retry} disabled={disabled}>
+          <RefreshCw className="size-3.5"/>
+          {tScanInitiate("engineConfigForm.retryWordlists")}
+        </Button>
+      </div>) : null}
+    </div>);
+}
+// ---------------------------------------------------------------------------
+// Param field renderer — matches mockup: label + input + help text
+// ---------------------------------------------------------------------------
+export interface EngineParamControlRenderContext {
+    fieldId: string;
+    location: ConfigResourceFieldLocation;
+    param: EngineParamDefinition;
+    value: EngineParamValue;
+    disabled: boolean;
+    onChange: (value: EngineParamValue) => void;
+}
+
+export type EngineParamControlRenderer = (
+    context: EngineParamControlRenderContext,
+) => React.ReactNode | null;
+
+interface ParamFieldProps {
+    location: ConfigResourceFieldLocation;
+    param: EngineParamDefinition;
+    value: EngineParamValue;
+    disabled: boolean;
+    wordlistCatalog: CompleteWordlistCatalogState;
+    error?: ConfigResourceFieldError;
+    onChange: (value: EngineParamValue) => void;
+    onFieldRepaired?: (location: ConfigResourceFieldLocation) => void;
+    renderParamControl?: EngineParamControlRenderer;
+}
+
+function ParamHelpText({ description }: { description: string }) {
+    return (<TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger render={<p className={cn("line-clamp-2 cursor-help", textRole.helperText)} tabIndex={0}/>}>{description}</TooltipTrigger>
+        {/* Center the overlay on its full-width trigger so the arrow remains centered. */}
+        <TooltipContent side="top" align="center" sideOffset={6} className="max-w-sm whitespace-normal text-left">
+          {description}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>);
+}
+
+function EnumStringArrayPopover({ fieldId, labelId, param, value, disabled, onChange, }: {
+    fieldId: string;
+    labelId: string;
+    param: EngineParamDefinition;
+    value: EngineParamValue;
+    disabled: boolean;
+    onChange: (value: EngineParamValue) => void;
+}) {
+    const currentValues = Array.isArray(value) ? value : [];
+    const options = param.enum ?? [];
+    const selectedSummary = currentValues.length > 0 ? currentValues.join(", ") : "-";
+
+    const updateSelection = (option: string, checked: boolean) => {
+        const selected = currentValues.includes(option);
+        if (!checked && selected && param.minItems !== undefined && currentValues.length <= param.minItems) return;
+        if (checked && !selected && param.maxItems !== undefined && currentValues.length >= param.maxItems) return;
+
+        const next = checked ? [...currentValues, option] : currentValues.filter((item) => item !== option);
+        const order = new Map(options.map((item, index) => [item, index]));
+        next.sort((left, right) => (order.get(left) ?? 0) - (order.get(right) ?? 0));
+        onChange(next);
+    };
+
+    return (<Popover>
+      <PopoverTrigger render={<Button id={fieldId} type="button" variant="outline" size="sm" layout="between" className="text-left font-normal" disabled={disabled} aria-labelledby={labelId}/> }>
+        <span className="min-w-0 truncate">{selectedSummary}</span>
+        <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground"/>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[var(--anchor-width)] overflow-hidden p-1">
+        {/* Keep the popover anchored while long enum lists scroll inside the option region. */}
+        <div role="group" aria-labelledby={labelId} className="grid max-h-52 gap-1 overflow-y-auto p-1 sm:max-h-72">
+          {options.map((option) => {
+              const selected = currentValues.includes(option);
+              return (<Label key={option} htmlFor={`${fieldId}-${option}`} className="flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 font-normal hover:bg-accent">
+                <Checkbox id={`${fieldId}-${option}`} checked={selected} disabled={disabled} onCheckedChange={(checked) => updateSelection(option, checked === true)} />
+                <span className="min-w-0 truncate">{option}</span>
+              </Label>);
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>);
+}
+
+function ParamField({ location, param, value, disabled, wordlistCatalog, error, onChange, onFieldRepaired, renderParamControl }: ParamFieldProps) {
+    const tScanInitiate = useTranslations("scan.initiate");
+    const fieldId = configResourceFieldId(location);
+    const errorMessageId = `${fieldId}-error`;
+    const unitHint = useMemo(() => {
+        if (param.type !== "integer")
+            return null;
+        if (param.unit === "seconds")
+            return `(${tScanInitiate("engineConfigForm.unitSeconds")})`;
+        return null;
+    }, [param, tScanInitiate]);
+    const constraintHint = useMemo(() => {
+        if (param.type !== "integer") {
+            return null;
+        }
+        if (param.minimum !== undefined && param.maximum !== undefined) {
+            return tScanInitiate("engineConfigForm.range", { min: param.minimum, max: param.maximum });
+        }
+        if (param.minimum !== undefined) {
+            return tScanInitiate("engineConfigForm.minimum", { value: param.minimum });
+        }
+        if (param.maximum !== undefined) {
+            return tScanInitiate("engineConfigForm.maximum", { value: param.maximum });
+        }
+        return null;
+    }, [param, tScanInitiate]);
+    if (param.type === "boolean") {
+        const labelId = `${fieldId}-label`;
+        const isChecked = Boolean(value);
+        return (<div className="space-y-1">
+        <p id={labelId} className={textRole.compactPrimary}>{param.key}</p>
+        <ToggleGroup type="single" value={isChecked ? "on" : "off"} onValueChange={(nextValue) => {
+            if (nextValue === "on") onChange(true);
+            if (nextValue === "off") onChange(false);
+        }} aria-labelledby={labelId} className="radius-control relative grid h-8 w-full grid-cols-2 overflow-hidden border border-input bg-muted/40 p-0.5 dark:bg-input/20">
+          <span aria-hidden className={cn("pointer-events-none absolute inset-y-0.5 left-0 z-0 w-1/2 px-0.5 transition-transform duration-200 ease-out", isChecked ? "translate-x-full" : "translate-x-0")}>
+            <span className={cn("block h-full w-full rounded-sm shadow-xs transition-colors", isChecked ? "border border-primary/40 bg-primary/15 dark:border-primary/50 dark:bg-primary/20" : "border border-border/80 bg-background dark:bg-card")} />
+          </span>
+          <ToggleGroupItem value="off" size="sm" className="radius-none relative z-10 h-full min-w-0 px-0 text-xs font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground data-pressed:bg-transparent data-pressed:font-medium data-pressed:text-foreground data-pressed:hover:bg-transparent data-pressed:hover:text-foreground" disabled={disabled}>
+            {tScanInitiate("engineConfigForm.off")}
+          </ToggleGroupItem>
+          <ToggleGroupItem value="on" size="sm" className="radius-none relative z-10 h-full min-w-0 px-0 text-xs font-normal text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground data-pressed:bg-transparent data-pressed:font-medium data-pressed:text-primary data-pressed:hover:bg-transparent data-pressed:hover:text-primary" disabled={disabled}>
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden className={cn("size-1.5 rounded-full transition-colors", isChecked ? "bg-primary" : "bg-muted-foreground/30")} />
+              {tScanInitiate("engineConfigForm.on")}
+            </span>
+          </ToggleGroupItem>
+        </ToggleGroup>
+        {param.description ? <ParamHelpText description={param.description}/> : null}
+      </div>);
+    }
+    const customControl = renderParamControl?.({
+        fieldId,
+        location,
+        param,
+        value,
+        disabled,
+        onChange,
+    });
+    return (<div className="space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <Label id={`${fieldId}-label`} htmlFor={param.type === "stringArray" && param.enum?.length ? undefined : fieldId} className={cn("flex min-w-0 items-center gap-1 truncate", textRole.compactPrimary)}>
+          {param.key}
+          {unitHint ? (<span className={cn(textRole.helperText, "opacity-60")}>{unitHint}</span>) : null}
+        </Label>
+        {constraintHint ? (<span className={cn("shrink-0", textRole.helperText)}>{constraintHint}</span>) : null}
+      </div>
+      {customControl ?? (param.resource?.kind === "wordlist" ? (<WordlistResourceSelect fieldId={fieldId} value={value} disabled={disabled} catalog={wordlistCatalog} invalid={Boolean(error)} describedBy={error ? errorMessageId : undefined} onChange={(next) => {
+          onChange(next);
+          if (next.trim() !== "") onFieldRepaired?.(location);
+      }}/>) : param.type === "stringArray" && param.format === "http-headers" ? (<EngineHttpHeadersPopover fieldId={fieldId} labelId={`${fieldId}-label`} value={value} disabled={disabled} invalid={Boolean(error)} describedBy={error ? errorMessageId : undefined} onChange={onChange}/>) : param.type === "string" && param.enum && param.enum.length > 0 ? (<Select value={String(value)} onValueChange={onChange} disabled={disabled}>
+          <SelectTrigger id={fieldId} size="sm" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {param.enum.map((option) => (<SelectItem key={String(option)} value={String(option)}>
+                {String(option)}
+              </SelectItem>))}
+          </SelectContent>
+        </Select>) : param.type === "integer" && param.unit === "seconds" ? (<EngineDurationInput id={fieldId} value={typeof value === "number" ? value : Number(value) || 0} defaultValue={typeof param.default === "number" ? param.default : undefined} minimum={param.minimum} maximum={param.maximum} disabled={disabled} onChange={onChange}/>) : param.type === "integer" ? (<NumberStepperInput id={fieldId} value={typeof value === "number" ? value : Number(value) || 0} min={param.minimum} max={param.maximum} disabled={disabled} onChange={onChange}/>) : param.type === "stringArray" && param.enum && param.enum.length > 0 ? (<EnumStringArrayPopover fieldId={fieldId} labelId={`${fieldId}-label`} param={param} value={value} disabled={disabled} onChange={onChange}/>) : param.type === "stringArray" ? (<Input id={fieldId} type="text" value={Array.isArray(value) ? value.join(",") : ""} disabled={disabled} onChange={(e) => {
+                onChange(e.target.value.split(",").map((item) => item.trim()).filter(Boolean));
+            }} variant="subtle" size="sm"/>) : (<Input id={fieldId} type="text" value={value === "" ? "" : String(value)} min={param.minimum} max={param.maximum} pattern={param.pattern} disabled={disabled} onChange={(e) => {
+                onChange(e.target.value);
+            }} variant="subtle" size="sm"/>))}
+      {error ? <FieldError id={errorMessageId}>{tScanInitiate("engineConfigForm.resourceRequired")}</FieldError> : null}
+      {param.description ? <ParamHelpText description={param.description}/> : null}
+    </div>);
+}
+// ---------------------------------------------------------------------------
+// Section content — parameter fields (no collapsible)
+// ---------------------------------------------------------------------------
+interface SectionContentProps {
+    stepId: string;
+    section: EngineConfigSectionDefinition;
+    sectionData: {
+        enabled: boolean;
+        params: Record<string, EngineParamValue>;
+    };
+    disabled: boolean;
+    wordlistCatalog: CompleteWordlistCatalogState;
+    fieldErrors: ReadonlyMap<string, ConfigResourceFieldError>;
+    onParamChange: (paramKey: string, value: EngineParamValue) => void;
+    onFieldRepaired?: (location: ConfigResourceFieldLocation) => void;
+    renderParamControl?: EngineParamControlRenderer;
+    isLast: boolean;
+}
+function SectionContent({ stepId, section, sectionData, disabled, wordlistCatalog, fieldErrors, onParamChange, onFieldRepaired, renderParamControl, isLast, }: SectionContentProps) {
+    return (<div className={cn("px-4 py-3", !sectionData.enabled && "opacity-65")}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {section.params.map((param) => {
+          const value = sectionData.params[param.key];
+          if (value === undefined) return null;
+          const location = { stepId, sectionId: section.id, paramKey: param.key };
+          return <ParamField key={param.key} location={location} param={param} value={value} disabled={disabled || !sectionData.enabled} wordlistCatalog={wordlistCatalog} error={fieldErrors.get(configResourceFieldKey(location))} onChange={(nextValue) => onParamChange(param.key, nextValue)} onFieldRepaired={onFieldRepaired} renderParamControl={renderParamControl} />;
+        })}
+      </div>
+
+      {/* Divider between sections */}
+      {!isLast ? <div className="mt-4 h-px bg-border/60"/> : null}
+    </div>);
+}
+function SectionHeader({ section, sectionData, disabled, onToggleSection, }: {
+    section: EngineConfigSectionDefinition;
+    sectionData: EngineConfigSectionFormValue;
+    disabled: boolean;
+    onToggleSection: (enabled: boolean) => void;
+}) {
+    const enabled = sectionData.enabled !== false;
+    return (<div className="flex items-start justify-between gap-3 px-4 py-3">
+      <div className="min-w-0 space-y-1">
+        <p className={cn("truncate", textRole.navLabel)}>{section.name}</p>
+        {section.description ? (<p className={cn("line-clamp-2", textRole.helperText)} title={section.description}>{section.description}</p>) : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-2 pt-0.5">
+        <span className={cn(textRole.helperText, enabled ? "text-primary" : "text-muted-foreground/50")}>
+          {enabled ? "ON" : "OFF"}
+        </span>
+        <Switch checked={enabled} onCheckedChange={onToggleSection} disabled={disabled || section.requiredEnabled} aria-label={section.name}/>
+      </div>
+    </div>);
+}
+// ---------------------------------------------------------------------------
+// Engine card — collapsible, contains all config sections
+// ---------------------------------------------------------------------------
+interface EngineCardProps {
+    step: WorkflowStepWithEngine;
+    stepValues: EngineConfigStepFormValue;
+    disabled: boolean;
+    open: boolean;
+    wordlistCatalog: CompleteWordlistCatalogState;
+    fieldErrors: ReadonlyMap<string, ConfigResourceFieldError>;
+    onOpenChange: (open: boolean) => void;
+    onToggleStep: (enabled: boolean) => void;
+    onToggleSection: (sectionId: string, enabled: boolean) => void;
+    onParamChange: (sectionId: string, paramKey: string, value: EngineParamValue) => void;
+    onFieldRepaired?: (location: ConfigResourceFieldLocation) => void;
+    renderParamControl?: EngineParamControlRenderer;
+}
+function EngineCard({ step, stepValues, disabled, open, wordlistCatalog, fieldErrors, onOpenChange, onToggleStep, onToggleSection, onParamChange, onFieldRepaired, renderParamControl, }: EngineCardProps) {
+    const tScanInitiate = useTranslations("scan.initiate");
+    const configSections = step.engine.execution.configSections;
+    return (
+      <div className="overflow-hidden bg-card">
+        <Collapsible open={open} onOpenChange={onOpenChange}>
+          <div className="group flex items-center justify-between gap-3 px-3.5 py-2.5 transition-colors hover:bg-muted/10">
+            <CollapsibleTrigger
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-sm text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              aria-label={open ? tScanInitiate("engineConfigForm.collapse") : tScanInitiate("engineConfigForm.expand")}
+            >
+              <span className={cn("flex size-5 shrink-0 items-center justify-center", stepValues.enabled ? "text-interaction-accent" : "text-muted-foreground/60")}>
+                {getEngineIcon(step.engineId)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium text-sm text-foreground">{step.engine.displayName}</p>
+                {step.engine.description ? (
+                  <p className="truncate text-xs text-muted-foreground/70" title={step.engine.description}>
+                    {step.engine.description}
+                  </p>
+                ) : null}
+              </div>
+            </CollapsibleTrigger>
+
+            <div className="flex shrink-0 items-center gap-2.5">
+              <Switch
+                checked={stepValues.enabled}
+                disabled={disabled}
+                onCheckedChange={onToggleStep}
+                aria-label={step.engine.displayName}
+              />
+              <CollapsibleTrigger
+                className="flex size-5 cursor-pointer items-center justify-center rounded-sm text-muted-foreground/50 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                tabIndex={-1}
+                aria-hidden="true"
+              >
+                <ChevronRight className={cn("size-4 transition-transform duration-200", open && "rotate-90")} />
+              </CollapsibleTrigger>
+            </div>
+          </div>
+
+          <CollapsibleContent>
+            <div className="border-t bg-muted/10">
+              {configSections.map((section, index) => {
+                const sectionData = stepValues.sections[section.id];
+                if (!sectionData) return null;
+                return (
+                  <div key={section.id} className="border-b last:border-b-0">
+                    <SectionHeader section={section} sectionData={sectionData} disabled={disabled || !stepValues.enabled} onToggleSection={(enabled) => onToggleSection(section.id, enabled)}/>
+                    {sectionData.enabled ? (<SectionContent stepId={step.stepId} section={section} sectionData={sectionData} disabled={disabled || !stepValues.enabled} wordlistCatalog={wordlistCatalog} fieldErrors={fieldErrors} onParamChange={(paramKey, value) => onParamChange(section.id, paramKey, value)} onFieldRepaired={onFieldRepaired} renderParamControl={renderParamControl} isLast={index === configSections.length - 1}/>) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
+    );
+}
+// ---------------------------------------------------------------------------
+// Stage block — dot + label header, then engine cards
+// ---------------------------------------------------------------------------
+interface StageBlockProps {
+    stage: WorkflowStageWithEngines;
+    stageIndex: number;
+    formValues: EngineConfigFormValues;
+    disabled: boolean;
+    expandedStepIds: ReadonlySet<string>;
+    wordlistCatalog: CompleteWordlistCatalogState;
+    fieldErrors: ReadonlyMap<string, ConfigResourceFieldError>;
+    onExpandedStepChange: (stepId: string, open: boolean) => void;
+    onToggleStep: (stepId: string, enabled: boolean) => void;
+    onToggleSection: (stepId: string, sectionId: string, enabled: boolean) => void;
+    onParamChange: (stepId: string, sectionId: string, paramKey: string, value: EngineParamValue) => void;
+    onFieldRepaired?: (location: ConfigResourceFieldLocation) => void;
+    renderParamControl?: EngineParamControlRenderer;
+}
+function StageBlock({ stage, stageIndex, formValues, disabled, expandedStepIds, wordlistCatalog, fieldErrors, onExpandedStepChange, onToggleStep, onToggleSection, onParamChange, onFieldRepaired, renderParamControl, }: StageBlockProps) {
+    const tScanInitiate = useTranslations("scan.initiate");
+    const enabledEngineCount = stage.steps.filter((step) => {
+        const stepValue = formValues[step.stepId];
+        if (!stepValue)
+            return false;
+        return Boolean(stepValue?.enabled) && step.engine.execution.configSections.some((section) => stepValue.sections[section.id]?.enabled !== false);
+    }).length;
+    return (
+      <div className="divide-y divide-border/40">
+        <div className="flex items-center justify-between gap-3 bg-muted/30 px-3.5 py-1.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={cn("size-1.5 shrink-0 rounded-full", enabledEngineCount > 0 ? "bg-primary" : "bg-muted-foreground/40")}/>
+            <span className={cn("truncate text-xs font-medium text-muted-foreground")}>
+              {tScanInitiate("engineConfigForm.stageLabel", { index: stageIndex + 1, stageId: stage.stageId })}
+            </span>
+          </div>
+          <span className="text-[11px] text-muted-foreground/70">
+            {tScanInitiate("engineConfigForm.enabledSummary", { enabled: enabledEngineCount, total: stage.steps.length })}
+          </span>
+        </div>
+
+        {stage.steps.map((step) => {
+          const stepValues = formValues[step.stepId];
+          return (
+            <EngineCard
+              key={step.stepId}
+              step={step}
+              stepValues={stepValues ?? { enabled: false, sections: {} }}
+              disabled={disabled || !stepValues}
+              open={expandedStepIds.has(step.stepId)}
+              wordlistCatalog={wordlistCatalog}
+              fieldErrors={fieldErrors}
+              onOpenChange={(open) => onExpandedStepChange(step.stepId, open)}
+              onToggleStep={(enabled) => onToggleStep(step.stepId, enabled)}
+              onToggleSection={(sectionId, enabled) => onToggleSection(step.stepId, sectionId, enabled)}
+              onParamChange={(sectionId, paramKey, value) => onParamChange(step.stepId, sectionId, paramKey, value)}
+              onFieldRepaired={onFieldRepaired}
+              renderParamControl={renderParamControl}
+            />
+          );
+        })}
+      </div>
+    );
+}
+// ---------------------------------------------------------------------------
+// Main form component
+// ---------------------------------------------------------------------------
+interface EngineConfigFormProps {
+    workflow: ScanWorkflowWithEngines;
+    values: EngineConfigFormValues;
+    disabled?: boolean;
+    wordlistCatalog?: CompleteWordlistCatalogState;
+    fieldErrors?: ReadonlyMap<string, ConfigResourceFieldError>;
+    expandedStepIds?: ReadonlySet<string>;
+    onExpandedStepChange?: (stepId: string, open: boolean) => void;
+    onFieldRepaired?: (location: ConfigResourceFieldLocation) => void;
+    renderParamControl?: EngineParamControlRenderer;
+    onChange: (values: EngineConfigFormValues) => void;
+}
+const EMPTY_WORDLIST_CATALOG: CompleteWordlistCatalogState = { status: "complete", wordlists: [], retry: () => undefined };
+const EMPTY_FIELD_ERRORS = new Map<string, ConfigResourceFieldError>();
+
+export function EngineConfigForm({ workflow, values, disabled = false, wordlistCatalog = EMPTY_WORDLIST_CATALOG, fieldErrors = EMPTY_FIELD_ERRORS, expandedStepIds, onExpandedStepChange, onFieldRepaired, renderParamControl, onChange, }: EngineConfigFormProps) {
+    const tScanInitiate = useTranslations("scan.initiate");
+    const [internalExpandedStepIds, setInternalExpandedStepIds] = React.useState<Set<string>>(() => new Set());
+    const resolvedExpandedStepIds = expandedStepIds ?? internalExpandedStepIds;
+    const handleExpandedStepChange = useCallback((stepId: string, open: boolean) => {
+        onExpandedStepChange?.(stepId, open);
+        if (expandedStepIds) return;
+        setInternalExpandedStepIds((current) => {
+            const next = new Set(current);
+            if (open) next.add(stepId);
+            else next.delete(stepId);
+            return next;
+        });
+    }, [expandedStepIds, onExpandedStepChange]);
+    const handleToggleStep = useCallback((stepId: string, enabled: boolean) => {
+        onChange({
+            ...values,
+            [stepId]: {
+                ...values[stepId],
+                enabled,
+            },
+        });
+    }, [values, onChange]);
+    const handleToggleSection = useCallback((stepId: string, sectionId: string, enabled: boolean) => {
+        const stepValue = values[stepId];
+        if (!stepValue?.enabled) return;
+        const currentSection = stepValue.sections[sectionId];
+        if (!currentSection) return;
+		const sectionDefinition = findSection(workflow, stepId, sectionId);
+		if (!enabled && sectionDefinition?.requiredEnabled) return;
+        if (!enabled && Object.values(stepValue.sections).filter((section) => section.enabled).length <= 1) {
+            toastFeedback.warning(tScanInitiate("engineConfigForm.lastSectionHint"));
+            return;
+        }
+        onChange({
+            ...values,
+            [stepId]: {
+                ...stepValue,
+                sections: {
+                    ...stepValue.sections,
+                    [sectionId]: {
+                        ...currentSection,
+                        enabled,
+                        params: enabled && sectionDefinition ? defaultParamsForSection(sectionDefinition) : {},
+                    },
+                },
+            },
+        });
+    }, [tScanInitiate, values, workflow, onChange]);
+    const handleParamChange = useCallback((stepId: string, sectionId: string, paramKey: string, value: EngineParamValue) => {
+        const stepVal = values[stepId];
+        if (!stepVal?.enabled || !stepVal.sections[sectionId]?.enabled) return;
+        const sectionVal = stepVal.sections[sectionId];
+        onChange({
+            ...values,
+            [stepId]: {
+                ...stepVal,
+                sections: {
+                    ...stepVal.sections,
+                    [sectionId]: {
+                        ...sectionVal,
+                        params: {
+                            ...sectionVal.params,
+                            [paramKey]: value,
+                        },
+                    },
+                },
+            },
+        });
+    }, [values, onChange]);
+    return (
+      <div className="radius-surface overflow-hidden border border-border bg-card divide-y divide-border/60">
+        {workflow.stages.map((stage, index) => (
+          <StageBlock
+            key={stage.stageId}
+            stage={stage}
+            stageIndex={index}
+            formValues={values}
+            disabled={disabled}
+            expandedStepIds={resolvedExpandedStepIds}
+            wordlistCatalog={wordlistCatalog}
+            fieldErrors={fieldErrors}
+            onExpandedStepChange={handleExpandedStepChange}
+            onToggleStep={handleToggleStep}
+            onToggleSection={handleToggleSection}
+            onParamChange={handleParamChange}
+            onFieldRepaired={onFieldRepaired}
+            renderParamControl={renderParamControl}
+          />
+        ))}
+      </div>
+    );
+}
+
+function isValidEngineParameterValue(value: unknown, type: string): boolean {
+    if (type === "integer") return typeof value === "number" && Number.isInteger(value);
+    if (type === "boolean") return typeof value === "boolean";
+    if (type === "string") return typeof value === "string";
+    if (type === "stringArray") return Array.isArray(value) && value.every((item) => typeof item === "string");
+    return false;
+}
+
+function cloneEngineParamValue(value: EngineParamValue): EngineParamValue {
+    return Array.isArray(value) ? [...value] : value;
+}

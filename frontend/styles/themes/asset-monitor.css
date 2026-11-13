@@ -1,0 +1,63 @@
+/* The display owns its palettes; severity colors retain their meaning. */
+.monitor-root {
+  --monitor-bg: #0b1015;
+  --monitor-surface: #151e27;
+  --monitor-text: #f4eee4;
+  --monitor-muted: #b5ada0;
+  --monitor-cyan: #e4bc7b;
+  --monitor-gold: #e99570;
+  --monitor-dns: #bfa4e9;
+  --monitor-border: #4a4238;
+  --monitor-map-land: #273039;
+  --monitor-map-china: #917345;
+  --monitor-map-border: #8c806e;
+  --monitor-map-hover: #66573f;
+}
+.monitor-root[data-monitor-theme="ocean"] {
+  --monitor-bg: #08172b; --monitor-surface: #10253c; --monitor-text: #e6f1fb; --monitor-muted: #9bb4c9;
+  --monitor-cyan: #71b5ff; --monitor-gold: #f2b676; --monitor-dns: #d3a5ec; --monitor-border: #315071;
+  --monitor-map-land: #213b54; --monitor-map-china: #4878a6; --monitor-map-border: #7994aa; --monitor-map-hover: #416788;
+}
+.monitor-root[data-monitor-theme="violet"] {
+  --monitor-bg: #14101f; --monitor-surface: #211a30; --monitor-text: #f0eaf8; --monitor-muted: #b4a8c3;
+  --monitor-cyan: #c8a5f5; --monitor-gold: #efaf8d; --monitor-dns: #78d6d1; --monitor-border: #4f3f62;
+  --monitor-map-land: #352c44; --monitor-map-china: #765f91; --monitor-map-border: #9a89aa; --monitor-map-hover: #6a587e;
+}
+.monitor-root[data-monitor-theme="teal"] {
+  --monitor-bg: #07131f; --monitor-surface: #0b1c2a; --monitor-text: #dceef2; --monitor-muted: #8aabb9;
+  --monitor-cyan: #4bd9d1; --monitor-gold: #f4c76a; --monitor-dns: #c5a5ff; --monitor-border: #284b5b;
+  --monitor-map-land: #193544; --monitor-map-china: #397482; --monitor-map-border: #6a8f9a; --monitor-map-hover: #376c79;
+}
+.monitor-root[data-monitor-theme="black"] {
+  --monitor-bg: #050608; --monitor-surface: #111317; --monitor-text: #f0f2f4; --monitor-muted: #a8b0b9;
+  --monitor-cyan: #d8e0e8; --monitor-gold: #e4ad79; --monitor-dns: #bba6f0; --monitor-border: #353a40;
+  --monitor-map-land: #242a30; --monitor-map-china: #778794; --monitor-map-border: #8997a0; --monitor-map-hover: #596b77;
+}
+
+.monitor-root {
+  --monitor-severity-critical: #ee8895;
+  --monitor-severity-high: #eda57e;
+  --monitor-severity-medium: #d8ba7e;
+  --monitor-severity-low: #87b5b0;
+  --monitor-severity-info: #8fa6c0;
+  --monitor-severity-unknown: #8b949e;
+  --monitor-line: color-mix(in srgb, var(--monitor-border) 65%, transparent);
+  --background: var(--monitor-bg);
+  --foreground: var(--monitor-text);
+  --primary: var(--monitor-text);
+  --primary-foreground: var(--monitor-bg);
+  --secondary: var(--monitor-surface);
+  --secondary-foreground: var(--monitor-text);
+  --card: var(--monitor-surface);
+  --card-foreground: var(--monitor-text);
+  --muted: var(--monitor-surface);
+  --muted-foreground: var(--monitor-muted);
+  --border: var(--monitor-border);
+  --input: var(--monitor-border);
+  --accent: var(--monitor-surface);
+  --accent-foreground: var(--monitor-text);
+  --interaction-accent: var(--monitor-cyan);
+  --interaction-accent-foreground: var(--monitor-bg);
+  --ring: var(--monitor-cyan);
+  --brand-mark-foreground: var(--monitor-text);
+}

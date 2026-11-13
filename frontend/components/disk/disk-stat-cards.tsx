@@ -1,0 +1,43 @@
+"use client"
+
+import { useTranslations } from "next-intl"
+import { useDiskStats } from '@/hooks/use-disk'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { IconDatabase } from "@/components/icons"
+import { formatBytes } from '@/lib/utils'
+import { textRole } from "@/lib/typography"
+import { COMPACT_CONTENT_GUTTER_CLASS } from "@/components/shared/layout/page-shell-density"
+
+function StatCard({ title, value, icon, loading }: { title: string; value: string | number; icon: React.ReactNode; loading?: boolean }) {
+  return (
+    <Card variant="compact" className="@container/card">
+      <CardHeader>
+        <CardDescription className="flex gap-2 items-center">
+          {icon}
+          {title}
+        </CardDescription>
+        {loading ? (
+          <Skeleton className="h-5 w-24" />
+        ) : (
+          <CardTitle className={textRole.metricValueDisplay}>
+            {value}
+          </CardTitle>
+        )}
+      </CardHeader>
+    </Card>
+  )
+}
+
+export function DiskStatCards() {
+  const { data, isLoading } = useDiskStats()
+  const t = useTranslations("disk")
+
+  return (
+    <div className={`@xl/main:grid-cols-3 gap-4 grid grid-cols-1 ${COMPACT_CONTENT_GUTTER_CLASS}`}>
+      <StatCard title={t("totalCapacity")} value={formatBytes(data?.totalBytes ?? 0)} icon={<IconDatabase />} loading={isLoading} />
+      <StatCard title={t("used")} value={formatBytes(data?.usedBytes ?? 0)} icon={<IconDatabase />} loading={isLoading} />
+      <StatCard title={t("available")} value={formatBytes(data?.freeBytes ?? 0)} icon={<IconDatabase />} loading={isLoading} />
+    </div>
+  )
+}

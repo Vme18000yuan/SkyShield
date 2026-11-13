@@ -1,0 +1,94 @@
+import type { ReactNode } from "react"
+
+import { Search } from "@/components/icons"
+import { Badge } from "@/components/ui/badge"
+import {
+  COMPACT_CONTENT_GUTTER_CLASS,
+  COMPACT_PAGE_RHYTHM_CLASS,
+} from "@/components/shared/layout/page-shell-density"
+import { textRole } from "@/lib/typography"
+import { cn } from "@/lib/utils"
+import { GLOBAL_ASSET_SEARCH_FEATURED_GUIDANCE } from "@/lib/global-asset-search-query"
+
+export const QUICK_SEARCH_TAGS = GLOBAL_ASSET_SEARCH_FEATURED_GUIDANCE.map((entry) => ({
+  label: entry.query,
+  query: entry.query,
+}))
+
+export function SearchAssetBarShell({
+  children,
+  className,
+}: {
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        "radius-control-prominent flex h-9 w-full min-w-0 overflow-hidden border border-input bg-background shadow-xs",
+        className
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function SearchInitialPageShell({
+  children,
+  animated = false,
+}: {
+  children: ReactNode
+  animated?: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        "relative flex flex-1 flex-col items-center justify-center overflow-hidden",
+        COMPACT_CONTENT_GUTTER_CLASS,
+        COMPACT_PAGE_RHYTHM_CLASS,
+        animated && "animate-in fade-in slide-in-from-bottom-4 duration-300"
+      )}
+    >
+      <div className="-mt-12 flex w-full max-w-4xl flex-col items-center gap-4">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+export function SearchInitialHeading({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="flex items-center gap-2">
+        <Search className="h-6 w-6 text-primary" />
+        <h1 className={textRole.pageTitle}>{title}</h1>
+      </div>
+      <p className={textRole.bodySubtle}>{hint}</p>
+    </div>
+  )
+}
+
+export function SearchQuickTags({ onTagClick }: { onTagClick?: (query: string) => void }) {
+  return (
+    <div className="flex flex-wrap justify-center gap-2">
+      {QUICK_SEARCH_TAGS.map((tag) => (
+        <Badge
+          size="tag"
+          key={tag.query}
+          variant="outline"
+          className="px-3 transition-colors hover:bg-accent"
+          render={(
+            <button
+              type="button"
+              disabled={!onTagClick}
+              onClick={onTagClick ? () => onTagClick(tag.query) : undefined}
+            />
+          )}
+        >
+          {tag.label}
+        </Badge>
+      ))}
+    </div>
+  )
+}
