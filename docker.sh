@@ -14,6 +14,17 @@ case "${1:-start}" in
   start)
     if [[ $# -gt 1 ]]; then printf '用法：./docker.sh [start|stop|status|logs [服务名...]]\n' >&2; exit 2; fi
     if ! command -v openssl >/dev/null; then printf '首次启动需要 openssl 生成本地密钥。\n' >&2; exit 1; fi
+    # The upstream Agent uses fixed volume names. Fail before creating secrets,
+    # images or containers if an existing installation owns one of them.
+    for volume in lunafox_data lunafox_engine_execution lunafox_agent_state; do
+      if docker volume inspect "$volume" >/dev/null 2>&1; then
+        owner="$(docker volume inspect "$volume" --format '{{index .Labels "com.docker.compose.project"}}')"
+        if [[ "$owner" != "tianqiong" ]]; then
+          printf '卷 %s 已存在且不属于天穹项目，请使用独立 Docker daemon；未启动服务。\n' "$volume" >&2
+          exit 1
+        fi
+      fi
+    done
     bash "$project_dir/scripts/tianqiong-dev-init.sh"
     "${compose[@]}" config --quiet
     "${compose[@]}" up -d --build
