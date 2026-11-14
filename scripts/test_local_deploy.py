@@ -15,6 +15,27 @@ SPEC.loader.exec_module(deploy)
 
 
 class LocalDeployTests(unittest.TestCase):
+    def test_prepare_directories_preserves_wordlist_bootstrap_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data = pathlib.Path(temporary) / "data"
+            paths = {
+                "DATA": data, "LOGS": data / "logs", "BIN": data / "bin",
+                "ENGINES": data / "bin/engines", "TOOLS": data / "tools/bin",
+                "PGSOCKET": data / "postgres", "SECRETS": data / "secrets",
+                "EXECUTION_ROOT": pathlib.Path(temporary) / "execution",
+            }
+            with contextlib.ExitStack() as stack:
+                for name, path in paths.items():
+                    stack.enter_context(mock.patch.object(deploy, name, path))
+                deploy.prepare_directories()
+                wordlists = data / "wordlists"
+                self.assertFalse(wordlists.exists())
+                wordlists.mkdir()
+                existing = wordlists / "user-list.txt"
+                existing.write_text("keep this data\n")
+                deploy.prepare_directories()
+                self.assertEqual(existing.read_text(), "keep this data\n")
+
     def test_rebuild_does_not_interrupt_running_scan(self):
         state = {"server": {"pid": 1}, "agent": {"pid": 2}, "frontend": {"pid": 3}}
         with mock.patch.object(deploy, "prepare_directories"), mock.patch.object(deploy, "environment", return_value={}), mock.patch.object(deploy, "active_frontend_stage", return_value=None), \
@@ -260,6 +281,25 @@ class LocalDeployTests(unittest.TestCase):
             listener.listen()
             with self.assertRaises(RuntimeError):
                 deploy.free_port(listener.getsockname()[1])
+
+    def test_wildcard_listener_detects_other_address_collision(self):
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.2", 0))
+            listener.listen()
+            port = listener.getsockname()[1]
+            deploy.free_port(port, "127.0.0.1")
+            with self.assertRaises(RuntimeError):
+                deploy.free_port(port, deploy.LISTEN_HOST)
+
+    def test_local_server_listener_configuration(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            secrets = pathlib.Path(temporary)
+            (secrets / "db_password").write_text("fixture-only\n")
+            with mock.patch.object(deploy, "SECRETS", secrets):
+                env = deploy.environment()
+            self.assertEqual(env["SERVER_HOST"], "0.0.0.0")
+            self.assertEqual(env["SERVER_GRPC_HOST"], "0.0.0.0")
+            self.assertEqual(env["DB_HOST"], "127.0.0.1")
 
 
 if __name__ == "__main__":

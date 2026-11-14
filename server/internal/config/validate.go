@@ -46,8 +46,8 @@ func validateConfig(cfg *Config) error {
 	if parsed.Host == "" {
 		return fmt.Errorf("PUBLIC_URL host is required")
 	}
-	if cfg.LocalMode && (!loopbackHost(cfg.Server.Host) || !loopbackHost(cfg.Server.GRPCHost)) {
-		return fmt.Errorf("local mode requires loopback SERVER_HOST and SERVER_GRPC_HOST")
+	if cfg.LocalMode && (!localListenHost(cfg.Server.Host) || !localListenHost(cfg.Server.GRPCHost)) {
+		return fmt.Errorf("local mode requires loopback or 0.0.0.0 SERVER_HOST and SERVER_GRPC_HOST")
 	}
 	if cfg.LocalMode && (!filepath.IsAbs(cfg.LocalDataRoot) || filepath.Clean(cfg.LocalDataRoot) != cfg.LocalDataRoot || cfg.LocalDataRoot == "/") {
 		return fmt.Errorf("local mode requires a clean absolute TIANQIONG_LOCAL_DATA_ROOT")
@@ -102,6 +102,10 @@ func loopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(strings.TrimSpace(host))
 	return ip != nil && ip.IsLoopback()
+}
+
+func localListenHost(host string) bool {
+	return loopbackHost(host) || strings.TrimSpace(host) == "0.0.0.0"
 }
 
 func validateDatabaseConfig(cfg *DatabaseConfig) error {

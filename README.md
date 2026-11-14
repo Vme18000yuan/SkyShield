@@ -12,7 +12,7 @@ Linux 环境安装 Go 1.26.10、Node.js 22、pnpm、Python 3、PostgreSQL 和 Re
 ./local.sh start
 ```
 
-默认访问 `http://127.0.0.1:3000`。使用 `./local.sh status` 查看状态，使用 `./local.sh stop` 停止。详细依赖、端口和参数见 [本地单机部署](docs/08-本地单机部署.md)。
+前端默认监听 `0.0.0.0:3000`，本机访问 `http://127.0.0.1:3000`，其他设备可使用 `http://服务器IP:3000`。使用 `./local.sh status` 查看状态，使用 `./local.sh stop` 停止。详细依赖、端口和参数见 [本地单机部署](docs/08-本地单机部署.md)。
 
 ## Docker 一键部署
 
@@ -23,7 +23,7 @@ Linux 环境安装 Go 1.26.10、Node.js 22、pnpm、Python 3、PostgreSQL 和 Re
 ./docker.sh pull            # 拉取 Docker Hub 镜像并启动
 ```
 
-默认通过 `https://127.0.0.1:8443` 访问，首次启动使用自签名证书。可通过 `.env` 配置 `PUBLIC_HOST` 和 `PUBLIC_PORT`，参考 [.env.example](.env.example)。使用 `./docker.sh status` 查看状态，`./docker.sh logs` 查看日志，`./docker.sh stop` 停止服务并保留数据。
+默认监听 `0.0.0.0:8443`，本机通过 `https://127.0.0.1:8443`、其他设备通过 `https://服务器IP:8443` 访问，首次启动使用自签名证书。可通过 `.env` 配置用于生成链接和证书的 `PUBLIC_HOST` 以及访问端口 `PUBLIC_PORT`，参考 [.env.example](.env.example)。使用 `./docker.sh status` 查看状态，`./docker.sh logs` 查看日志，`./docker.sh stop` 停止服务并保留数据。
 
 发布镜像位于 Docker Hub 的 `solder110/skyshield-server`、`skyshield-frontend`、`skyshield-bootstrap` 和 `skyshield-nginx`，默认使用 `latest`；可在 `.env` 设置 `SKYSHIELD_IMAGE_TAG` 为指定的 `sha-<提交号>`。当前发布的镜像平台为 `linux/amd64`。
 

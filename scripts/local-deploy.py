@@ -40,6 +40,7 @@ REDIS_PORT = int(os.environ.get("SKYSHIELD_LOCAL_REDIS_PORT", "51563"))
 HTTP_PORT = int(os.environ.get("SKYSHIELD_LOCAL_HTTP_PORT", "8080"))
 GRPC_PORT = int(os.environ.get("SKYSHIELD_LOCAL_GRPC_PORT", "9090"))
 FRONTEND_PORT = int(os.environ.get("SKYSHIELD_LOCAL_FRONTEND_PORT", "3000"))
+LISTEN_HOST = "0.0.0.0"
 VERSION = "0.0.1-alpha.229"
 ENGINE_NAMES = ("subdomain_discovery", "port_scan", "website_discovery", "url_collection", "fingerprint_detection", "directory_scan", "screenshot", "nuclei_vulnerability")
 
@@ -86,7 +87,9 @@ def pg_binary(name):
 
 
 def prepare_directories():
-    for directory in (DATA, LOGS, BIN, ENGINES, TOOLS, PGSOCKET, SECRETS, DATA / "redis", DATA / "agent", DATA / "wordlists", DATA / "fingerprints", DATA / "login-visuals", DATA / "nuclei-poc", DATA / "ai", DATA / "engine-packages", DATA / "upgrade"):
+    # Wordlist bootstrap uses the absence of its root as its first-install
+    # marker; do not pre-create it or remove any existing user-managed root.
+    for directory in (DATA, LOGS, BIN, ENGINES, TOOLS, PGSOCKET, SECRETS, DATA / "redis", DATA / "agent", DATA / "fingerprints", DATA / "login-visuals", DATA / "nuclei-poc", DATA / "ai", DATA / "engine-packages", DATA / "upgrade"):
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     if EXECUTION_ROOT == pathlib.Path("/") or not EXECUTION_ROOT.is_absolute():
         fail("单机执行目录无效")
@@ -112,7 +115,7 @@ def environment():
         "DB_PASSWORD_FILE": str(SECRETS / "db_password"), "DB_SSLMODE": "disable", "DB_TIMEZONE": "UTC",
         "JWT_SECRET_FILE": str(SECRETS / "jwt_secret"), "TIANQIONG_AI_ENCRYPTION_KEY_FILE": str(SECRETS / "ai_encryption_key"),
         "REDIS_HOST": "127.0.0.1", "REDIS_PORT": str(REDIS_PORT), "LOKI_URL": os.environ.get("SKYSHIELD_LOCAL_LOKI_URL", "http://127.0.0.1:3100"),
-        "TIANQIONG_LOCAL_MODE": "true", "TIANQIONG_LOCAL_DATA_ROOT": str(DATA), "SERVER_HOST": "127.0.0.1", "SERVER_GRPC_HOST": "127.0.0.1",
+        "TIANQIONG_LOCAL_MODE": "true", "TIANQIONG_LOCAL_DATA_ROOT": str(DATA), "SERVER_HOST": LISTEN_HOST, "SERVER_GRPC_HOST": LISTEN_HOST,
         "SERVER_PORT": str(HTTP_PORT), "SERVER_GRPC_PORT": str(GRPC_PORT), "GIN_MODE": "release", "PUBLIC_URL": f"http://127.0.0.1:{FRONTEND_PORT}",
         "WORDLISTS_BASE_PATH": str(DATA / "wordlists"), "FINGERPRINT_ARTIFACTS_BASE_PATH": str(DATA / "fingerprints"),
         "LOGIN_VISUALS_BASE_PATH": str(DATA / "login-visuals"), "NUCLEI_POC_WORKSPACE_ROOT": str(DATA / "nuclei-poc"),
@@ -163,11 +166,11 @@ def record(state, name, pid, owned=True):
     write_state(state)
 
 
-def free_port(port):
+def free_port(port, host="127.0.0.1"):
     with socket.socket() as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            sock.bind(("127.0.0.1", port))
+            sock.bind((host, port))
         except OSError:
             fail(f"本地端口 {port} 已被占用；请先停止旧进程或设置对应的 SKYSHIELD_LOCAL_*_PORT")
 
@@ -524,14 +527,14 @@ def start(args):
     call([server, "local-agent-bootstrap", AGENT_CREDENTIALS, "skyshield-local", VERSION], cwd=ROOT / "server", env=env)
     env["TIANQIONG_LOCAL_AGENT_INSTANCE_ID"] = json.loads(AGENT_CREDENTIALS.read_text())["instanceId"]
     if not alive(state.get("server")):
-        free_port(HTTP_PORT); free_port(GRPC_PORT)
+        free_port(HTTP_PORT, LISTEN_HOST); free_port(GRPC_PORT, LISTEN_HOST)
         spawn(state, "server", [server], env, ROOT / "server")
     wait_for(lambda: http_ready(HTTP_PORT, "/healthChecks/readiness"), "Server", process=state.get("server"))
     if staged_frontend and frontend_was_running:
         stop_managed(state, "frontend")
     if not alive(state.get("frontend")):
-        free_port(FRONTEND_PORT)
-        frontend_args = [ROOT / "frontend/node_modules/.bin/next", "start", "--hostname", "127.0.0.1", "--port", FRONTEND_PORT]
+        free_port(FRONTEND_PORT, LISTEN_HOST)
+        frontend_args = [ROOT / "frontend/node_modules/.bin/next", "start", "--hostname", LISTEN_HOST, "--port", FRONTEND_PORT]
         try:
             spawn(state, "frontend", frontend_args, frontend_environment(env, staged_frontend or previous_frontend_stage), ROOT / "frontend")
             wait_for(lambda: http_ready(FRONTEND_PORT, "/"), "前端", process=state.get("frontend"))
@@ -540,14 +543,14 @@ def start(args):
         except Exception:
             if staged_frontend and frontend_was_running:
                 stop_managed(state, "frontend")
-                free_port(FRONTEND_PORT)
+                free_port(FRONTEND_PORT, LISTEN_HOST)
                 spawn(state, "frontend", frontend_args, frontend_environment(env, previous_frontend_stage), ROOT / "frontend")
                 wait_for(lambda: http_ready(FRONTEND_PORT, "/"), "恢复原前端", process=state.get("frontend"))
             raise
     else:
         wait_for(lambda: http_ready(FRONTEND_PORT, "/"), "前端", process=state.get("frontend"))
     if args.ui_only:
-        print(f"本地界面已启动：http://127.0.0.1:{FRONTEND_PORT}（未启动扫描 Agent）")
+        print(f"本地界面已启动：监听 {LISTEN_HOST}:{FRONTEND_PORT}，本机访问 http://127.0.0.1:{FRONTEND_PORT}，其他设备访问 http://<服务器IP>:{FRONTEND_PORT}（未启动扫描 Agent）")
         return
     check = subprocess.run([str(value) for value in agent_args() + ["--check"]], env=env)
     if check.returncode and not args.no_tools_install:
@@ -562,7 +565,7 @@ def start(args):
         spawn(state, "agent", agent_args(), agent_env, ROOT)
     identity = env["TIANQIONG_LOCAL_AGENT_INSTANCE_ID"].replace("'", "''")
     wait_for(lambda: query(env, f"SELECT count(*) FROM agent a JOIN agent_runtime_status r ON r.agent_id=a.id WHERE a.instance_id='{identity}' AND a.status='online' AND r.last_heartbeat > now() - interval '1 minute'") == "1", "本地扫描 Agent", process=state.get("agent"))
-    print(f"单机模式已启动：http://127.0.0.1:{FRONTEND_PORT}")
+    print(f"单机模式已启动：监听 {LISTEN_HOST}:{FRONTEND_PORT}，本机访问 http://127.0.0.1:{FRONTEND_PORT}，其他设备访问 http://<服务器IP>:{FRONTEND_PORT}")
 
 
 def stop(_args):

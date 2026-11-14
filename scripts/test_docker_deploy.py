@@ -34,6 +34,8 @@ if args[:2] == ["volume", "inspect"]:
         sys.exit(1)
     if "--format" in args:
         print(owners[args[2]])
+if "port" in args and "nginx" in args:
+    print("0.0.0.0:18443")
 ''')
         fake.chmod(0o755)
         self.env = os.environ.copy()
@@ -90,6 +92,8 @@ if args[:2] == ["volume", "inspect"]:
     def test_pull_mode_fetches_published_images_and_never_builds(self):
         result = self.run_docker("pull")
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("https://localhost:18443", result.stdout)
+        self.assertIn("https://<服务器IP>:18443", result.stdout)
         calls = self.calls()
         pulls = [i for i, call in enumerate(calls) if "pull" in call and "up" not in call]
         starts = [i for i, call in enumerate(calls) if "up" in call]
@@ -106,6 +110,22 @@ if args[:2] == ["volume", "inspect"]:
         calls = self.calls()
         self.assertTrue(any("stop" in call for call in calls))
         self.assertFalse(any(call[:2] == ["volume", "inspect"] or "down" in call or "--volumes" in call for call in calls))
+
+
+class ComposeListenerTests(unittest.TestCase):
+    def test_edge_publishes_on_all_ipv4_interfaces(self):
+        docker = shutil.which("docker")
+        if not docker or subprocess.run([docker, "compose", "version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+            self.skipTest("Docker Compose is not installed")
+        env = os.environ.copy()
+        env["PUBLIC_PORT"] = "18443"
+        result = subprocess.run(
+            [docker, "compose", "-f", str(ROOT / "compose.tianqiong.yaml"), "-f", str(ROOT / "compose.hub.yaml"),
+             "config", "--format", "json"], cwd=ROOT, env=env, capture_output=True, text=True, check=True,
+        )
+        ports = json.loads(result.stdout)["services"]["nginx"]["ports"]
+        self.assertTrue(any(port.get("host_ip") == "0.0.0.0" and int(port.get("target", 0)) == 443
+                            and str(port.get("published")) == "18443" for port in ports))
 
 
 if __name__ == "__main__":

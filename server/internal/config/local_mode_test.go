@@ -2,7 +2,7 @@ package config
 
 import "testing"
 
-func TestLocalModeAllowsOnlyLoopbackHTTPAndListeners(t *testing.T) {
+func TestLocalModeAllowsLoopbackHTTPAndWildcardListeners(t *testing.T) {
 	for _, test := range []struct {
 		name, url, host, grpcHost string
 		local, valid              bool
@@ -10,7 +10,9 @@ func TestLocalModeAllowsOnlyLoopbackHTTPAndListeners(t *testing.T) {
 		{"native loopback", "http://127.0.0.1:3000", "127.0.0.1", "127.0.0.1", true, true},
 		{"native ipv6", "http://[::1]:3000", "::1", "::1", true, true},
 		{"native nonloopback URL", "http://192.0.2.1:3000", "127.0.0.1", "127.0.0.1", true, false},
-		{"native public listener", "http://127.0.0.1:3000", "0.0.0.0", "127.0.0.1", true, false},
+		{"native wildcard listeners", "http://127.0.0.1:3000", "0.0.0.0", "0.0.0.0", true, true},
+		{"native mixed listeners", "http://127.0.0.1:3000", "0.0.0.0", "127.0.0.1", true, true},
+		{"native specific nonloopback listener", "http://127.0.0.1:3000", "192.0.2.1", "127.0.0.1", true, false},
 		{"container HTTP", "http://127.0.0.1:3000", "", "", false, false},
 		{"container HTTPS", "https://example.com", "", "", false, true},
 	} {

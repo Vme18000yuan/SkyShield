@@ -38,6 +38,10 @@ case "${1:-start}" in
       "${compose[@]}" up -d --build
     fi
     printf '服务已交由 Docker Compose 启动，可使用 ./docker.sh status 查看状态。\n'
+    if published="$("${compose[@]}" port nginx 443 2>/dev/null)" && [[ "$published" == 0.0.0.0:* ]]; then
+      port="${published##*:}"
+      printf '界面监听 0.0.0.0:%s；本机访问 https://localhost:%s，其他设备访问 https://<服务器IP>:%s。\n' "$port" "$port" "$port"
+    fi
     ;;
   stop)
     if [[ $# -ne 1 ]]; then printf '用法：./docker.sh stop\n' >&2; exit 2; fi
