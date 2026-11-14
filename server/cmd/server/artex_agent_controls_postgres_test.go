@@ -44,6 +44,34 @@ func verifyARTEXAgentControlsPostgres(t *testing.T, ctx context.Context, db *sql
 			t.Fatalf("preset %s: %+v %v", preset.key, item, err)
 		}
 	}
+	credential, err := catalog.Get(ctx, admin, "credential_processor")
+	if err != nil || credential.MaxTurns != 0 {
+		t.Fatalf("credential preset must default to unlimited turns: %+v %v", credential, err)
+	}
+	// An untouched old seed is upgraded, but a setting saved by an admin remains.
+	if _, err = db.ExecContext(ctx, `UPDATE ai_custom_agent SET max_turns=1,updated_at=created_at WHERE agent_key='credential_processor'`); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SeedDefaultAgents(ctx); err != nil {
+		t.Fatal(err)
+	}
+	credential, err = catalog.Get(ctx, admin, "credential_processor")
+	if err != nil || credential.MaxTurns != 0 {
+		t.Fatalf("old untouched default was not upgraded: %+v %v", credential, err)
+	}
+	if _, err = db.ExecContext(ctx, `UPDATE ai_custom_agent SET max_turns=1,updated_at=created_at+interval '1 second' WHERE agent_key='credential_processor'`); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SeedDefaultAgents(ctx); err != nil {
+		t.Fatal(err)
+	}
+	credential, err = catalog.Get(ctx, admin, "credential_processor")
+	if err != nil || credential.MaxTurns != 1 {
+		t.Fatalf("administrator setting was overwritten: %+v %v", credential, err)
+	}
+	if _, err = db.ExecContext(ctx, `UPDATE ai_custom_agent SET max_turns=0 WHERE agent_key='credential_processor'`); err != nil {
+		t.Fatal(err)
+	}
 	triggers, err := control.Triggers(ctx, admin, "reporter")
 	if err != nil || len(triggers) != 1 || !triggers[0].OnToolCall || len(triggers[0].ToolNames) != 1 || triggers[0].ToolNames[0] != "report_finding" {
 		t.Fatalf("reporter trigger: %+v %v", triggers, err)

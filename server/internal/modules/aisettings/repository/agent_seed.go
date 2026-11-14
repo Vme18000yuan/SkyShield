@@ -36,7 +36,7 @@ func (s *AgentCatalogStore) SeedDefaultAgents(ctx context.Context) error {
 		return err
 	}
 	if count == 4 {
-		return s.upgradeInfoGathererPrompt(ctx)
+		return s.upgradeDefaultAgents(ctx)
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockAgentSettingsTenant(tx); err != nil {
@@ -68,15 +68,11 @@ func (s *AgentCatalogStore) SeedDefaultAgents(ctx context.Context) error {
 			if done {
 				continue
 			}
-			turns := 0
-			if seed.key == "credential_processor" {
-				turns = 1
-			}
 			runSeconds := 1200
 			if seed.key == "info_gatherer" {
 				runSeconds = 2400
 			}
-			result := tx.Exec(`INSERT INTO ai_custom_agent(tenant_id,agent_key,display_name,description,system_prompt,enabled,max_turns,run_seconds,created_by,updated_by,preset_key) VALUES(?,?,?,?,?,TRUE,?,?,?,?,?) ON CONFLICT(tenant_id,agent_key) DO NOTHING`, assets.DefaultTenantID, seed.key, seed.name, seed.description, seed.prompt, turns, runSeconds, admin, admin, seed.key)
+			result := tx.Exec(`INSERT INTO ai_custom_agent(tenant_id,agent_key,display_name,description,system_prompt,enabled,max_turns,run_seconds,created_by,updated_by,preset_key) VALUES(?,?,?,?,?,TRUE,?,?,?,?,?) ON CONFLICT(tenant_id,agent_key) DO NOTHING`, assets.DefaultTenantID, seed.key, seed.name, seed.description, seed.prompt, 0, runSeconds, admin, admin, seed.key)
 			if result.Error != nil {
 				return result.Error
 			}
@@ -105,7 +101,17 @@ func (s *AgentCatalogStore) SeedDefaultAgents(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return s.upgradeInfoGathererPrompt(ctx)
+	return s.upgradeDefaultAgents(ctx)
+}
+
+func (s *AgentCatalogStore) upgradeDefaultAgents(ctx context.Context) error {
+	if err := s.upgradeInfoGathererPrompt(ctx); err != nil {
+		return err
+	}
+	// Older installations seeded the credential conversation Agent with one
+	// turn. Upgrade only an untouched preset: any administrator edit, including
+	// an intentional one-turn setting, remains authoritative.
+	return s.db.WithContext(ctx).Exec(`UPDATE ai_custom_agent SET max_turns=0,updated_at=clock_timestamp() WHERE tenant_id=? AND agent_key='credential_processor' AND preset_key='credential_processor' AND max_turns=1 AND created_at=updated_at AND created_by=updated_by`, assets.DefaultTenantID).Error
 }
 
 // Upgrade only the exact shipped prompt. Administrator edits and agent

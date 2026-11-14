@@ -173,8 +173,8 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 		UnlockSet:              deferred.Unlock,
 		PermissionMode:         acperm.ModeBypass,
 		DisableBackgroundTasks: true,
-		// 3 步(抽约束 → 登记范围 → 拆目标)各需一次工具调用,给足回合避免收尾前漏调 set_goals。
-		MaxTurns:     hostMaxTurns(ctx, "goals", 8),
+		// The default is unlimited; an explicitly configured host limit still applies.
+		MaxTurns:     hostMaxTurns(ctx, "goals", 0),
 		NonStreaming: nonStreaming, // 该 profile 选非流式时走 Provider.Complete
 		MaxTokens:    maxTokens,    // 0 = 不发上限,由服务端默认值决定
 	}, userMsg, captureEmit)

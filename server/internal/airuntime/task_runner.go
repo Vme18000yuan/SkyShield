@@ -46,6 +46,13 @@ func taskCoverageEnabled(task TaskExecution) bool {
 	return task.CoverageEnabled == nil || *task.CoverageEnabled
 }
 
+func taskAgentMaxTurns(definitions map[string]ChatAgentDefinition, key string, fallback int) int {
+	if definition, ok := definitions[key]; ok && definition.RuntimeConfigured {
+		return definition.MaxTurns
+	}
+	return fallback
+}
+
 type TaskOutcome struct{ Status, Reason string }
 
 type TaskRunner struct {
@@ -400,13 +407,7 @@ func (r *TaskRunner) RunTask(ctx context.Context, task TaskExecution, provider l
 		definition, ok := definitions[key]
 		return definition.PromptTemplate, ok
 	}, MaxTurns: func(key string, fallback int) int {
-		if key == "goals" {
-			return fallback
-		}
-		if definition, ok := definitions[key]; ok && definition.RuntimeConfigured {
-			return definition.MaxTurns
-		}
-		return fallback
+		return taskAgentMaxTurns(definitions, key, fallback)
 	}, Wrapup: func(key string) agent.WrapupPolicy {
 		return AgentWrapupPolicy(definitions[key])
 	}, AugmentTools: func(ctx context.Context, key string) ([]tool.CoreTool, agent.DeferredInfo, func()) {

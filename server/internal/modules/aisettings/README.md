@@ -6,6 +6,8 @@
 
 Custom Agents are administrator-managed rows in `ai_custom_agent`. They carry a key, display name, description, system prompt, enabled state, turn limit, and run-time limit. They use the active LLM profile and inherit the assistant platform-tool settings. Skill and MCP visibility is bound to the Agent key.
 
+New preset conversation Agents default to no turn limit (`max_turns=0`). On upgrade, the old one-turn credential preset is changed only if it is still untouched; administrator edits are retained. The background credential extractor remains a single structured model call without tools, separately from its conversation Agent.
+
 Tool bindings do not supply a task context. Independent conversations hide
 graph-only tools such as `report_finding` and `list_findings`, including when
 they are enabled in the catalog. They retain explicit-ID tools such as
