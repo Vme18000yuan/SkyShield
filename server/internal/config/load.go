@@ -138,16 +138,24 @@ func resolveSecretFile(v *viper.Viper, valueKey, fileKey string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", fileKey, err)
 	}
-	if strings.TrimSpace(string(value)) == "" {
+	secret := string(value)
+	// Secret files commonly end with one newline (for example, openssl and
+	// Docker's PostgreSQL entrypoint). Accept it without changing the secret;
+	// embedded or repeated line breaks are still invalid.
+	if strings.HasSuffix(secret, "\n") {
+		secret = strings.TrimSuffix(secret, "\n")
+		secret = strings.TrimSuffix(secret, "\r")
+	}
+	if strings.TrimSpace(secret) == "" {
 		return fmt.Errorf("%s must not be empty", fileKey)
 	}
-	if strings.ContainsAny(string(value), "\r\n\x00") {
+	if strings.ContainsAny(secret, "\r\n\x00") {
 		return fmt.Errorf("%s must contain exactly one line", fileKey)
 	}
 
 	// Set has higher precedence than environment and file configuration, so all
 	// commands consume the validated file as the single secret source.
-	v.Set(valueKey, string(value))
+	v.Set(valueKey, secret)
 	return nil
 }
 

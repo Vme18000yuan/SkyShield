@@ -13,7 +13,7 @@ for name in db_password jwt_secret ai_encryption_key; do
     exit 1
   fi
   if [[ ! -e "$path" ]]; then
-    openssl rand -base64 32 > "$path"
+    openssl rand -base64 32 | tr -d '\n' > "$path"
     chmod 600 "$path"
   fi
 done

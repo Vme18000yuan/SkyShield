@@ -65,6 +65,7 @@ if args[:2] == ["volume", "inspect"]:
         paths = [self.root / ".local/secrets" / key for key in ("db_password", "jwt_secret", "ai_encryption_key")]
         before = [path.read_bytes() for path in paths]
         self.assertEqual(len(set(before)), 3)
+        self.assertTrue(all(b"\n" not in value and b"\r" not in value for value in before))
         self.assertTrue(all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in paths))
         self.assertEqual(self.run_docker("start").returncode, 0)
         self.assertEqual([path.read_bytes() for path in paths], before)
@@ -74,6 +75,17 @@ if args[:2] == ["volume", "inspect"]:
         result = self.run_docker(owners={volume: "tianqiong" for volume in VOLUMES})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(any("up" in call for call in self.calls()))
+
+    def test_existing_secret_files_with_newlines_are_preserved(self):
+        secret_dir = self.root / ".local/secrets"
+        secret_dir.mkdir(parents=True, mode=0o700)
+        paths = [secret_dir / name for name in ("db_password", "jwt_secret", "ai_encryption_key")]
+        for path in paths:
+            path.write_bytes(b"existing-fixture-secret\n")
+            path.chmod(0o600)
+        result = self.run_docker("pull")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([path.read_bytes() for path in paths], [b"existing-fixture-secret\n"] * 3)
 
     def test_pull_mode_fetches_published_images_and_never_builds(self):
         result = self.run_docker("pull")
