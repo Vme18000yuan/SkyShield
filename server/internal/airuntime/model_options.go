@@ -37,13 +37,24 @@ type modelOptionsProvider struct {
 func (p modelOptionsProvider) RuntimeModelOptions() RuntimeModelOptions { return p.options }
 func (p modelOptionsProvider) ContextWindowTokens() int                 { return p.options.ContextWindow }
 func WithModelOptions(provider llm.Provider, options RuntimeModelOptions) llm.Provider {
-	return modelOptionsProvider{Provider: provider, options: options}
+	return modelOptionsProvider{Provider: provider, options: normalizeModelOptions(options)}
 }
 func ModelOptions(provider llm.Provider) RuntimeModelOptions {
 	if configured, ok := provider.(runtimeModel); ok {
-		return configured.RuntimeModelOptions()
+		return normalizeModelOptions(configured.RuntimeModelOptions())
 	}
-	return RuntimeModelOptions{ContextWindow: 32_000}
+	return defaultModelOptions()
+}
+
+func defaultModelOptions() RuntimeModelOptions {
+	return RuntimeModelOptions{ContextWindow: (agent.Config{}).CompactionWindow()}
+}
+
+func normalizeModelOptions(options RuntimeModelOptions) RuntimeModelOptions {
+	if options.ContextWindow <= 0 {
+		options.ContextWindow = defaultModelOptions().ContextWindow
+	}
+	return options
 }
 
 type configuredProvider struct {

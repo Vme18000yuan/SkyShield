@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	artexconfig "github.com/Autumn-27/artex/config"
 	"github.com/Autumn-27/norma/llm"
 )
 
@@ -335,7 +336,7 @@ func isContextOverflow(err error) bool {
 func (s SideQuestionService) Respond(ctx context.Context, snapshot Snapshot, question string, replay Replay, options ContextOptions, update func(Answer, ContextInfo)) (out Answer, info ContextInfo, err error) {
 	window := snapshot.Model.WindowTokens
 	if window <= 0 {
-		window = 200000
+		window = artexconfig.DefaultContextWindowTokens
 	}
 	b := &contextBuilder{service: s, replay: replay, memory: replay.Memory, window: window, onUpdate: update}
 	defer func() { info = b.info; out.Usage.Add(b.usage) }()

@@ -40,6 +40,7 @@ import { LLMRecordings } from "./llm-recordings";
 // 存库空字符串 = 该字段【不发送】；Radix Select 不接受空 value，故 UI 用 "none"
 // 哨兵表示不发送，存取时与 "" 互转（NONE / fromStore / toStore）。
 const NONE = "none";
+const DEFAULT_CONTEXT_WINDOW_K = 256;
 const fromStore = (v?: string) => (v ? v : NONE);
 const toStore = (v: string) => (v === NONE ? "" : v);
 const THINKING_TYPES: { value: string; label: string }[] = [
@@ -326,7 +327,7 @@ function ProfileSheet({
   const [streamIdle, setStreamIdle] = React.useState("0");
   const [requestTimeout, setRequestTimeout] = React.useState("0");
   const [maxConcurrent, setMaxConcurrent] = React.useState("0");
-  const [cw, setCw] = React.useState("0"); // 上下文窗口(K tokens);0=默认32K
+  const [cw, setCw] = React.useState(String(DEFAULT_CONTEXT_WINDOW_K)); // 0 表示跟随默认窗口
   const [thinkingType, setThinkingType] = React.useState(NONE);
   const [effort, setEffort] = React.useState(NONE);
   const [priority, setPriority] = React.useState("0"); // 轮询顺位;越大越先
@@ -353,7 +354,7 @@ function ProfileSheet({
     setProxy(profile?.proxy ?? "");
     setRps(String(profile?.rate_per_second ?? 0));
     setRpm(String(profile?.rate_per_minute ?? 0));
-    setCw(String(profile?.context_window_k ?? 0));
+    setCw(String(profile ? profile.context_window_k ?? 0 : DEFAULT_CONTEXT_WINDOW_K));
     setFirstResponse(String(profile?.first_response_seconds ?? 0));
     setStreamIdle(String(profile?.stream_idle_seconds ?? 0));
     setRequestTimeout(String(profile?.request_timeout_seconds ?? 0));
@@ -636,12 +637,12 @@ function ProfileSheet({
                 max={1000}
                 value={cw}
                 onChange={(e) => setCw(e.target.value)}
-                placeholder="32"
+                placeholder={String(DEFAULT_CONTEXT_WINDOW_K)}
               />
             </div>
           </div>
           <p className="-mt-2 text-muted-foreground text-xs">
-            限速 0 = 不限，全 Agent 共享。上下文窗口单位 K（千 token），0 = 默认 32K，上限 1000（即
+            限速 0 = 不限，全 Agent 共享。上下文窗口单位 K（千 token），0 = 默认 {DEFAULT_CONTEXT_WINDOW_K}K，上限 1000（即
             1M）；设太高会导致压缩不触发。
           </p>
 

@@ -29,6 +29,24 @@ func replayFixture(history []Exchange, memory *Memory) Replay {
 	}, Save: func(_ context.Context, value Memory) error { *memory = value; return nil }}
 }
 
+func TestSideQuestionUsesDefaultWindowWhenUnspecified(t *testing.T) {
+	provider := fakeProvider{complete: func(context.Context, llm.CompletionRequest) (llm.Message, string, llm.Usage, error) {
+		return assistant("answer"), "end_turn", llm.Usage{}, nil
+	}}
+	var budgets []int
+	for _, window := range []int{0, 256_000, 64_000} {
+		snapshot := Snapshot{Request: fixture(), Model: Model{WindowTokens: window}}
+		_, info, err := (SideQuestionService{provider}).Respond(t.Context(), snapshot, "status?", Replay{}, ContextOptions{}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		budgets = append(budgets, info.InputBudget)
+	}
+	if budgets[0] != budgets[1] || budgets[0] <= budgets[2] {
+		t.Fatalf("side question budgets do not honor the default and custom windows: %v", budgets)
+	}
+}
+
 func TestSideTwentyExchangeBoundaryAndRestart(t *testing.T) {
 	for _, n := range []int{19, 20, 21, 50} {
 		t.Run(fmt.Sprint(n), func(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	artexconfig "github.com/Autumn-27/artex/config"
 	"github.com/Autumn-27/norma/compaction"
 	"github.com/Autumn-27/norma/llm"
 )
@@ -66,7 +67,7 @@ func outputBudget(req llm.CompletionRequest, configured int) int {
 func inputBudget(s Snapshot, output int) int {
 	window := s.Model.WindowTokens
 	if window <= 0 {
-		window = 200000
+		window = artexconfig.DefaultContextWindowTokens
 	}
 	return window - output - min(8192, max(128, window/20))
 }

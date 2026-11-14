@@ -23,7 +23,7 @@ type LLMProfile struct {
 	RatePerSecond float64 `json:"rate_per_second"`
 	RatePerMinute float64 `json:"rate_per_minute"`
 	// ContextWindowK is the model's context window in K tokens, used to size
-	// compaction thresholds. 0 = use a 200K default; capped at 1000 (1M).
+	// compaction thresholds. 0 = use a 256K default; capped at 1000 (1M).
 	ContextWindowK int `json:"context_window_k"`
 	// ThinkingType 独立控制思考「开关」(thinking.type):"" = 不发送(默认);
 	// "disabled" = 显式关闭; "enabled" = 开启. 与 ReasoningEffort 解耦.

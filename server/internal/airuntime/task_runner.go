@@ -165,7 +165,7 @@ func (p roleProvider) RuntimeModelOptions() RuntimeModelOptions {
 	if err == nil && ok {
 		return ModelOptions(provider)
 	}
-	return RuntimeModelOptions{ContextWindow: 32_000}
+	return defaultModelOptions()
 }
 
 func (p roleProvider) ContextWindowTokens() int { return p.RuntimeModelOptions().ContextWindow }

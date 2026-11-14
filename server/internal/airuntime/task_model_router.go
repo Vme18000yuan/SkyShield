@@ -57,7 +57,7 @@ func (r *TaskModelRouter) RuntimeModelOptions() RuntimeModelOptions {
 	if err == nil && selection.Provider != nil {
 		return ModelOptions(selection.Provider)
 	}
-	return RuntimeModelOptions{ContextWindow: 32_000}
+	return defaultModelOptions()
 }
 func (r *TaskModelRouter) Complete(ctx context.Context, request llm.CompletionRequest) (llm.Message, string, llm.Usage, error) {
 	for {
