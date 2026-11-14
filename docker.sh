@@ -11,8 +11,9 @@ fi
 
 compose=(docker compose -f "$project_dir/compose.tianqiong.yaml")
 case "${1:-start}" in
-  start)
-    if [[ $# -gt 1 ]]; then printf '用法：./docker.sh [start|stop|status|logs [服务名...]]\n' >&2; exit 2; fi
+  start|pull)
+    action="${1:-start}"
+    if [[ $# -gt 1 ]]; then printf '用法：./docker.sh [start|pull|stop|status|logs [服务名...]]\n' >&2; exit 2; fi
     if ! command -v openssl >/dev/null; then printf '首次启动需要 openssl 生成本地密钥。\n' >&2; exit 1; fi
     # The upstream Agent uses fixed volume names. Fail before creating secrets,
     # images or containers if an existing installation owns one of them.
@@ -26,8 +27,16 @@ case "${1:-start}" in
       fi
     done
     bash "$project_dir/scripts/tianqiong-dev-init.sh"
+    if [[ "$action" == "pull" ]]; then
+      compose+=(-f "$project_dir/compose.hub.yaml")
+    fi
     "${compose[@]}" config --quiet
-    "${compose[@]}" up -d --build
+    if [[ "$action" == "pull" ]]; then
+      "${compose[@]}" pull
+      "${compose[@]}" up -d --no-build --pull never
+    else
+      "${compose[@]}" up -d --build
+    fi
     printf '服务已交由 Docker Compose 启动，可使用 ./docker.sh status 查看状态。\n'
     ;;
   stop)
@@ -43,10 +52,10 @@ case "${1:-start}" in
     "${compose[@]}" logs --follow --tail=200 "$@"
     ;;
   -h|--help|help)
-    printf '用法：./docker.sh [start|stop|status|logs [服务名...]]\n'
+    printf '用法：./docker.sh [start|pull|stop|status|logs [服务名...]]\n'
     ;;
   *)
-    printf '未知命令：%s\n用法：./docker.sh [start|stop|status|logs [服务名...]]\n' "$1" >&2
+    printf '未知命令：%s\n用法：./docker.sh [start|pull|stop|status|logs [服务名...]]\n' "$1" >&2
     exit 2
     ;;
 esac

@@ -21,6 +21,7 @@ class DockerDeployTests(unittest.TestCase):
         shutil.copy2(ROOT / "docker.sh", self.root / "docker.sh")
         shutil.copy2(ROOT / "scripts/tianqiong-dev-init.sh", self.root / "scripts/tianqiong-dev-init.sh")
         (self.root / "compose.tianqiong.yaml").write_text("services: {}\n")
+        (self.root / "compose.hub.yaml").write_text("services: {}\n")
         fake = self.root / "bin/docker"
         fake.write_text('''#!/usr/bin/env python3
 import json, os, sys
@@ -51,11 +52,13 @@ if args[:2] == ["volume", "inspect"]:
         return [json.loads(line) for line in (self.root / "calls.jsonl").read_text().splitlines()]
 
     def test_existing_foreign_volume_stops_before_initialization_or_start(self):
-        result = self.run_docker(owners={"lunafox_data": "lunafox"})
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("lunafox_data", result.stderr)
-        self.assertFalse((self.root / ".local").exists())
-        self.assertFalse(any("up" in call for call in self.calls()))
+        for action in ("start", "pull"):
+            with self.subTest(action=action):
+                result = self.run_docker(action, owners={"lunafox_data": "lunafox"})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("lunafox_data", result.stderr)
+                self.assertFalse((self.root / ".local").exists())
+                self.assertFalse(any("up" in call for call in self.calls()))
 
     def test_fresh_start_generates_private_keys_once_and_reuses_them(self):
         self.assertEqual(self.run_docker().returncode, 0)
@@ -71,6 +74,19 @@ if args[:2] == ["volume", "inspect"]:
         result = self.run_docker(owners={volume: "tianqiong" for volume in VOLUMES})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(any("up" in call for call in self.calls()))
+
+    def test_pull_mode_fetches_published_images_and_never_builds(self):
+        result = self.run_docker("pull")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        pulls = [i for i, call in enumerate(calls) if "pull" in call and "up" not in call]
+        starts = [i for i, call in enumerate(calls) if "up" in call]
+        self.assertEqual(len(pulls), 1)
+        self.assertEqual(len(starts), 1)
+        self.assertLess(pulls[0], starts[0])
+        self.assertIn("--no-build", calls[starts[0]])
+        self.assertNotIn("--build", calls[starts[0]])
+        self.assertTrue(any(item.endswith("compose.hub.yaml") for item in calls[starts[0]]))
 
     def test_stop_and_status_do_not_inspect_or_delete_volumes(self):
         self.assertEqual(self.run_docker("status").returncode, 0)

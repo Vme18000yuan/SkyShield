@@ -17,10 +17,13 @@ The default URL is `http://127.0.0.1:3000`. Use `./local.sh status` and `./local
 Install Docker Engine, the Compose plugin and OpenSSL, then run:
 
 ```bash
-./docker.sh
+./docker.sh                 # build and start from local source
+./docker.sh pull            # pull published Docker Hub images and start
 ```
 
 The default URL is `https://127.0.0.1:8443` with a self-signed certificate. See [.env.example](.env.example) and the [Docker guide](docs/15-Docker一键部署.md). Use `./docker.sh status`, `./docker.sh logs`, and `./docker.sh stop` to manage the stack.
+
+Published images use the `solder110/skyshield-server`, `skyshield-frontend`, `skyshield-bootstrap` and `skyshield-nginx` repositories. `latest` is the default; set `SKYSHIELD_IMAGE_TAG` to a published `sha-<commit>` tag to pin a version. The current release targets `linux/amd64`.
 
 Database, JWT and AI encryption keys are generated once in `.local/secrets` and reused. Back up those keys; never commit them. Local data, secrets and build outputs are excluded from Git and Docker build contexts.
 

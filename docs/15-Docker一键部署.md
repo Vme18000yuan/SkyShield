@@ -17,7 +17,8 @@ SkyShield 的 Docker 入口为项目根目录的 `./docker.sh`，它使用
 ## 启动和停止
 
 ```bash
-./docker.sh                 # 构建并启动
+./docker.sh                 # 从本地源码构建并启动
+./docker.sh pull            # 拉取 Docker Hub 镜像并启动
 ./docker.sh status          # 查看容器状态
 ./docker.sh logs            # 查看日志；可在后面指定服务名
 ./docker.sh stop            # 停止容器并保留数据卷
@@ -37,3 +38,8 @@ SkyShield 的 Docker 入口为项目根目录的 `./docker.sh`，它使用
 `docker compose config` 可以验证配置，但不等同于完整容器部署验收；遇到
 预检或构建失败时，应先检查 `./docker.sh logs` 和 Docker 环境，不要删除
 其他项目的数据卷。
+
+`pull` 使用 `compose.hub.yaml` 中的 `solder110/skyshield-*` 镜像，默认
+使用 `latest`，可通过 `.env` 的 `SKYSHIELD_IMAGE_TAG` 指定已发布的
+`sha-<提交号>` 标签。当前发布平台为 `linux/amd64`。扫描 Agent 和引擎
+继续使用上游镜像；它们不包含在 `solder110/skyshield-*` 镜像中。

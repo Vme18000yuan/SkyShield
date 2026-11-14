@@ -19,10 +19,13 @@ Linux 环境安装 Go 1.26.10、Node.js 22、pnpm、Python 3、PostgreSQL 和 Re
 安装 Docker Engine、Docker Compose 插件和 OpenSSL 后执行：
 
 ```bash
-./docker.sh
+./docker.sh                 # 从本地源码构建并启动
+./docker.sh pull            # 拉取 Docker Hub 镜像并启动
 ```
 
 默认通过 `https://127.0.0.1:8443` 访问，首次启动使用自签名证书。可通过 `.env` 配置 `PUBLIC_HOST` 和 `PUBLIC_PORT`，参考 [.env.example](.env.example)。使用 `./docker.sh status` 查看状态，`./docker.sh logs` 查看日志，`./docker.sh stop` 停止服务并保留数据。
+
+发布镜像位于 Docker Hub 的 `solder110/skyshield-server`、`skyshield-frontend`、`skyshield-bootstrap` 和 `skyshield-nginx`，默认使用 `latest`；可在 `.env` 设置 `SKYSHIELD_IMAGE_TAG` 为指定的 `sha-<提交号>`。当前发布的镜像平台为 `linux/amd64`。
 
 首次启动会在 `.local/secrets` 中生成数据库、JWT 和 AI 加密密钥；再次启动时复用已有密钥。请备份这些密钥，并勿将其提交到 Git。镜像构建不使用本机密钥或数据库。默认管理员账号及首次登录说明见 [部署说明](docs/15-Docker一键部署.md)。
 

@@ -1,0 +1,16 @@
+# Optional published-image override. Source builds keep using compose.tianqiong.yaml.
+services:
+  server:
+    image: docker.io/solder110/skyshield-server:${SKYSHIELD_IMAGE_TAG:-latest}
+  frontend:
+    image: docker.io/solder110/skyshield-frontend:${SKYSHIELD_IMAGE_TAG:-latest}
+  bootstrap:
+    image: docker.io/solder110/skyshield-bootstrap:${SKYSHIELD_IMAGE_TAG:-latest}
+  migrate:
+    image: docker.io/solder110/skyshield-bootstrap:${SKYSHIELD_IMAGE_TAG:-latest}
+  volume-preflight:
+    image: docker.io/solder110/skyshield-bootstrap:${SKYSHIELD_IMAGE_TAG:-latest}
+  cert-init:
+    image: docker.io/solder110/skyshield-bootstrap:${SKYSHIELD_IMAGE_TAG:-latest}
+  nginx:
+    image: docker.io/solder110/skyshield-nginx:${SKYSHIELD_IMAGE_TAG:-latest}
