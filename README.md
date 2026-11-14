@@ -27,6 +27,8 @@ Linux 环境安装 Go 1.26.10、Node.js 22、pnpm、Python 3、PostgreSQL 和 Re
 
 发布镜像位于 Docker Hub 的 `solder110/skyshield-server`、`skyshield-frontend`、`skyshield-bootstrap` 和 `skyshield-nginx`，默认使用 `latest`；可在 `.env` 设置 `SKYSHIELD_IMAGE_TAG` 为指定的 `sha-<提交号>`。当前发布的镜像平台为 `linux/amd64`。
 
+Server 镜像包含 AI 工作进程使用的 Python 及信息收集依赖、Node.js/npm/npx、Chromium、Puppeteer、Playwright CLI 和默认浏览器 MCP，以及 subfinder、dnsx、httpx、katana、nuclei、ffuf、nmap、masscan、ripgrep 等工具。浏览器 MCP 仍需在平台设置中启用；其他 MCP 服务的依赖需按各自要求配置。Nuclei 官方模板库不随镜像打包，需在运行时下载或使用 `-t` 指定可访问的模板；masscan 的实际运行还取决于容器网络权限。受管信息收集仍遵循原有代理与目标范围限制。
+
 首次启动会在 `.local/secrets` 中生成数据库、JWT 和 AI 加密密钥；再次启动时复用已有密钥。请备份这些密钥，并勿将其提交到 Git。镜像构建不使用本机密钥或数据库。默认管理员账号及首次登录说明见 [部署说明](docs/15-Docker一键部署.md)。
 
 Docker 配置使用上游公开分发的闭源 LunaFox Agent 镜像；该组件并非本仓库的开源源码，使用条件见 [闭源 Agent 说明](NOTICE-CLOSED-ARTIFACTS.md)。本仓库不包含该 Agent 的二进制或签名凭据。部署前请确认使用条件，并在独立 Docker 环境中验证；现有同名数据卷不会被脚本删除。
@@ -36,8 +38,9 @@ Docker 配置使用上游公开分发的闭源 LunaFox Agent 镜像；该组件�
 前端位于 `frontend/`，Go 后端位于 `server/`，扫描引擎位于 `extensions/engines/`。其中的工具、测试和 `resources/skills/` 脚本是构建、验证或产品功能所需的内部依赖；项目根目录只提供上述两种部署入口。
 
 ```bash
-cd frontend && pnpm install --frozen-lockfile && pnpm test
-cd ../server && go test ./...
+(cd frontend && pnpm install --frozen-lockfile && pnpm test)
+(cd server && go test ./...)
+python3 scripts/test_server_image_tools.py solder110/skyshield-server:latest
 ```
 
 真实模型密钥通过运行时配置提供，不应提交至仓库或写入构建参数。`.local/`、`.env`、本机数据库、日志和编译产物不属于源码。

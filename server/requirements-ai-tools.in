@@ -1,0 +1,6 @@
+# Regenerate the lock with uv pip compile --python-version 3.11 --generate-hashes.
+requests==2.32.5
+dnspython==2.8.0
+mmh3==5.2.0
+tldextract==5.3.0
+tqdm==4.67.1

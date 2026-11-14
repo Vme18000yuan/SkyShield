@@ -36,7 +36,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 name=Path(sys.argv[0]).name; args=sys.argv[1:]
 with open(os.environ['MOCK_TRACE'],'a') as f: f.write(json.dumps({'tool':name,'args':args})+'\n')
-if ('-h' in args and name != 'whois') or '--version' in args or '-version' in args or 'version' in args:
+if ('-h' in args and name != 'whois') or '--version' in args or '-version' in args or '-V' in args or 'version' in args:
  if name=='httpx' and os.getenv('BROKEN_HTTPX'): print('ModuleNotFoundError',file=sys.stderr); sys.exit(1)
  print('-tech-detect -status-code -json -aaaa fixture 1.0'); sys.exit(0)
 if name=='subfinder':

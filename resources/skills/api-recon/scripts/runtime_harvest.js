@@ -44,6 +44,10 @@ function loadCfg(p) {
   const c = JSON.parse(fs.readFileSync(p, 'utf8'));
   c.baseUrl || (() => { throw new Error("config.baseUrl required"); })();
   c.chromium = c.chromium || process.env.CHROMIUM || '/usr/bin/chromium';
+  // Debian's wrapper reads host /proc and /etc; the image's browser binary is
+  // directly executable inside the existing restricted worker filesystem.
+  if (process.env.SKYSHIELD_AI_SANDBOX === '1' && c.chromium === '/usr/bin/chromium' && fs.existsSync('/usr/lib/chromium/chromium'))
+    c.chromium = '/usr/lib/chromium/chromium';
   c.neutralize = c.neutralize || { fields: ['response_code', 'code', 'errno', 'ret', 'status'], success: 0, flags: { success: true } };
   c.forward = c.forward !== false;
   c.apiPattern = new RegExp(c.apiPattern || '/api/|/rest/|/service/|/graphql|/gateway/');
@@ -95,12 +99,23 @@ function neutralize(txt, n) {
     process.env.HTTPS_PROXY = cfg.proxy;
   }
   const launchArgs = ['--no-sandbox', '--disable-dev-shm-usage', '--ignore-certificate-errors'];
-  if (cfg.proxy) launchArgs.push(`--proxy-server=${cfg.proxy}`);
+  // Chromium renderer subprocesses cannot access other PIDs under Landlock.
+  if (process.env.SKYSHIELD_AI_SANDBOX === '1')
+    launchArgs.push('--single-process', '--no-zygote', '--disable-gpu');
+  let proxyAuth;
+  if (cfg.proxy) {
+    const proxy = new URL(cfg.proxy);
+    if (proxy.username || proxy.password)
+      proxyAuth = { username: decodeURIComponent(proxy.username), password: decodeURIComponent(proxy.password) };
+    // Chromium ignores credentials in --proxy-server; authenticate via CDP.
+    launchArgs.push(`--proxy-server=${proxy.protocol}//${proxy.host}`, '--proxy-bypass-list=<-loopback>');
+  }
   const browser = await puppeteer.launch({
     executablePath: cfg.chromium, headless: cfg.headless ? 'new' : false,
     args: launchArgs
   });
   const page = await browser.newPage();
+  if (proxyAuth) await page.authenticate(proxyAuth);
 
   // ---- WebSocket frame capture via CDP (fetch/XHR interception can't see WS) ----
   if (cfg.recordWs) {

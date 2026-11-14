@@ -133,6 +133,17 @@ func prepareBrowserMCP(workspace, cache, proxy string, recording bool, original 
 			paths, _ := filepath.Glob(filepath.Join(cache, "chromium_headless_shell-*", "chrome-headless-shell-*", "chrome-headless-shell"))
 			if len(paths) > 0 {
 				args = append(args, "--executable-path", paths[len(paths)-1])
+				executableSpecified = true
+			}
+		}
+		if !executableSpecified && launch["executablePath"] == nil && selectedBrowser == "" && cache == "" {
+			// Only use the image's Chromium when its bundled MCP is present;
+			// locally configured browsers and explicit selections take priority.
+			if _, bundledErr := os.Stat("/usr/local/bin/playwright-mcp"); bundledErr == nil {
+				const chromium = "/usr/lib/chromium/chromium"
+				if info, browserErr := os.Stat(chromium); browserErr == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0 {
+					args = append(args, "--executable-path", chromium)
+				}
 			}
 		}
 	}

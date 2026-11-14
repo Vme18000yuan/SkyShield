@@ -72,7 +72,7 @@ func enterSandbox(root, executable string, args, environment, readPaths []string
 			return err
 		}
 	}
-	for _, path := range []string{"/usr/bin", "/bin", "/usr/lib", "/lib", "/lib64", "/usr/lib64", "/usr/local/bin", "/usr/local/lib", "/usr/share", "/etc/ssl", "/etc/ca-certificates", "/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf", "/etc/ld.so.cache", "/etc/passwd", "/etc/group", "/etc/localtime", "/proc/self/fd"} {
+	for _, path := range []string{"/usr/bin", "/bin", "/usr/lib", "/lib", "/lib64", "/usr/lib64", "/usr/local/bin", "/usr/local/lib", "/usr/share", "/etc/ssl", "/etc/ca-certificates", "/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf", "/etc/ld.so.cache", "/etc/passwd", "/etc/group", "/etc/localtime", "/etc/mime.types", "/proc/self/fd"} {
 		if err := add(path, read, false); err != nil {
 			return err
 		}

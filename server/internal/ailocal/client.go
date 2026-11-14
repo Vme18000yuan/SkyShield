@@ -77,7 +77,7 @@ func NewClientWithReadPaths(ctx context.Context, root, executable string, enviro
 	}
 	command := exec.Command(executable, args...)
 	command.Dir = root
-	command.Env = append([]string{"PATH=/usr/local/bin:/usr/bin:/bin", "GOMAXPROCS=2", "HOME=" + root, "LANG=C.UTF-8", "TMPDIR=" + filepath.Join(root, ".tmp"), "PAGER=cat", "GIT_PAGER=cat", "SYSTEMD_PAGER=cat", "DEBIAN_FRONTEND=noninteractive"}, environment...)
+	command.Env = append([]string{"PATH=/usr/local/bin:/usr/bin:/bin", "NODE_PATH=/usr/local/lib/skyshield-ai-node/node_modules", "SKYSHIELD_AI_SANDBOX=1", "GOMAXPROCS=2", "HOME=" + root, "LANG=C.UTF-8", "TMPDIR=" + filepath.Join(root, ".tmp"), "PAGER=cat", "GIT_PAGER=cat", "SYSTEMD_PAGER=cat", "DEBIAN_FRONTEND=noninteractive"}, environment...)
 	command.Env = append(command.Env, "NORMA_TASK_OUTPUT_ROOT="+filepath.Join(root, ".task-output"))
 	input, err := command.StdinPipe()
 	if err != nil {

@@ -58,6 +58,14 @@ func TestCustomPythonVirtualenvIsScopedToScript(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer local.Close()
+	tmpInput, _ := json.Marshal(map[string]any{"command": "python3 -c 'import os; p=os.environ[\"TMPDIR\"]; open(os.path.join(p,\"sandbox-temp-probe\"),\"w\").write(\"ok\"); print(p)'"})
+	tmpResult, err := local.client.Call(ctx, "Bash", tmpInput, &tool.ToolContext{WorkingDir: workspace})
+	if err != nil || tmpResult.IsError || !strings.Contains(tmpResult.Flatten(), filepath.Join(local.tmpDir, "s")) {
+		t.Fatalf("short sandbox temp directory: %+v %v", tmpResult, err)
+	}
+	if _, err = os.Stat(filepath.Join(workspace, ".tmp", "sandbox-temp-probe")); err != nil {
+		t.Fatalf("sandbox temp is not in the workspace: %v", err)
+	}
 	for _, item := range local.Tools(false) {
 		if item.Name() == "Bash" {
 			raw, _ := json.Marshal(map[string]any{"command": "cat " + shellQuoteValue(module)})

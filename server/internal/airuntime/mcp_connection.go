@@ -121,8 +121,21 @@ func NewMCPConnector(root string) MCPConnector {
 					return nil, err
 				}
 				environment["PWTEST_SOCKETS_DIR"] = socketDir
+				// Chromium also creates its SingletonSocket under TMPDIR; use the
+				// short symlink into the same workspace to fit Unix socket limits.
+				environment["TMPDIR"] = socketDir
 			}
-			args := append([]string{config.Command}, browserArgs...)
+			mcpCommand := config.Command
+			// The published Server image contains the default browser MCP. Avoid
+			// npx resolving it over the network on every new isolated workspace.
+			// Explicit package versions and other MCP commands stay user-owned.
+			if config.Name == "browser" && filepath.Base(mcpCommand) == "npx" && len(browserArgs) > 0 && browserArgs[0] == "@playwright/mcp" {
+				const bundled = "/usr/local/bin/playwright-mcp"
+				if info, statErr := os.Stat(bundled); statErr == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0 {
+					mcpCommand, browserArgs = bundled, browserArgs[1:]
+				}
+			}
+			args := append([]string{mcpCommand}, browserArgs...)
 			raw, _ := json.Marshal(args)
 			// A one-shot anonymous pipe keeps configured MCP credentials and
 			// proxy environment variables out of argv.
@@ -135,7 +148,7 @@ func NewMCPConnector(root string) MCPConnector {
 			defer secretWrite.Close()
 			secretPath := fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), secretRead.Fd())
 			go func() { _ = json.NewEncoder(secretWrite).Encode(environment); _ = secretWrite.Close() }()
-			paths, err := mcpReadPaths(config.Command, browserArgs)
+			paths, err := mcpReadPaths(mcpCommand, browserArgs)
 			if err != nil {
 				cleanup()
 				return nil, err

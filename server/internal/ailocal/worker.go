@@ -106,7 +106,15 @@ func Main(arguments []string) int {
 					fmt.Fprintln(os.Stderr, "invalid MCP environment")
 					return 2
 				}
-				environment = []string{"PATH=/usr/local/bin:/usr/bin:/bin", "GOMAXPROCS=2", "HOME=" + absolute, "TMPDIR=" + filepath.Join(absolute, ".tmp"), "LANG=C.UTF-8"}
+				tmpDir := filepath.Join(absolute, ".tmp")
+				if selected, ok := values["TMPDIR"]; ok {
+					if strings.ContainsRune(selected, 0) {
+						return 2
+					}
+					tmpDir = selected
+					delete(values, "TMPDIR")
+				}
+				environment = []string{"PATH=/usr/local/bin:/usr/bin:/bin", "NODE_PATH=/usr/local/lib/skyshield-ai-node/node_modules", "SKYSHIELD_AI_SANDBOX=1", "GOMAXPROCS=2", "HOME=" + absolute, "TMPDIR=" + tmpDir, "LANG=C.UTF-8"}
 				for key, value := range values {
 					if strings.ContainsAny(key, "=\x00") || strings.ContainsRune(value, 0) {
 						return 2

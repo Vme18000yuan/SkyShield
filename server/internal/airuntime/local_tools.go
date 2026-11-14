@@ -18,6 +18,7 @@ type NativeLocalTools struct {
 	client  *ailocal.Client
 	relay   *httpoutbound.LocalRelay
 	release func()
+	tmpDir  string
 }
 
 func NewNativeLocalTools(ctx context.Context, workspace string) (*NativeLocalTools, error) {
@@ -41,6 +42,27 @@ func newNativeLocalToolsWithInterpreter(ctx context.Context, workspace, interpre
 		return nil, err
 	}
 	workspace, shared := scopedWorkspace(ctx, workspace)
+	if !filepath.IsAbs(workspace) || workspace == "/" {
+		return nil, errors.New("invalid local tool workspace")
+	}
+	if err := os.MkdirAll(filepath.Join(workspace, ".tmp"), 0700); err != nil {
+		return nil, err
+	}
+	short, err := os.MkdirTemp("/tmp", "ss-ai-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if !transferred {
+			_ = os.RemoveAll(short)
+		}
+	}()
+	// The symlink resolves inside the owned workspace while keeping Chromium's
+	// Unix socket paths short enough even for deeply nested task workspaces.
+	shortTmp := filepath.Join(short, "s")
+	if err := os.Symlink(filepath.Join(workspace, ".tmp"), shortTmp); err != nil {
+		return nil, err
+	}
 	paths, err := interpreterReadPaths(interpreter)
 	if err != nil {
 		return nil, err
@@ -53,18 +75,20 @@ func newNativeLocalToolsWithInterpreter(ctx context.Context, workspace, interpre
 	if relay.CABundle() != "" {
 		paths = append(paths, relay.CABundle())
 	}
-	client, err := ailocal.NewClientWithReadPaths(ctx, workspace, "", relay.Environment(), paths)
+	environment := append(relay.Environment(), "TMPDIR="+shortTmp)
+	client, err := ailocal.NewClientWithReadPaths(ctx, workspace, "", environment, paths)
 	if err != nil {
 		relay.Close()
 		return nil, err
 	}
 	transferred = true
-	return &NativeLocalTools{client: client, relay: relay, release: release}, nil
+	return &NativeLocalTools{client: client, relay: relay, release: release, tmpDir: short}, nil
 }
 func (n *NativeLocalTools) Close() {
 	if n != nil {
 		n.client.Close()
 		n.relay.Close()
+		_ = os.RemoveAll(n.tmpDir)
 		if n.release != nil {
 			n.release()
 		}

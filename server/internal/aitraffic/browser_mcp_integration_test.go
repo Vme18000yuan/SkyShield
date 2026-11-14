@@ -31,14 +31,17 @@ import (
 // isolated workspace so the test never alters an existing user installation.
 func TestBrowserMCPRecordsHTTPS(t *testing.T) {
 	modules, browser := os.Getenv("TIANQIONG_TEST_MCP_NODE_MODULES"), os.Getenv("TIANQIONG_TEST_MCP_BROWSER")
-	if runtime.GOOS != "linux" || modules == "" || browser == "" {
+	worker := os.Getenv("TIANQIONG_TEST_MCP_WORKER")
+	if runtime.GOOS != "linux" || modules == "" || browser == "" && worker == "" {
 		t.Skip("real MCP package and browser not configured")
 	}
-	worker := filepath.Join(t.TempDir(), "ai-tool-worker")
-	build := exec.Command(filepath.Join(runtime.GOROOT(), "bin", "go"), "build", "-o", worker, "./cmd/ai-tool-worker")
-	build.Dir = "../.."
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build worker: %v %s", err, out)
+	if worker == "" {
+		worker = filepath.Join(t.TempDir(), "ai-tool-worker")
+		build := exec.Command(filepath.Join(runtime.GOROOT(), "bin", "go"), "build", "-o", worker, "./cmd/ai-tool-worker")
+		build.Dir = "../.."
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("build worker: %v %s", err, out)
+		}
 	}
 	t.Setenv("TIANQIONG_AI_TOOL_RUNNER", worker)
 	root := t.TempDir()
@@ -110,8 +113,11 @@ func TestBrowserMCPRecordsHTTPS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	browserCache := filepath.Dir(filepath.Dir(filepath.Dir(browser)))
-	client, err := airuntime.NewMCPConnector(root)(ctx, 1, airuntime.MCPConfig{Name: "browser", Transport: "stdio", Command: "npx", Args: []string{"@playwright/mcp", "--headless"}, Env: map[string]string{"PLAYWRIGHT_BROWSERS_PATH": browserCache}})
+	env := map[string]string{}
+	if browser != "" {
+		env["PLAYWRIGHT_BROWSERS_PATH"] = filepath.Dir(filepath.Dir(filepath.Dir(browser)))
+	}
+	client, err := airuntime.NewMCPConnector(root)(ctx, 1, airuntime.MCPConfig{Name: "browser", Transport: "stdio", Command: "npx", Args: []string{"@playwright/mcp", "--headless"}, Env: env})
 	if err != nil {
 		t.Fatal(err)
 	}

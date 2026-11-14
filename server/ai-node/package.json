@@ -1,0 +1,11 @@
+{
+  "name": "skyshield-ai-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node runtimes for the bundled AI skills and browser MCP",
+  "dependencies": {
+    "@playwright/cli": "0.1.24",
+    "@playwright/mcp": "0.0.85",
+    "puppeteer-core": "23.11.1"
+  }
+}

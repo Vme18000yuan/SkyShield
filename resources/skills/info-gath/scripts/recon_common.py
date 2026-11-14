@@ -147,6 +147,7 @@ def tool_info(name):
     flag = "-h" if name in ("httpx", "dnsx") else "--version"
     if name == "dig": flag = "-v"
     if name == "openssl": flag = "version"
+    if name == "ffuf": flag = "-V"
     if name in ("subfinder", "nuclei", "katana", "shuffledns", "asnmap"):
         flag = "-version"
     try:
@@ -157,7 +158,11 @@ def tool_info(name):
             identity = "-tech-detect" in text and "-status-code" in text and "-json" in text
         elif name == "dnsx":
             identity = "-aaaa" in text and "-json" in text
-        result.update(usable=p.returncode == 0 and identity, version=text.strip().splitlines()[0][:180] if text.strip() else "", reason="" if p.returncode == 0 and identity else f"capability check failed (exit {p.returncode})")
+        # Debian's masscan prints a valid version but exits 1 for --version.
+        # Only accept that exit status with its recognizable version banner.
+        success = p.returncode == 0 or (name == "masscan" and p.returncode == 1 and "masscan version " in text.lower())
+        usable = success and identity
+        result.update(usable=usable, version=text.strip().splitlines()[0][:180] if text.strip() else "", reason="" if usable else f"capability check failed (exit {p.returncode})")
         if result['usable'] and name in ('httpx', 'dnsx'):
             version = subprocess.run([path, '-version'], capture_output=True, text=True, timeout=5)
             value = (version.stdout + version.stderr).strip()
