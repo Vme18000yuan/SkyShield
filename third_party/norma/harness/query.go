@@ -96,6 +96,10 @@ type QueryInput struct {
 	// EscalateMaxTokens, when true, first retries a max_tokens truncation with a
 	// raised output cap (64k) before falling back to resume-recovery.
 	EscalateMaxTokens bool
+	// FinalResponsePrompt opts into one text-only recovery phase when the model
+	// naturally stops without visible text. Empty keeps tool-only completion valid.
+	// This does not limit normal tool turns or cumulative token usage.
+	FinalResponsePrompt string
 
 	// Settlement, when non-nil with a Prompt, runs a bounded wrap-up phase the
 	// moment a budget (MaxTurns/MaxDuration) is hit: it injects Prompt as a user
@@ -245,6 +249,7 @@ type loop struct {
 	settling     bool
 	settleReason TerminalReason // the budget reason to finish with after wrap-up
 	settleTurn   int
+	finalizing   bool
 
 	// recovery / continuation state
 	maxOutputTokensOverride      int
@@ -415,6 +420,10 @@ func (l *loop) run() {
 			return
 		}
 		if l.toolCtx.Err() != nil {
+			if l.finalizing {
+				l.finish(ReasonTimeout, l.toolCtx.Err(), "")
+				return
+			}
 			if !l.settling && l.beginSettlement(ReasonTimeout, &schemas) {
 				continue
 			}
@@ -467,6 +476,10 @@ func (l *loop) run() {
 				return
 			}
 			if l.toolCtx.Err() != nil {
+				if l.finalizing {
+					l.finish(ReasonTimeout, l.toolCtx.Err(), asst.Text())
+					return
+				}
 				if !l.settling && l.beginSettlement(ReasonTimeout, &schemas) {
 					continue
 				}
@@ -479,6 +492,10 @@ func (l *loop) run() {
 			}
 			// A host budget is not an API failure and must not enter provider recovery.
 			if errors.Is(streamErr, llm.ErrRunBudget) {
+				if l.finalizing {
+					l.finish(ReasonRunBudget, streamErr, asst.Text())
+					return
+				}
 				if !l.settling && l.beginSettlement(ReasonRunBudget, &schemas) {
 					if !l.emit(Event{Kind: KindProgress, Text: "达到本轮模型预算，正在保存已有结果并收尾"}) {
 						return
@@ -526,6 +543,21 @@ func (l *loop) run() {
 			}
 		}
 		toolUses := asst.ToolUses()
+		if l.finalizing {
+			// Tools are unavailable in this phase, even if a provider ignores the
+			// omitted schemas. Persist the rejected calls without retrying them.
+			if len(toolUses) > 0 {
+				m := llm.Message{Role: llm.RoleUser, Content: exec.results()}
+				l.messages = append(l.messages, m)
+				l.record(m, llm.Usage{})
+			}
+			if strings.TrimSpace(asst.Text()) == "" || len(toolUses) > 0 {
+				l.finish(ReasonEmptyResponse, ErrEmptyFinalResponse, asst.Text())
+			} else {
+				l.finish(ReasonCompleted, nil, asst.Text())
+			}
+			return
+		}
 
 		// max_tokens truncation with no tool calls → escalate / resume-recovery.
 		// These continuations are retries of the same turn (they do not advance
@@ -577,6 +609,12 @@ func (l *loop) run() {
 			// Token budget: nudge to keep working until ~90% / diminishing returns.
 			if l.in.TokenBudget > 0 && l.checkBudgetContinue() {
 				l.lastContinue = ContinueTokenBudget
+				continue
+			}
+			if strings.TrimSpace(asst.Text()) == "" && strings.TrimSpace(l.in.FinalResponsePrompt) != "" {
+				if !l.beginFinalResponse(&schemas) {
+					return
+				}
 				continue
 			}
 			l.finish(ReasonCompleted, nil, asst.Text())

@@ -33,6 +33,7 @@ func (t *runTrace) done(id string) {
 
 var reasonHint = map[harness.TerminalReason]string{
 	harness.ReasonCompleted:         "模型正常结束了本轮，但没有留下文字总结；事实和资产以本轮工具调用记录为准",
+	harness.ReasonEmptyResponse:     "模型结束时没有提供文字总结，自动补写也未成功；已完成的工具结果仍保留，可在当前会话要求仅汇总已有结果",
 	harness.ReasonMaxTurns:          "达到步数上限(MaxTurns)：SDK 已执行收尾并写回事实和资产，意图会标记为 exhausted，供规划者换方向继续，而不是作为失败处理",
 	harness.ReasonTimeout:           "达到单次运行的墙钟预算(MaxDuration)：到点会打断在跑的工具并就地进收尾，把已识别的事实和资产写回，意图会标记为 exhausted",
 	harness.ReasonModelError:        "模型或 API 调用失败，无法继续生成；已完成的工具结果仍可能有效。请检查连接、代理、鉴权和供应商状态，再决定是否重试",
@@ -78,6 +79,8 @@ func terminalText(ctx context.Context, term *harness.Terminal, tr *runTrace) (st
 			stage = "工具执行阶段"
 		}
 		sum = "（运行被中断：" + short + "；停在" + stage + progressSuffix(term, tr) + "，未完成）"
+	} else if reason == harness.ReasonEmptyResponse {
+		sum = "（本轮记录已保留，但文字总结补写未成功；可在当前会话要求仅汇总已有结果）"
 	} else if reason == harness.ReasonRunBudget {
 		sum = "（本轮模型预算已用尽" + progressSuffix(term, tr) + "；已保存的结果仍保留，可继续接续执行）"
 	} else if reason == harness.ReasonMaxTurns || reason == harness.ReasonTimeout {

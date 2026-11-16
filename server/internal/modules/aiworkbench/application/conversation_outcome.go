@@ -23,6 +23,8 @@ func conversationOutcome(reason string, err error) (string, string) {
 		return "exhausted", "本轮模型预算已用尽，已结束收尾；可在当前会话继续发消息。"
 	case "persistence_error":
 		return "failed", "会话检查点保存失败；已停止执行，请检查存储后恢复。"
+	case "empty_response":
+		return "failed", "模型未能生成文字总结；已完成的工具结果仍保留，可在当前会话要求仅汇总已有结果。"
 	case "timeout":
 		return "timeout", "本轮运行时间预算已用尽，已保存现有结果。"
 	case "max_turns":

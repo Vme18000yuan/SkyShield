@@ -36,6 +36,7 @@ type TerminalReason string
 
 const (
 	ReasonCompleted         TerminalReason = "completed"           // model ended its turn
+	ReasonEmptyResponse     TerminalReason = "empty_response"      // text-only recovery produced no final response
 	ReasonBlockingLimit     TerminalReason = "blocking_limit"      // hard context limit hit pre-request
 	ReasonImageError        TerminalReason = "image_error"         // unsupported media (multimodal)
 	ReasonModelError        TerminalReason = "model_error"         // provider/API failure
@@ -62,6 +63,7 @@ const (
 	ContinueStopHookBlocking        ContinueReason = "stop_hook_blocking"
 	ContinueTokenBudget             ContinueReason = "token_budget_continuation"
 	ContinueTaskNotification        ContinueReason = "task_notification"
+	ContinueFinalResponse           ContinueReason = "final_response"
 )
 
 // Terminal is the final state of a Query, delivered as the KindResult event.

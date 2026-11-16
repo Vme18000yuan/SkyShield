@@ -14,7 +14,7 @@ import (
 
 func TestReasonHintCoversEveryTerminalReason(t *testing.T) {
 	all := []harness.TerminalReason{
-		harness.ReasonCompleted, harness.ReasonBlockingLimit, harness.ReasonImageError,
+		harness.ReasonCompleted, harness.ReasonEmptyResponse, harness.ReasonBlockingLimit, harness.ReasonImageError,
 		harness.ReasonModelError, harness.ReasonAbortedStreaming, harness.ReasonAbortedTools,
 		harness.ReasonPromptTooLong, harness.ReasonStopHookPrevented, harness.ReasonHookStopped,
 		harness.ReasonMaxTurns, harness.ReasonTimeout, harness.ReasonRunBudget,

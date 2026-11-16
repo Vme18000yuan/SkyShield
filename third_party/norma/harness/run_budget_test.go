@@ -99,7 +99,7 @@ func TestUnlimitedSuccessfulToolRoundsDoNotHitRecoveryBackstop(t *testing.T) {
 		executions++
 		return tool.Text("ok"), nil
 	}})
-	term := drain(t, QueryInput{Messages: []llm.Message{llm.UserText("go")}, NonStreaming: true, Tools: tool.NewRegistry(probe), PermissionMode: permission.ModeBypass, Compactor: boundedHistoryForBudgetTest{}}, QueryDeps{CallModelSync: func(context.Context, llm.CompletionRequest) (llm.Message, string, llm.Usage, error) {
+	term := drain(t, QueryInput{Messages: []llm.Message{llm.UserText("go")}, NonStreaming: true, Tools: tool.NewRegistry(probe), PermissionMode: permission.ModeBypass, Compactor: boundedHistoryForBudgetTest{}, FinalResponsePrompt: "Summarize recorded results."}, QueryDeps{CallModelSync: func(context.Context, llm.CompletionRequest) (llm.Message, string, llm.Usage, error) {
 		calls++
 		if calls > 10002 {
 			return llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentBlock{{Type: llm.BlockText, Text: "done"}}}, "end_turn", llm.Usage{}, nil
