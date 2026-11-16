@@ -29,7 +29,7 @@ import { DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Separator } from "@/components/ui/separator"
 import { isFrontendOnlyUpgrade } from "@/hooks/use-version"
 import { textRole } from "@/lib/typography"
-import { TOKEN_PURCHASE_URL } from "@/lib/external-links"
+import { SKYSHIELD_GITHUB_URL, TOKEN_PURCHASE_URL } from "@/lib/external-links"
 import { cn } from "@/lib/utils"
 import type { ReleaseManifestSummary, UpgradeOperationFull } from "@/types/version.types"
 
@@ -250,10 +250,10 @@ export function AboutDialogUpgradeConfirmation({
 export function AboutDialogLinks({ t }: { t: TranslationFn }) {
   return (
     <div className="grid grid-cols-2 gap-2">
-      <Button variant="ghost" size="sm" className="justify-start" render={<a href="https://github.com/Vme18000yuan/SkyShield" target="_blank" rel="noopener noreferrer" />}><IconBrandGithub className="mr-2 h-4 w-4" />GitHub</Button>
-      <Button variant="ghost" size="sm" className="justify-start" render={<a href="https://github.com/yyhuni/lunafox/releases" target="_blank" rel="noopener noreferrer" />}><IconFileText className="mr-2 h-4 w-4" />{t("changelog")}</Button>
-      <Button variant="ghost" size="sm" className="justify-start" render={<a href="https://github.com/yyhuni/lunafox/issues" target="_blank" rel="noopener noreferrer" />}><IconMessageReport className="mr-2 h-4 w-4" />{t("feedback")}</Button>
-      <Button variant="ghost" size="sm" className="justify-start" render={<a href="https://github.com/yyhuni/lunafox#readme" target="_blank" rel="noopener noreferrer" />}><IconBook className="mr-2 h-4 w-4" />{t("docs")}</Button>
+      <Button variant="ghost" size="sm" className="justify-start" render={<a href={SKYSHIELD_GITHUB_URL} target="_blank" rel="noopener noreferrer" />}><IconBrandGithub className="mr-2 h-4 w-4" />GitHub</Button>
+      <Button variant="ghost" size="sm" className="justify-start" render={<a href={`${SKYSHIELD_GITHUB_URL}/releases`} target="_blank" rel="noopener noreferrer" />}><IconFileText className="mr-2 h-4 w-4" />{t("changelog")}</Button>
+      <Button variant="ghost" size="sm" className="justify-start" render={<a href={`${SKYSHIELD_GITHUB_URL}/issues`} target="_blank" rel="noopener noreferrer" />}><IconMessageReport className="mr-2 h-4 w-4" />{t("feedback")}</Button>
+      <Button variant="ghost" size="sm" className="justify-start" render={<a href={`${SKYSHIELD_GITHUB_URL}#readme`} target="_blank" rel="noopener noreferrer" />}><IconBook className="mr-2 h-4 w-4" />{t("docs")}</Button>
       <Button variant="outline" size="sm" className="col-span-2 justify-center" render={<a href={TOKEN_PURCHASE_URL} target="_blank" rel="noopener noreferrer" />}><semanticIcons.concept.website className="mr-2 h-4 w-4" />{t("tokenPurchase")}</Button>
     </div>
   )
