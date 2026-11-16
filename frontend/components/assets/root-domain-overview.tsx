@@ -39,7 +39,7 @@ export function RootDomainOverview({ id }: { id: string }) {
     <Tabs value={tab} onValueChange={setTab}>
       <TabsList variant="content"><TabsTrigger value="assets">{t("relatedAssets")}</TabsTrigger><TabsTrigger value="coverage">{t("coverageGraph")}</TabsTrigger></TabsList>
       <TabsContent value="assets"><AssetEntityList rootDomainId={id} organizationId={organizationId} onOrganizationChange={changeOrganization} /></TabsContent>
-      <TabsContent value="coverage">{tab === "coverage" && <section className="space-y-3"><div className="flex flex-wrap items-center gap-3"><AssetOrganizationFilter value={organizationId} onChange={changeOrganization} /><p className="text-sm text-muted-foreground">{t("coverageGraphHint")}</p></div><AssetCoverageGraph scope={{ kind: "root", id, organizationId }} /></section>}</TabsContent>
+      <TabsContent value="coverage">{tab === "coverage" && <section className="space-y-3"><AssetOrganizationFilter value={organizationId} onChange={changeOrganization} /><AssetCoverageGraph scope={{ kind: "root", id, organizationId }} /></section>}</TabsContent>
     </Tabs>
   </div></div>
 }

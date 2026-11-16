@@ -17,6 +17,7 @@ describe("root-domain coverage entry", () => {
     expect(screen.queryByText("Graph fixture")).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("tab", { name: "coverageGraph" }))
     expect(screen.getByText("Graph fixture")).toBeInTheDocument()
+    expect(screen.queryByText("coverageGraphHint")).not.toBeInTheDocument()
     expect(fixtures.graph).toHaveBeenLastCalledWith({ scope: { kind: "root", id: "17", organizationId: 3 } })
     fireEvent.click(screen.getByRole("button", { name: "Switch organization" }))
     expect(fixtures.replace).toHaveBeenCalledWith("/assets/root-domains/17/?organizationId=4")
