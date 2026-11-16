@@ -120,6 +120,9 @@ export function VulnerabilitiesVerticalTable({
               {tColumns("vulnerability.severity")}
             </TableHead>
             <TableHead className="max-w-[400px] md:min-w-[250px] min-w-[160px]">
+              {tColumns("vulnerability.displayName")}
+            </TableHead>
+            <TableHead className="max-w-[400px] md:min-w-[250px] min-w-[160px]">
               {tColumns("vulnerability.vulnType")}
             </TableHead>
             <TableHead className="hidden md:table-cell w-[120px]">
@@ -136,7 +139,7 @@ export function VulnerabilitiesVerticalTable({
         <TableBody>
           {items.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className={cn("h-24 text-center", textRole.bodySubtle)}>
+              <TableCell colSpan={8} className={cn("h-24 text-center", textRole.bodySubtle)}>
                 <div className="flex flex-col gap-2 items-center justify-center py-8">
                   <Info className="h-8 text-muted-foreground/30 w-8" />
                   <p className="text-sm">{tVuln("emptyFiltered")}</p>
@@ -209,6 +212,9 @@ export function VulnerabilitiesVerticalTable({
                   </TableCell>
 
                   <TableCell className={cn(VULNERABILITIES_DENSE_CELL_CLASS, textRole.tableCellPrimary)}>
+                    <div className="truncate" title={item.displayName || undefined}>{item.displayName?.trim() ? item.displayName : "—"}</div>
+                  </TableCell>
+                  <TableCell className={VULNERABILITIES_DENSE_CELL_CLASS}>
                     <div className="hover:text-primary hover:underline transition-colors truncate underline-offset-4 w-full" title={item.vulnType}>
                       {item.vulnType}
                     </div>

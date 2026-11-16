@@ -126,6 +126,7 @@ export function useVulnerabilitiesDetailViewState({
         status: tColumns("common.status"),
         severity: tColumns("vulnerability.severity"),
         source: tColumns("vulnerability.source"),
+        displayName: tColumns("vulnerability.displayName"),
         vulnType: tColumns("vulnerability.vulnType"),
         url: tColumns("common.url"),
         createdAt: tColumns("common.createdAt"),

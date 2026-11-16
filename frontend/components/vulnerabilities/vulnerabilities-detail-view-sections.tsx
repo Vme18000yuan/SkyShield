@@ -17,12 +17,14 @@ import { DetailAssetContentFrame } from "@/components/shared/layout/detail-asset
 
 import type { VulnerabilitiesDetailViewState } from "./vulnerabilities-detail-view-state"
 import type { Vulnerability } from "@/types/vulnerability.types"
+import { vulnerabilityDisplayName } from "@/lib/vulnerability-display-name"
 
 const vulnerabilityFallbackTranslations: VulnerabilityTranslations = {
   columns: {
     status: "",
     severity: "",
     source: "",
+    displayName: "",
     vulnType: "",
     url: "",
     createdAt: "",
@@ -229,7 +231,7 @@ export function VulnerabilitiesDetailViewDialogs({ state }: { state: Vulnerabili
           <AlertDialogHeader>
             <AlertDialogTitle>{state.tConfirm("deleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {state.tConfirm("deleteVulnMessage", { name: state.vulnerabilityToDelete?.vulnType ?? "" })}
+              {state.tConfirm("deleteVulnMessage", { name: state.vulnerabilityToDelete ? vulnerabilityDisplayName(state.vulnerabilityToDelete) : "" })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

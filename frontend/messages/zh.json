@@ -79,6 +79,7 @@
     "vulnerability": {
       "severity": "严重程度",
       "source": "来源",
+      "displayName": "漏洞名称",
       "vulnType": "漏洞类型",
       "url": "URL",
       "createdAt": "创建时间"
@@ -4282,6 +4283,7 @@
       "httpMethod": "HTTP 方法",
       "param": "参数",
       "classification": "漏洞分类",
+      "vulnType": "漏洞类型",
       "noClassification": "暂无分类信息",
       "detailedDesc": "详细描述",
       "impacts": "影响范围",

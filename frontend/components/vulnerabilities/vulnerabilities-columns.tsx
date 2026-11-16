@@ -18,6 +18,7 @@ export interface VulnerabilityTranslations {
         status: string;
         severity: string;
         source: string;
+        displayName: string;
         vulnType: string;
         url: string;
         createdAt: string;
@@ -106,6 +107,19 @@ export function createVulnerabilityColumns({ formatDate, t, includeSelection = t
                 return (<Badge variant="outline">
             {source}
           </Badge>);
+            },
+        },
+        {
+            accessorKey: "displayName",
+            meta: { title: t.columns.displayName },
+            header: t.columns.displayName,
+            size: vulnerabilitiesTableColumnLayout.displayName.size,
+            minSize: vulnerabilitiesTableColumnLayout.displayName.minSize,
+            maxSize: vulnerabilitiesTableColumnLayout.displayName.maxSize,
+            enableSorting: false,
+            cell: ({ row }) => {
+                const name = row.original.displayName;
+                return <span className={cn("block min-w-0 truncate", textRole.tableCellPrimary)} title={name || undefined}>{name?.trim() ? name : "—"}</span>;
             },
         },
         {

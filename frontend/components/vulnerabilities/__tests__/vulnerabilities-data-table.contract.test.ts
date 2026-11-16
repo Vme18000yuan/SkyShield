@@ -28,7 +28,7 @@ describe("vulnerabilities-data-table contract", () => {
 
   it("keeps the controlled variant on fixed semantic widths with paired primary expand columns", () => {
     expect(source).toContain("BusinessListDataTable")
-    expect(source).toContain('expandColumnIds: ["vulnType", "url"]')
+    expect(source).toContain('expandColumnIds: ["displayName", "url"]')
     expect(source).not.toContain("<UnifiedDataTable")
   })
 

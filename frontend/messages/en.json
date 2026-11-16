@@ -49,6 +49,7 @@
     "vulnerability": {
       "severity": "Severity",
       "source": "Source",
+      "displayName": "Vulnerability name",
       "vulnType": "Vuln Type",
       "url": "URL",
       "createdAt": "Created At"
@@ -4259,6 +4260,7 @@
       "httpMethod": "HTTP Method",
       "param": "Parameter",
       "classification": "Classification",
+      "vulnType": "Vulnerability type",
       "noClassification": "No classification info",
       "detailedDesc": "Detailed Description",
       "impacts": "Impact Scope",

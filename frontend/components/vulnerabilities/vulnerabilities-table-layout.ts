@@ -8,6 +8,7 @@ export const vulnerabilitiesTableColumnLayout = {
   reviewStatus: { key: "reviewStatus", size: 56, minSize: 56, maxSize: 56 },
   severity: { key: "severity", size: 100, minSize: 80, maxSize: 120 },
   source: { key: "source", size: 100, minSize: 80, maxSize: 150 },
+  displayName: { key: "displayName", size: 260, minSize: 180, maxSize: 500 },
   vulnType: { key: "vulnType", size: 150, minSize: 100, maxSize: 250 },
   url: { key: "url", size: 500, minSize: 300, maxSize: 700 },
   createdAt: { key: "createdAt", size: 176, minSize: 176, maxSize: 220 },

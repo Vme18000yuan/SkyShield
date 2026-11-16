@@ -555,6 +555,13 @@
       "up": "000079_ai_task_vulnerability_projection.up.sql",
       "down": "000079_ai_task_vulnerability_projection.down.sql",
       "checksum": "sha256:635c6b70cc71cbd1f0b601c0742acd6c31e3550bbb5e9d36813f22f46d8ac692"
+    },
+    {
+      "id": "000080",
+      "slug": "ai_vulnerability_display_names",
+      "up": "000080_ai_vulnerability_display_names.up.sql",
+      "down": "000080_ai_vulnerability_display_names.down.sql",
+      "checksum": "sha256:5bf998892f6d4f4002963e3691dfa0c20dc4d9fa741958f1efe0fa5cb0ecc8f1"
     }
   ]
 }

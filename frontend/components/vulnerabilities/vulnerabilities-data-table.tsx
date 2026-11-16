@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { vulnerabilityDisplayName } from "@/lib/vulnerability-display-name"
 import type { ColumnDef, SortingState } from "@tanstack/react-table"
 import { useLocale, useTranslations } from "next-intl"
 import { CheckCircle2, Circle, semanticIcons } from "@/components/icons"
@@ -308,7 +309,7 @@ export function VulnerabilitiesDataTable({
             selectedRows,
           }}
           behavior={{
-            expandColumnIds: ["vulnType", "url"],
+            expandColumnIds: ["displayName", "url"],
             onRowClick: onRowClick
               ? (row) => {
                   onRowClick(row as Vulnerability)
@@ -316,7 +317,7 @@ export function VulnerabilitiesDataTable({
               : undefined,
             getRowActionLabel: (row) => {
               const vulnerability = row as Vulnerability
-              return tVuln("openDetailFor", { name: vulnerability.vulnType })
+              return tVuln("openDetailFor", { name: vulnerabilityDisplayName(vulnerability) })
             },
           }}
           actions={{

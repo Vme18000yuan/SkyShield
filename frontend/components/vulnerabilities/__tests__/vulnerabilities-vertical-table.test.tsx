@@ -6,6 +6,16 @@ import { VulnerabilitiesVerticalTable } from "@/components/vulnerabilities/vulne
 import { MOCK_VULNS } from "@/lib/mock-vulnerabilities"
 
 describe("VulnerabilitiesVerticalTable", () => {
+  it("shows the AI title independently from the vulnerability classification", () => {
+    const finding = { ...MOCK_VULNS[0], displayName: "接口未授权读取内部数据", vulnType: "unauthorized_access", source: "ai" }
+    render(<VulnerabilitiesVerticalTable items={[finding]} selectedId={null} selectedRows={[]} onSelect={vi.fn()} onSelectionChange={vi.fn()} />)
+    const name = screen.getByTitle(finding.displayName)
+    const type = screen.getByTitle(finding.vulnType)
+    expect(name).toHaveTextContent(finding.displayName)
+    expect(type).toHaveTextContent(finding.vulnType)
+    expect(name.closest("td")).not.toBe(type.closest("td"))
+  })
+
   it("uses the shared table shell tokens instead of local header and row overrides", () => {
     const { container } = render(
       <VulnerabilitiesVerticalTable
