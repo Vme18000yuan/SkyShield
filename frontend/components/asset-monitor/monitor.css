@@ -27,7 +27,6 @@
 .monitor-toolbar { display: flex; min-height: 48px; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; color: var(--monitor-muted); }
 .monitor-toolbar>div { display: flex; align-items: center; gap: 10px; }
 .monitor-toolbar-controls { flex-wrap: wrap; gap: 6px; }
-.monitor-toolbar-time { margin-left: 6px; padding-left: 16px; border-left: 1px solid var(--monitor-line); }
 .monitor-refresh-status[data-stale="true"] { color: var(--monitor-gold); }
 .monitor-dot { display: inline-block; width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--monitor-cyan); }
 .monitor-dot-gold { background: var(--monitor-gold); }
@@ -46,9 +45,9 @@
 .monitor-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .monitor-panel-heading h2 { min-width: 0; }
 .monitor-panel-note { color: var(--monitor-muted); font-size: 12px; white-space: nowrap; }
-.monitor-side-stack { display: flex; min-width: 0; flex-direction: column; gap: 18px; }
+.monitor-side-stack { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 18px; }
 .monitor-side-stack>.monitor-panel + .monitor-panel { padding-top: 18px; border-top: 1px solid var(--monitor-line); }
-.monitor-side-stack>.monitor-panel:last-child { flex: 1; }
+.monitor-side-stack>.monitor-panel:last-child { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .monitor-type-list { display: grid; gap: 14px; }
 .monitor-type { display: flex; align-items: center; gap: 12px; }
 .monitor-type-main { flex: 1; min-width: 0; }
@@ -69,7 +68,10 @@
 .monitor-map-controls { position: absolute; top: 8px; left: 16px; z-index: 2; display: flex; align-items: center; gap: 4px; }
 .monitor-map-zoom { padding-inline: 6px; color: var(--monitor-muted); font-size: 12px; }
 .monitor-map-navigation { margin-right: auto; }
-.monitor-map-attribution { position: absolute; top: 12px; right: 20px; color: var(--monitor-muted); font-size: 10px; }
+.monitor-map-attribution { position: absolute; top: 12px; right: 20px; z-index: 3; color: var(--monitor-muted); font-size: 11px; }
+.monitor-map-attribution summary { cursor: pointer; list-style: none; font-size: 16px; line-height: 1; }
+.monitor-map-attribution summary::-webkit-details-marker { display: none; }
+.monitor-map-attribution>div { position: absolute; top: 22px; right: 0; width: max-content; max-width: min(320px, 80vw); padding: 8px; border: 1px solid var(--monitor-border); background: var(--monitor-bg); }
 .monitor-map-attribution a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .monitor-map-marker { cursor: pointer; outline: none; }
 .monitor-map-marker:focus-visible>circle:nth-of-type(3) { stroke: var(--monitor-text); stroke-width: 2; }
@@ -102,7 +104,10 @@
 .monitor-risk-legend>div { display: flex; align-items: center; gap: 8px; color: var(--monitor-muted); font-size: 12px; }
 .monitor-risk-legend i { width: 5px; height: 5px; flex-shrink: 0; border-radius: 1px; }
 .monitor-risk-legend strong { margin-left: auto; color: var(--monitor-text); font-weight: 500; }
-.monitor-bars { display: grid; gap: 8px; }
+.monitor-bars-viewport { height: 180px; overflow: hidden; }
+.monitor-bars-viewport:focus-visible { outline: 1px solid var(--monitor-cyan); outline-offset: 2px; }
+.monitor-bars { display: grid; gap: 8px; padding-bottom: 8px; }
+.monitor-bars-viewport:hover .monitor-bars-track, .monitor-bars-viewport:focus-within .monitor-bars-track { animation-play-state: paused; }
 .monitor-bar-label { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .monitor-rank { color: var(--monitor-muted); font-size: 11px; }
 .monitor-bar-label>span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--monitor-muted); }
@@ -125,7 +130,7 @@
 .monitor-recent-columns>span:nth-child(2) { flex: 1; }
 .monitor-recent-list { height: 160px; overflow: hidden; }
 .monitor-recent-list:focus-visible { outline: 1px solid var(--monitor-cyan); outline-offset: 2px; }
-.monitor-recent-track-animated { animation: monitor-recent-scroll linear infinite; }
+.monitor-recent-track-animated, .monitor-bars-track-animated { animation: monitor-recent-scroll linear infinite; }
 .monitor-recent-list:hover .monitor-recent-track, .monitor-recent-list:focus-within .monitor-recent-track { animation-play-state: paused; }
 @keyframes monitor-recent-scroll { to { transform: translateY(-50%); } }
 .monitor-recent-row { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--monitor-line); min-height: 32px; padding: 6px 0; font-size: 12px; }
@@ -149,6 +154,7 @@
   .monitor-handoff { flex: 1; min-height: 0; }
   .monitor-content { display: grid; min-height: 0; grid-template-rows: auto minmax(min-content, 1.65fr) minmax(min-content, 1fr); }
   .monitor-map { height: 0; flex-basis: 0; min-height: 300px; }
+  .monitor-bars-viewport { flex: 1 1 0px; height: 0; min-height: 120px; }
   .monitor-bottom-grid>.monitor-panel { display: flex; min-height: 0; flex-direction: column; }
   /* Definite bases keep chart/list contents from enlarging the viewport grid. */
   .monitor-trend-pair { flex: 1 1 0px; min-height: 0; }
@@ -189,7 +195,6 @@
   .monitor-clock span { font-size: 11px; }
   .monitor-toolbar { padding-block: 12px; gap: 10px; }
   .monitor-toolbar>div:first-child { flex-wrap: wrap; gap: 6px; }
-  .monitor-toolbar-time { margin: 0; padding: 0; border: 0; }
   .monitor-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .monitor-kpi { padding-inline: 16px; }
   .monitor-kpi:nth-child(odd) { padding-left: 0; border-left: 0; }
@@ -213,6 +218,6 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .monitor-root *, .monitor-root *:before, .monitor-root *:after { animation: none !important; transition: none !important; }
-  .monitor-recent-list { overflow-y: auto; }
-  .monitor-recent-track>div[aria-hidden="true"] { display: none; }
+  .monitor-recent-list, .monitor-bars-viewport { overflow-y: auto; }
+  .monitor-recent-track>div[aria-hidden="true"], .monitor-bars-track>div[aria-hidden="true"] { display: none; }
 }

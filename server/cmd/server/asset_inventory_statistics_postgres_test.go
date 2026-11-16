@@ -110,12 +110,16 @@ func verifyAssetInventoryStatisticsPostgres(t *testing.T, ctx context.Context, d
 	if counts["subdomain"] != 1 || counts["ip"] != 1 || counts["service"] != 13 {
 		t.Fatalf("inventory categories = %+v", counts)
 	}
-	if len(snapshot.Ports) != 5 || snapshot.Ports[0].Key != "80" || snapshot.Ports[0].Count != 3 {
+	expectedPorts := []struct {
+		key   string
+		count int64
+	}{{"80", 3}, {"22", 2}, {"443", 2}, {"3306", 2}, {"8080", 2}, {"8443", 2}}
+	if len(snapshot.Ports) != len(expectedPorts) {
 		t.Fatalf("top ports = %+v", snapshot.Ports)
 	}
-	for _, port := range snapshot.Ports {
-		if port.Key == "9090" || port.Key == "8443" {
-			t.Fatalf("unexpected scoped or sixth port: %+v", snapshot.Ports)
+	for i, expected := range expectedPorts {
+		if snapshot.Ports[i].Key != expected.key || snapshot.Ports[i].Count != expected.count {
+			t.Fatalf("top ports = %+v", snapshot.Ports)
 		}
 	}
 	if _, err = db.ExecContext(ctx, `UPDATE target SET deleted_at=CURRENT_TIMESTAMP WHERE id IN ($1,$2)`, target, hidden); err != nil {

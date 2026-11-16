@@ -30,14 +30,31 @@ function MonitorPanel({ title, meta, children, className = "" }: { title: string
   return <section className={`monitor-panel ${className}`}><header className="monitor-panel-heading"><h2 className={textRole.panelTitle}>{title}</h2>{meta}</header>{children}</section>
 }
 
-function CountBars({ items, label, countLabel, empty }: { items: MonitorCount[]; label?: (key: string) => string; countLabel?: (count: number) => string; empty: string }) {
+function CountBars({ items, title, label, countLabel, empty }: { items: MonitorCount[]; title: string; label?: (key: string) => string; countLabel?: (count: number) => string; empty: string }) {
   const locale = useLocale()
-  const maximum = Math.max(1, ...items.map(item => item.count))
-  if (!items.length) return <p className="monitor-empty">{empty}</p>
-  return <div className="monitor-bars">{items.slice(0, 6).map((item, index) => <div className="monitor-bar" key={item.key}>
+  const viewportRef = React.useRef<HTMLDivElement>(null)
+  const rowsRef = React.useRef<HTMLDivElement>(null)
+  const [scrolling, setScrolling] = React.useState(false)
+  const visibleItems = items.slice(0, 40)
+  const maximum = Math.max(1, ...visibleItems.map(item => item.count))
+
+  React.useEffect(() => {
+    const viewport = viewportRef.current, rows = rowsRef.current
+    if (!viewport || !rows) return
+    const measure = () => setScrolling(rows.scrollHeight > viewport.clientHeight + 1)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(viewport)
+    observer.observe(rows)
+    return () => observer.disconnect()
+  }, [items])
+
+  if (!visibleItems.length) return <p className="monitor-empty">{empty}</p>
+  const rows = (copy: boolean) => <div className="monitor-bars" ref={copy ? undefined : rowsRef} aria-hidden={copy || undefined}>{visibleItems.map((item, index) => <div className="monitor-bar" key={item.key}>
     <div className="monitor-bar-label"><span className="monitor-rank">{String(index + 1).padStart(2, "0")}</span><span title={label?.(item.key) ?? item.key}>{label?.(item.key) ?? item.key}</span><strong>{countLabel?.(item.count) ?? item.count.toLocaleString(locale)}</strong></div>
     <div className="monitor-bar-track"><i style={{ width: `${item.count / maximum * 100}%` }} /></div>
   </div>)}</div>
+  return <div ref={viewportRef} className="monitor-bars-viewport" role="region" tabIndex={scrolling ? 0 : undefined} aria-label={title}><div className={`monitor-bars-track${scrolling ? " monitor-bars-track-animated" : ""}`} style={{ animationDuration: `${Math.max(18, visibleItems.length * 2.6)}s` }}>{rows(false)}{scrolling && rows(true)}</div></div>
 }
 
 function AssetTypes({ data }: { data: AssetMonitorSnapshot }) {
@@ -135,13 +152,13 @@ const ScreenData = React.memo(function ScreenData({ data }: { data: AssetMonitor
     <div className="monitor-main-grid">
       <div className="monitor-side-stack monitor-side-stack-left">
         <MonitorPanel title={t("assetComposition")}><AssetTypes data={data} /></MonitorPanel>
-        <MonitorPanel title={t("exposedPorts")}><CountBars items={data.ports.slice(0, 5)} label={port => t("portLabel", { port })} countLabel={count => t("portCount", { count: count.toLocaleString(locale) })} empty={t("noPorts")} /></MonitorPanel>
+        <MonitorPanel title={t("exposedPorts")}><CountBars items={data.ports} title={t("exposedPorts")} label={port => t("portLabel", { port })} countLabel={count => t("portCount", { count: count.toLocaleString(locale) })} empty={t("noPorts")} /></MonitorPanel>
       </div>
       <MonitorPanel title={t("mapTitle")} className="monitor-map-panel" meta={<div className="monitor-map-metric"><strong>{mapped.toLocaleString(locale)}</strong><span>{t("mappedAssets")}</span></div>}>
         <AssetDistributionMap points={points} selected={selected?.key ?? null} onSelect={point => setSelectedKey(point.key)} />
         <div className="monitor-map-readout">{selected ? <><div><span>{t("selectedRegion")}</span><strong>{selected.regionName}</strong></div><div><span>{t(selected.precision === "country" ? "countryPrecision" : selected.precision === "dns" ? "dnsPrecision" : "ipPrecision")}{selected.cityEstimated ? ` · ${t("cityNearCoordinate")}` : selected.cityTranslationUnavailable ? ` · ${t("cityTranslationUnavailable")}` : selected.precision !== "country" && !selected.cityName ? ` · ${t("cityUnavailable")}` : ""}{selected.expired ? ` · ${t("expiredLocation")}` : ""}</span><strong className="monitor-cyan">{selected.count.toLocaleString(locale)} <small>{t("assetsUnit")}</small></strong></div></> : <p>{t("noLocationEvidence")}</p>}</div>
       </MonitorPanel>
-      <div className="monitor-side-stack monitor-side-stack-right"><MonitorPanel title={t("riskDistribution")}><RiskDistribution data={data} /></MonitorPanel><MonitorPanel title={t("technologyProfile")}><CountBars items={data.technologies.slice(0, 5)} empty={t("noTechnologies")} /></MonitorPanel></div>
+      <div className="monitor-side-stack monitor-side-stack-right"><MonitorPanel title={t("riskDistribution")}><RiskDistribution data={data} /></MonitorPanel><MonitorPanel title={t("technologyProfile")}><CountBars items={data.technologies} title={t("technologyProfile")} empty={t("noTechnologies")} /></MonitorPanel></div>
     </div>
     <div className="monitor-bottom-grid">
       <MonitorPanel title={t("discoveryTrend")} meta={<span className="monitor-panel-note">{t("beijingTime")}</span>}>
@@ -176,7 +193,7 @@ export function AssetMonitorScreen() {
   const RefreshIcon = semanticIcons.action.refresh
   return <div ref={root} className="monitor-root" id="main-content" tabIndex={0} aria-label={t("title")} data-slot="asset-monitor-screen" data-monitor-theme={theme}>
     <header className="monitor-header"><div className="monitor-brand"><TianqiongMark size={32} decorative /><strong className={textRole.panelTitle}>{t("brand")}</strong><div className="monitor-heading"><h1 className={textRole.pageTitle}>{t("title")}</h1></div></div><div className="monitor-header-actions"><div className="monitor-clock"><strong suppressHydrationWarning>{now?.toLocaleTimeString(locale, { hour12: false }) ?? "--:--:--"}</strong><span suppressHydrationWarning>{now?.toLocaleDateString(locale, { year: "numeric", month: "2-digit", day: "2-digit", weekday: "short" }) ?? "—"}</span></div><Button size="sm" variant="outline" onClick={() => void toggleFullscreen()}>{t(fullscreen ? "exitFullscreen" : "fullscreen")}</Button></div></header>
-    <div className="monitor-toolbar"><div className="monitor-refresh-status" role="status" data-stale={Boolean(snapshot.error && snapshot.data)}><span className={`monitor-dot ${snapshot.error ? "monitor-dot-gold" : ""}`} /><span>{snapshot.error && snapshot.data ? t("staleData") : t(autoRefresh ? "autoRefreshing" : "refreshPaused")}</span>{snapshot.data && <span className="monitor-toolbar-time">{t("lastUpdated")} {new Date(snapshot.data.generatedAt).toLocaleTimeString(locale, { hour12: false })}</span>}</div><div className="monitor-toolbar-controls"><Button size="sm" variant="ghost" aria-pressed={autoRefresh} onClick={() => setAutoRefresh(value => !value)}>{t(autoRefresh ? "pauseRefresh" : "resumeRefresh")}</Button><Button size="icon-sm" variant="ghost" aria-label={t("refresh")} disabled={snapshot.isFetching || !selection} loading={snapshot.isFetching} loadingLabel={<span className="sr-only">{t("refresh")}</span>} onClick={() => void snapshot.refetch()}><RefreshIcon className="size-4" /></Button><Button size="sm" variant="outline" render={<Link href="/asset-monitor/" />}>{t("changeOrganizations")}</Button></div></div>
+    <div className="monitor-toolbar"><div className="monitor-refresh-status" role="status" data-stale={Boolean(snapshot.error && snapshot.data)}>{snapshot.error && snapshot.data && <><span className="monitor-dot monitor-dot-gold" /><span>{t("staleData")}</span></>}</div><div className="monitor-toolbar-controls"><Button size="sm" variant="ghost" aria-pressed={autoRefresh} onClick={() => setAutoRefresh(value => !value)}>{t(autoRefresh ? "pauseRefresh" : "resumeRefresh")}</Button><Button size="icon-sm" variant="ghost" aria-label={t("refresh")} disabled={snapshot.isFetching || !selection} loading={snapshot.isFetching} loadingLabel={<span className="sr-only">{t("refresh")}</span>} onClick={() => void snapshot.refetch()}><RefreshIcon className="size-4" /></Button><Button size="sm" variant="outline" render={<Link href="/asset-monitor/" />}>{t("changeOrganizations")}</Button></div></div>
     {!selection ? <div className="monitor-state"><h2>{t("invalidSelection")}</h2><p>{t("selectToStart")}</p><Button render={<Link href="/asset-monitor/" />}>{t("selectOrganizations")}</Button></div> : snapshot.error && !snapshot.data ? <div className="monitor-state" role="alert"><h2>{t("loadError")}</h2><p>{t("loadErrorHint")}</p><Button onClick={() => void snapshot.refetch()}>{t("retry")}</Button></div> : <ContentHandoff owner="asset-monitor-data" layer="workspace" className="monitor-handoff" contentClassName="monitor-content" isLoading={!snapshot.data} skeleton={<div className="monitor-data-skeleton" aria-label={t("loading")}><div className="monitor-kpis-skeleton" /><div className="monitor-main-skeleton" /><div className="monitor-bottom-skeleton" /></div>}>
       {snapshot.data && <ScreenData data={snapshot.data} />}
     </ContentHandoff>}

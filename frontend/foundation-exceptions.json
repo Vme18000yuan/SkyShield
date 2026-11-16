@@ -12,8 +12,8 @@
       "pattern": "animation: monitor-recent-scroll",
       "class": "runtime-calculated-geometry",
       "owner": "asset-monitor",
-      "reason": "The wall-display discovery feed scrolls only when measured row content exceeds its viewport. Duration follows row count; hover and focus pause it, and reduced-motion uses manual scrolling without the duplicated rows.",
-      "reviewTrigger": "When discovery-feed height, row count, timing or pause controls change.",
+      "reason": "The wall-display discovery, port and technology lists scroll only when measured rows exceed their viewport. Duration follows row count; hover and focus pause it, and reduced-motion uses manual scrolling without the duplicated rows.",
+      "reviewTrigger": "When list height, row count, timing or pause controls change.",
       "recoveryPath": "Replace the marquee with a shared manually scrollable list if unattended continuous display is no longer needed."
     },
     {

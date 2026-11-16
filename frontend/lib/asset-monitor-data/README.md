@@ -5,7 +5,7 @@ are `[countryCode, latitude, longitude, simplifiedChineseName, englishNames]`.
 It contains a modified selection of GeoNames cities1000 and alternate names,
 supplemented by Natural Earth populated places. The GeoNames data is licensed
 under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); attribution is
-shown on the map. The modifications filter to modern Chinese place names and exclude GeoNames
+available from the map's information control. The modifications filter to modern Chinese place names and exclude GeoNames
 neighborhood, abandoned and historical feature types,
 normalize them to Simplified Chinese with OpenCC, and combine same-country,
 same-name entries that have nearby coordinates. Natural Earth data is in the

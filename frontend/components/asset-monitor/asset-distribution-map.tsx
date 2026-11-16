@@ -64,7 +64,7 @@ export function AssetDistributionMap(props: MapProps) {
       <Button size="sm" variant="surface" onClick={() => setView({ coordinates: MONITOR_MAP_CENTER, zoom: 1 })}>{t("resetMap")}</Button>
       <span className="monitor-map-zoom">{view.zoom.toFixed(1)}×</span>
     </div>
-    <div className="monitor-map-attribution">{t("mapCityData")} <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>) · <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a></div>
+    <details className="monitor-map-attribution"><summary aria-label={t("mapCityData")} title={t("mapCityData")}>ⓘ</summary><div><a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>) · {t("mapDataModified")} · <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a></div></details>
     {!props.points.length && <div className="monitor-map-empty"><p>{t("noLocations")}</p><span>{t("noLocationsHint")}</span></div>}
     <div className="monitor-map-legend"><span className="monitor-map-navigation">{t("mapNavigation")}</span><span><i className="monitor-dot" />{t("ipPrecision")}</span><span title={t("locationEvidenceHint")}><i className="monitor-dot monitor-dot-dns" />{t("dnsPrecision")}</span><span><i className="monitor-dot monitor-dot-gold" />{t("countryPrecision")}</span></div>
   </div>

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -141,6 +142,46 @@ func TestAssetMonitorCitiesAndRecent50IsolatedPostgres(t *testing.T) {
 	for _, key := range []string{"ip:Alpha", "ip:Beta", "dns:Beta"} {
 		if !cityKinds[key] {
 			t.Fatalf("missing city projection %s: %+v", key, snapshot.Locations)
+		}
+	}
+	verifyAssetMonitorTop40(t, ctx, db, store, user, org, target, hidden)
+}
+
+func verifyAssetMonitorTop40(t *testing.T, ctx context.Context, db *sql.DB, store *monitorrepo.Store, user, org, target, hidden int) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx, `INSERT INTO host_port_mapping(target_id,host,ip,port)
+	 SELECT $1::integer,'a00.city.example','8.8.8.8'::inet,10000+i FROM generate_series(0,44) i
+	 UNION ALL SELECT $1::integer,'a01.city.example','1.1.1.1'::inet,10044
+	 UNION ALL SELECT $2::integer,'hidden'||i||'.hidden-city.example','1.1.1.1'::inet,30000 FROM generate_series(1,6) i`, target, hidden); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO website(target_id,url,host,tech) VALUES
+ ($1,'https://a00.city.example/','a00.city.example',ARRAY(SELECT 'technology-'||lpad(i::text,2,'0') FROM generate_series(1,45) i)||ARRAY['technology-45']),
+ ($1,'https://a01.city.example/','a01.city.example',ARRAY['technology-45']),
+ ($2,'https://hidden-city.example/','hidden-city.example',ARRAY['hidden-technology'])`, target, hidden); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := store.Read(ctx, user, []int{org})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Ports) != 40 || len(snapshot.Technologies) != 40 {
+		t.Fatalf("expected 40 ports and technologies, got %d and %d", len(snapshot.Ports), len(snapshot.Technologies))
+	}
+	if snapshot.Ports[0].Key != "443" || snapshot.Ports[0].Count != 4 || snapshot.Ports[1].Key != "10044" || snapshot.Ports[1].Count != 4 {
+		t.Fatalf("ports were not ranked by deduplicated host:port count: %+v", snapshot.Ports[:2])
+	}
+	for i, item := range snapshot.Ports[2:] {
+		if item.Key != fmt.Sprint(10000+i) || item.Count != 2 {
+			t.Fatalf("port rank %d: %+v", i+3, item)
+		}
+	}
+	if snapshot.Technologies[0].Key != "technology-45" || snapshot.Technologies[0].Count != 2 {
+		t.Fatalf("technologies were not ranked by distinct website count: %+v", snapshot.Technologies[0])
+	}
+	for i, item := range snapshot.Technologies[1:] {
+		if item.Key != fmt.Sprintf("technology-%02d", i+1) || item.Count != 1 {
+			t.Fatalf("technology rank %d: %+v", i+2, item)
 		}
 	}
 }

@@ -25,8 +25,8 @@ const fixture = {
   assetCategories: [30, 700, 2440, 9620, 0, 38].map((count, i) => ({ key: ["root_domain", "subdomain", "ip", "web", "service", "app"][i], count })),
   inventoryCategories: [520, 2440, 9688].map((count, i) => ({ key: ["subdomain", "ip", "service"][i], count })),
   severities: [3, 12, 28, 31, 10, 2].map((count, i) => ({ key: ["critical", "high", "medium", "low", "info", "unknown"][i], count })),
-  ports: [443, 80, 8080, 22, 3306, 8443].map((key, i) => ({ key: String(key), count: [1420, 896, 327, 186, 100, 50][i] })),
-  technologies: ["Nginx", "Vue.js", "Spring Boot", "Apache", "React"].map((key, i) => ({ key, count: [628, 382, 264, 219, 178][i] })),
+  ports: [443, 80, 8080, 22, 3306, 8443, ...Array.from({ length: 39 }, (_, i) => 10000 + i)].map((key, i) => ({ key: String(key), count: i < 6 ? [1420, 896, 327, 186, 100, 50][i] : 45 - i })),
+  technologies: ["Nginx", "Vue.js", "Spring Boot", "Apache", "React", ...Array.from({ length: 40 }, (_, i) => `Technology-${String(i + 1).padStart(2, "0")}`)].map((key, i) => ({ key, count: i < 5 ? [628, 382, 264, 219, 178][i] : 45 - i })),
   trend: [42, 78, 66, 124, 97, 186, 146].map((assets, i) => ({ date: new Date(Date.now() + 8 * 3600000 - (6 - i) * 86400000).toISOString().slice(0, 10), assets, risks: [2, 4, 3, 8, 5, 9, 7][i] })),
   recentAssets: ["api.yunhai.example:443", "portal.yunhai.example", "203.0.113.18", "sso.yunhai.example:443", "app.yunhai.example:8080", "cdn.yunhai.example", "auth.yunhai.example:443", "dev.yunhai.example", "203.0.113.19", "files.yunhai.example:443", "docs.yunhai.example:8080", "mail.yunhai.example"].map((label, i) => ({ id: String(i + 1), label, assetType: ["service", "subdomain", "ip", "service", "service", "subdomain"][i % 6], firstSeenAt: new Date(Date.now() - i * 180000).toISOString() })),
   locations,
@@ -43,7 +43,7 @@ await context.route("**/v1/**", async route => {
     snapshotCalls++
     assert.equal(url.searchParams.get("organizationIds"), "1,2")
     if (dataMode === "error") return route.fulfill({ status: 503, json: { error: { message: "Fixture refresh failure" } } })
-    if (dataMode === "short") return route.fulfill({ json: { ...fixture, recentAssets: fixture.recentAssets.slice(0, 3) } })
+    if (dataMode === "short") return route.fulfill({ json: { ...fixture, recentAssets: fixture.recentAssets.slice(0, 3), ports: fixture.ports.slice(0, 3), technologies: fixture.technologies.slice(0, 2) } })
     if (dataMode === "recent50") return route.fulfill({ json: { ...fixture, recentAssets: recent50 } })
     if (dataMode === "empty") return route.fulfill({ json: { ...fixture, summary: Object.fromEntries(Object.keys(fixture.summary).map(key => [key, 0])), locations: [], assetTypes: [], assetCategories: [], inventoryCategories: [], severities: [], ports: [], technologies: [], recentAssets: [], trend: fixture.trend.map(item => ({ ...item, assets: 0, risks: 0 })) } })
     return route.fulfill({ json: fixture })
@@ -104,11 +104,35 @@ try {
   assert.equal(await screen.getByText("展示范围", { exact: true }).count(), 0)
   assert.equal(await screen.getByText("组织间资产可能共享", { exact: true }).count(), 0)
   for (const organization of organizations) assert.equal(await screen.getByText(organization.displayName, { exact: true }).count(), 0)
-  const ports = screen.locator("section").filter({ has: screen.getByRole("heading", { name: "暴露端口 TOP 5" }) })
-  assert.equal(await ports.locator(".monitor-bar").count(), 5)
-  assert.ok(await ports.getByText("80 端口", { exact: true }).count())
-  assert.ok(await ports.getByText("896 个", { exact: true }).count())
-  assert.equal(await ports.getByText("8443 端口", { exact: true }).count(), 0)
+  assert.equal(await screen.getByText("每 30 秒自动刷新", { exact: true }).count(), 0)
+  assert.equal(await screen.getByText(/^数据更新/).count(), 0)
+  const ports = screen.locator("section").filter({ has: screen.getByRole("heading", { name: "暴露端口 TOP 40" }) })
+  const technologies = screen.locator("section").filter({ has: screen.getByRole("heading", { name: "技术栈 TOP 40" }) })
+  for (const [panel, expectedFirst, expectedLast, excluded] of [[ports, "443 端口", "10033 端口", "10034 端口"], [technologies, "Nginx", "Technology-35", "Technology-36"]]) {
+    const track = panel.locator(".monitor-bars-track")
+    const original = track.locator(":scope > div").first()
+    await expect.poll(() => track.evaluate(node => getComputedStyle(node).animationName)).toBe("monitor-recent-scroll")
+    await expect(original.locator(".monitor-bar")).toHaveCount(40)
+    await expect(original.locator(".monitor-bar").first()).toContainText(expectedFirst)
+    await expect(original.locator(".monitor-bar").last()).toContainText(expectedLast)
+    assert.equal(await panel.getByText(excluded, { exact: true }).count(), 0)
+    await panel.locator(".monitor-bars-viewport").hover()
+    assert.equal(await track.evaluate(node => getComputedStyle(node).animationPlayState), "paused")
+    await screen.locator(".monitor-header").hover()
+    await panel.locator(".monitor-bars-viewport").focus()
+    assert.equal(await track.evaluate(node => getComputedStyle(node).animationPlayState), "paused")
+    await panel.locator(".monitor-bars-viewport").evaluate(node => node.blur())
+    await track.evaluate(node => {
+      const animation = node.getAnimations()[0]
+      const rows = node.firstElementChild
+      const last = rows.lastElementChild
+      const progress = (rows.clientHeight - (node.parentElement.clientHeight + last.clientHeight) / 2) / rows.clientHeight
+      animation.pause()
+      animation.currentTime = Number(animation.effect.getTiming().duration) * progress
+    })
+    await expect(original.locator(".monitor-bar").last()).toBeInViewport()
+    await track.evaluate(node => node.getAnimations().forEach(animation => animation.play()))
+  }
   const recentTrack = screen.locator(".monitor-recent-track")
   await expect.poll(() => recentTrack.evaluate(node => getComputedStyle(node).animationName)).toBe("monitor-recent-scroll")
   assert.equal(await recentTrack.locator(".monitor-recent-row").count(), fixture.recentAssets.length * 2)
@@ -118,6 +142,11 @@ try {
   await screen.emulateMedia({ reducedMotion: "reduce" })
   assert.equal(await recentTrack.evaluate(node => getComputedStyle(node).animationName), "none")
   assert.equal(await screen.locator(".monitor-recent-list").evaluate(node => getComputedStyle(node).overflowY), "auto")
+  for (const panel of [ports, technologies]) {
+    assert.equal(await panel.locator(".monitor-bars-track").evaluate(node => getComputedStyle(node).animationName), "none")
+    assert.equal(await panel.locator(".monitor-bars-viewport").evaluate(node => getComputedStyle(node).overflowY), "auto")
+    assert.equal(await panel.locator('.monitor-bars[aria-hidden="true"]').isVisible(), false)
+  }
   await screen.emulateMedia({ reducedMotion: "no-preference" })
   await screen.locator(".monitor-map-marker").first().waitFor()
   assert.equal(await screen.locator('[data-slot="sidebar"]').count(), 0, "display should not include normal navigation")
@@ -135,7 +164,10 @@ try {
   await expect(screen.locator(".monitor-map-readout")).toContainText("纽约")
   await expect(screen.locator(".monitor-map-readout")).toContainText("坐标附近城市（推断）")
   await expect(newYork.locator("title")).toContainText("坐标附近城市（推断）")
+  assert.equal(await screen.getByRole("link", { name: "GeoNames" }).count(), 0)
+  await screen.getByLabel("地名数据来源").click()
   await expect(screen.getByRole("link", { name: "GeoNames" })).toHaveAttribute("href", "https://www.geonames.org/")
+  await screen.getByLabel("地名数据来源").click()
   assert.ok(await screen.locator(".rsm-geography[d]").count() > 150, "world country paths should be rendered")
   const chinaCenter = await screen.locator('.rsm-geography[data-country="China"]').evaluate(node => { const box = node.getBBox(); return box.x + box.width / 2 })
   assert.ok(chinaCenter > 300 && chinaCenter < 470, "Asia should be visible to the left of the Pacific")
@@ -193,7 +225,7 @@ try {
   assert.equal(await screen.locator(".monitor-trend-series").count(), 2, "assets and risks should have separate readable scales")
   assert.ok(await screen.locator(".monitor-risk-priority").getByText("15", { exact: true }).count(), "priority count must equal recorded high and critical findings")
   await screen.getByRole("button", { name: "暂停刷新", exact: true }).click()
-  await screen.getByText("自动刷新已暂停", { exact: true }).waitFor()
+  await screen.getByRole("button", { name: "恢复刷新", exact: true }).waitFor()
   await screen.locator(".monitor-map-marker").last().focus()
   await screen.keyboard.press("Enter")
   dataMode = "error"
@@ -210,6 +242,10 @@ try {
   await screen.getByText("最近 3 条", { exact: true }).waitFor()
   await expect.poll(() => recentTrack.evaluate(node => getComputedStyle(node).animationName)).toBe("none")
   await expect(recentTrack.locator(".monitor-recent-row")).toHaveCount(3)
+  for (const [panel, count] of [[ports, 3], [technologies, 2]]) {
+    await expect.poll(() => panel.locator(".monitor-bars-track").evaluate(node => getComputedStyle(node).animationName)).toBe("none")
+    await expect(panel.locator(".monitor-bar")).toHaveCount(count)
+  }
   dataMode = "recent50"
   await screen.getByRole("button", { name: "立即刷新", exact: true }).click()
   await screen.getByText("最近 50 条", { exact: true }).waitFor()
