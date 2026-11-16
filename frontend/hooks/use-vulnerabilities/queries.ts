@@ -79,6 +79,7 @@ function transformVulnerabilityResponse(
 
     const vulnerability: Vulnerability = {
       id: item.id,
+      displayName: typeof item.displayName === "string" ? item.displayName : undefined,
       assetId: typeof item.assetId === "string" && /^[1-9]\d*$/.test(item.assetId) ? item.assetId : undefined,
       vulnType: item.vulnType || "unknown",
       url: item.url || "",
