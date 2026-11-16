@@ -1,5 +1,6 @@
 import importlib.util
 import contextlib
+import io
 import os
 import pathlib
 import socket
@@ -15,6 +16,24 @@ SPEC.loader.exec_module(deploy)
 
 
 class LocalDeployTests(unittest.TestCase):
+    def test_old_engine_binary_reports_how_to_rebuild(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            binary = root / "skyshield-local-engines"
+            binary.touch()
+            old_error = "local Engine package update: local mode requires loopback SERVER_HOST and SERVER_GRPC_HOST\n"
+            result = SimpleNamespace(returncode=1, stdout="", stderr=old_error)
+            with mock.patch.object(deploy, "BIN", root), mock.patch.object(deploy.subprocess, "run", return_value=result), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaisesRegex(RuntimeError, "local.sh start --no-tools-install"):
+                    deploy.update_local_engines({}, no_build=True)
+            result.stderr = "running scan tasks must finish before updating native Engine packages\n"
+            with mock.patch.object(deploy, "BIN", root), mock.patch.object(deploy.subprocess, "run", return_value=result), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaisesRegex(RuntimeError, "退出码 1") as error:
+                    deploy.update_local_engines({}, no_build=True)
+                self.assertNotIn("重新构建", str(error.exception))
+
     def test_daily_start_and_restart_use_existing_build_without_installing_tools(self):
         args = SimpleNamespace(ui_only=False)
         with mock.patch.object(deploy, "check_existing_runtime") as check, mock.patch.object(deploy, "start") as start:

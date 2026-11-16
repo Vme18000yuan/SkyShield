@@ -478,6 +478,25 @@ def agent_args():
             "--package-cache-root", DATA / "engine-packages", "--tools-dir", TOOLS, "--proxy-socket", DATA / "agent/proxy.sock", "--version", VERSION]
 
 
+def update_local_engines(env, *, no_build):
+    binary = BIN / "skyshield-local-engines"
+    if not binary.is_file():
+        return
+    args = [binary, ROOT / "extensions/engines"]
+    if not no_build:
+        call(args, cwd=ROOT / "server", env=env)
+        return
+    result = subprocess.run([str(item) for item in args], cwd=ROOT / "server", env=env, text=True, capture_output=True)
+    if result.stdout:
+        print(result.stdout, end="", flush=True)
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr, flush=True)
+    if result.returncode:
+        if "local mode requires loopback SERVER_HOST and SERVER_GRPC_HOST" in result.stderr:
+            fail("本地程序版本过旧，不支持当前的 0.0.0.0 监听配置；请先运行 ./local.sh start --no-tools-install 重新构建")
+        fail(f"命令执行失败：{binary}（退出码 {result.returncode}）")
+
+
 def check_existing_runtime(args):
     """Check an existing installation before starting or stopping its processes."""
     required = [BIN / "skyshield-server", BIN / "skyshield-local-agent", ROOT / "frontend/node_modules/.bin/next"]
@@ -571,8 +590,7 @@ def start(args):
     if query(env, "SELECT count(*) FROM engine") == "0":
         print("首次安装扫描引擎清单……", flush=True)
         call([server, "engine-bootstrap"], cwd=ROOT / "server", env=env)
-    if (BIN / "skyshield-local-engines").is_file():
-        call([BIN / "skyshield-local-engines", ROOT / "extensions/engines"], cwd=ROOT / "server", env=env)
+    update_local_engines(env, no_build=args.no_build)
     call([server, "fingerprint-bootstrap", ROOT / "resources/fingerprints/web_fingerprint_v4.json"], cwd=ROOT / "server", env=env)
     call([server, "wordlist-bootstrap", ROOT / "resources/wordlists/manifest.json", ROOT / "resources/wordlists"], cwd=ROOT / "server", env=env)
     call([server, "local-agent-bootstrap", AGENT_CREDENTIALS, "skyshield-local", VERSION], cwd=ROOT / "server", env=env)
