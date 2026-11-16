@@ -478,6 +478,57 @@ def agent_args():
             "--package-cache-root", DATA / "engine-packages", "--tools-dir", TOOLS, "--proxy-socket", DATA / "agent/proxy.sock", "--version", VERSION]
 
 
+def check_existing_runtime(args):
+    """Check an existing installation before starting or stopping its processes."""
+    required = [BIN / "skyshield-server", BIN / "skyshield-local-agent", ROOT / "frontend/node_modules/.bin/next"]
+    if any(not path.is_file() or not os.access(path, os.X_OK) for path in required):
+        fail("本地程序或前端依赖尚未部署，请先执行 ./local.sh start")
+    stage = active_frontend_stage() or ".next"
+    if not (ROOT / "frontend" / stage / "BUILD_ID").is_file():
+        fail("本地前端尚未构建，请先执行 ./local.sh start")
+    if not (PGDATA / "PG_VERSION").is_file() or not AGENT_CREDENTIALS.is_file():
+        fail("本地数据库或 Agent 尚未初始化，请先执行 ./local.sh start")
+    try:
+        identity = json.loads(AGENT_CREDENTIALS.read_text())
+        if (not isinstance(identity, dict) or type(identity.get("agentId")) is not int or identity["agentId"] <= 0
+                or not isinstance(identity.get("instanceId"), str) or not identity["instanceId"].strip()
+                or not isinstance(identity.get("agentAuthenticationToken"), str) or not identity["agentAuthenticationToken"].strip()):
+            raise ValueError("invalid identity")
+    except (OSError, ValueError, TypeError):
+        fail("本地 Agent 凭据无效；请先检查现有部署")
+    for name in ("db_password", "jwt_secret", "ai_encryption_key"):
+        path = SECRETS / name
+        if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077 or not path.read_bytes().strip():
+            fail(f"本地密钥缺失或权限无效：{path}")
+    for name in ("pg_ctl", "initdb", "pg_isready", "psql", "createdb"):
+        pg_binary(name)
+    executable("redis-server")
+    executable("node")
+    if not args.ui_only:
+        check = subprocess.run([str(value) for value in agent_args() + ["--check"]], env=environment())
+        if check.returncode:
+            fail("本地扫描工具未准备完成；请先执行 ./local.sh start")
+
+
+def run_existing(args):
+    check_existing_runtime(args)
+    args.no_build = True
+    args.no_tools_install = True
+    start(args)
+
+
+def restart_existing(args):
+    check_existing_runtime(args)
+    state = read_state()
+    for name in ("agent", "frontend", "server", "redis"):
+        if alive(state.get(name)) and not state[name].get("owned"):
+            fail(f"{name} 由其他方式启动，请先由原启动方式停止")
+    stop(args)
+    args.no_build = True
+    args.no_tools_install = True
+    start(args)
+
+
 def start(args):
     prepare_directories()
     env = environment()
@@ -550,7 +601,7 @@ def start(args):
     else:
         wait_for(lambda: http_ready(FRONTEND_PORT, "/"), "前端", process=state.get("frontend"))
     if args.ui_only:
-        print(f"本地界面已启动：监听 {LISTEN_HOST}:{FRONTEND_PORT}，本机访问 http://127.0.0.1:{FRONTEND_PORT}，其他设备访问 http://<服务器IP>:{FRONTEND_PORT}（未启动扫描 Agent）")
+        print(f"本地界面已启动：监听 {LISTEN_HOST}:{FRONTEND_PORT}，本机访问 http://127.0.0.1:{FRONTEND_PORT}，其他设备访问 http://<服务器IP>:{FRONTEND_PORT}（本次不启动扫描 Agent）")
         return
     check = subprocess.run([str(value) for value in agent_args() + ["--check"]], env=env)
     if check.returncode and not args.no_tools_install:
@@ -599,6 +650,12 @@ def main():
     start_parser.add_argument("--no-tools-install", action="store_true")
     start_parser.add_argument("--ui-only", action="store_true")
     start_parser.set_defaults(function=start)
+    run_parser = sub.add_parser("run", help="启动已部署的程序，不构建或安装工具")
+    run_parser.add_argument("--ui-only", action="store_true")
+    run_parser.set_defaults(function=run_existing)
+    restart_parser = sub.add_parser("restart", help="重启已部署的程序，不构建或安装工具")
+    restart_parser.add_argument("--ui-only", action="store_true")
+    restart_parser.set_defaults(function=restart_existing)
     sub.add_parser("stop").set_defaults(function=stop)
     sub.add_parser("status").set_defaults(function=status)
     args = parser.parse_args()

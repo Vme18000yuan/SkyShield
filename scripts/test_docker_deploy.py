@@ -29,11 +29,38 @@ args = sys.argv[1:]
 with open(os.environ["SKYSHIELD_TEST_DOCKER_CALLS"], "a") as f:
     f.write(json.dumps(args) + "\\n")
 owners = json.loads(os.environ.get("SKYSHIELD_TEST_VOLUME_OWNERS", "{}"))
+state_path = os.environ["SKYSHIELD_TEST_CONTAINER_STATES"]
+try:
+    with open(state_path) as f:
+        states = json.load(f)
+except FileNotFoundError:
+    states = {}
 if args[:2] == ["volume", "inspect"]:
     if args[2] not in owners:
         sys.exit(1)
     if "--format" in args:
         print(owners[args[2]])
+if "compose" in args and "ps" in args and "--quiet" in args:
+    service = args[-1]
+    if service != os.environ.get("SKYSHIELD_TEST_MISSING_CONTAINER"):
+        print("fixture-" + service)
+if args and args[0] == "inspect":
+    service = args[-1].removeprefix("fixture-")
+    state = states.get(service, "exited")
+    fmt = args[args.index("--format") + 1]
+    if ".State.ExitCode" in fmt:
+        code = 1 if service == os.environ.get("SKYSHIELD_TEST_FAILED_INIT") else 0
+        print(f"{state} {code}")
+    elif ".State.Health" in fmt:
+        health = "healthy" if state == "running" and service in ("postgres", "redis", "loki", "server", "frontend") else "none"
+        print(f"{state} {health}")
+    else:
+        print(state)
+if args and args[0] in ("start", "stop"):
+    service = args[-1].removeprefix("fixture-")
+    states[service] = "running" if args[0] == "start" else "exited"
+    with open(state_path, "w") as f:
+        json.dump(states, f)
 if "port" in args and "nginx" in args:
     print("0.0.0.0:18443")
 ''')
@@ -41,6 +68,7 @@ if "port" in args and "nginx" in args:
         self.env = os.environ.copy()
         self.env["PATH"] = str(self.root / "bin") + os.pathsep + self.env["PATH"]
         self.env["SKYSHIELD_TEST_DOCKER_CALLS"] = str(self.root / "calls.jsonl")
+        self.env["SKYSHIELD_TEST_CONTAINER_STATES"] = str(self.root / "states.json")
 
     def tearDown(self):
         self.temp.cleanup()
@@ -110,6 +138,41 @@ if "port" in args and "nginx" in args:
         calls = self.calls()
         self.assertTrue(any("stop" in call for call in calls))
         self.assertFalse(any(call[:2] == ["volume", "inspect"] or "down" in call or "--volumes" in call for call in calls))
+
+    def test_run_starts_existing_containers_in_dependency_order_without_build_or_pull(self):
+        result = self.run_docker("run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("https://localhost:18443", result.stdout)
+        calls = self.calls()
+        starts = [call[-1] for call in calls if call[0] == "start"]
+        self.assertEqual(starts, ["fixture-" + service for service in ("postgres", "redis", "loki", "server", "frontend", "nginx", "agent")])
+        self.assertFalse(any("up" in call or "pull" in call or "--build" in call or "down" in call for call in calls))
+        self.assertFalse((self.root / ".local").exists())
+
+    def test_restart_stops_and_starts_existing_services_without_reinitializing(self):
+        services = ("postgres", "redis", "loki", "server", "frontend", "nginx", "agent")
+        Path(self.env["SKYSHIELD_TEST_CONTAINER_STATES"]).write_text(json.dumps({name: "running" for name in services}))
+        secret = self.root / ".local/secrets/db_password"
+        secret.parent.mkdir(parents=True)
+        secret.write_text("existing fixture")
+        result = self.run_docker("restart")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        stops = [call[-1] for call in calls if call[0] == "stop"]
+        starts = [call[-1] for call in calls if call[0] == "start"]
+        self.assertEqual(stops, ["fixture-" + name for name in ("agent", "nginx", "frontend", "server", "loki", "redis", "postgres")])
+        self.assertEqual(starts, ["fixture-" + name for name in services])
+        self.assertEqual(secret.read_text(), "existing fixture")
+        self.assertFalse(any("up" in call or "pull" in call or "--build" in call or "down" in call for call in calls))
+
+    def test_restart_refuses_missing_or_failed_initialization_before_stopping_services(self):
+        for key, value in (("SKYSHIELD_TEST_MISSING_CONTAINER", "server"), ("SKYSHIELD_TEST_FAILED_INIT", "bootstrap")):
+            with self.subTest(case=key):
+                self.env[key] = value
+                result = self.run_docker("restart")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any(call[0] in ("start", "stop") for call in self.calls()))
+                self.env.pop(key)
 
 
 class ComposeListenerTests(unittest.TestCase):

@@ -19,10 +19,17 @@ SkyShield 的 Docker 入口为项目根目录的 `./docker.sh`，它使用
 ```bash
 ./docker.sh                 # 从本地源码构建并启动
 ./docker.sh pull            # 拉取 Docker Hub 镜像并启动
+./docker-start.sh           # 启动已经部署的容器
+./docker-restart.sh         # 重启已经部署的容器
 ./docker.sh status          # 查看容器状态
 ./docker.sh logs            # 查看日志；可在后面指定服务名
 ./docker.sh stop            # 停止容器并保留数据卷
 ```
+
+日常启动和重启分别等价于 `./docker.sh run` 和 `./docker.sh restart`。
+它们复用当前部署的容器、镜像与数据卷，不重新构建、拉取镜像或执行初始化容器；
+需要先通过 `./docker.sh` 或 `./docker.sh pull` 完成部署。重启会中断正在执行的任务。
+更新镜像仍需执行 `./docker.sh pull`，更新本地构建仍需执行 `./docker.sh`。
 
 默认在 `0.0.0.0:8443` 监听，本机可访问 `https://127.0.0.1:8443`，
 其他设备可访问 `https://服务器IP:8443`；首次证书为自签名证书。

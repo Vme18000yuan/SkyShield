@@ -15,6 +15,75 @@ SPEC.loader.exec_module(deploy)
 
 
 class LocalDeployTests(unittest.TestCase):
+    def test_daily_start_and_restart_use_existing_build_without_installing_tools(self):
+        args = SimpleNamespace(ui_only=False)
+        with mock.patch.object(deploy, "check_existing_runtime") as check, mock.patch.object(deploy, "start") as start:
+            deploy.run_existing(args)
+            check.assert_called_once_with(args)
+            start.assert_called_once_with(args)
+            self.assertTrue(args.no_build)
+            self.assertTrue(args.no_tools_install)
+
+        args = SimpleNamespace(ui_only=True)
+        order = []
+        with mock.patch.object(deploy, "check_existing_runtime", side_effect=lambda _: order.append("check")), \
+             mock.patch.object(deploy, "read_state", return_value={}), \
+             mock.patch.object(deploy, "stop", side_effect=lambda _: order.append("stop")), \
+             mock.patch.object(deploy, "start", side_effect=lambda _: order.append("start")):
+            deploy.restart_existing(args)
+        self.assertEqual(order, ["check", "stop", "start"])
+        self.assertTrue(args.no_build)
+        self.assertTrue(args.no_tools_install)
+        self.assertTrue(args.ui_only)
+
+    def test_restart_does_not_stop_services_if_preflight_fails_or_process_is_unmanaged(self):
+        args = SimpleNamespace(ui_only=False)
+        with mock.patch.object(deploy, "check_existing_runtime", side_effect=RuntimeError("missing build")), \
+             mock.patch.object(deploy, "stop") as stop:
+            with self.assertRaisesRegex(RuntimeError, "missing build"):
+                deploy.restart_existing(args)
+            stop.assert_not_called()
+        with mock.patch.object(deploy, "check_existing_runtime"), \
+             mock.patch.object(deploy, "read_state", return_value={"server": {"owned": False}}), \
+             mock.patch.object(deploy, "alive", side_effect=lambda entry: bool(entry)), \
+             mock.patch.object(deploy, "stop") as stop:
+            with self.assertRaisesRegex(RuntimeError, "其他方式启动"):
+                deploy.restart_existing(args)
+            stop.assert_not_called()
+
+    def test_existing_runtime_requires_build_database_and_original_secrets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            binary = root / "bin"
+            pgdata = root / "postgres/data"
+            secrets = root / "secrets"
+            agent = root / "agent/bootstrap.json"
+            next_bin = root / "frontend/node_modules/.bin/next"
+            build = root / "frontend/.next/BUILD_ID"
+            for directory in (binary, pgdata, secrets, agent.parent, next_bin.parent, build.parent):
+                directory.mkdir(parents=True, exist_ok=True)
+            for path in (binary / "skyshield-server", binary / "skyshield-local-agent", next_bin):
+                path.touch(mode=0o700)
+            (pgdata / "PG_VERSION").write_text("16")
+            agent.write_text('{"instanceId":"fixture","agentId":1,"agentAuthenticationToken":"fixture"}')
+            build.write_text("existing")
+            for name in ("db_password", "jwt_secret", "ai_encryption_key"):
+                path = secrets / name
+                path.write_text("fixture")
+                path.chmod(0o600)
+            patches = {"ROOT": root, "BIN": binary, "PGDATA": pgdata, "SECRETS": secrets,
+                       "AGENT_CREDENTIALS": agent, "FRONTEND_BUILD": root / "missing-pointer.json"}
+            with contextlib.ExitStack() as stack:
+                for name, path in patches.items():
+                    stack.enter_context(mock.patch.object(deploy, name, path))
+                stack.enter_context(mock.patch.object(deploy, "pg_binary", return_value="fixture"))
+                stack.enter_context(mock.patch.object(deploy, "executable", return_value="fixture"))
+                deploy.check_existing_runtime(SimpleNamespace(ui_only=True))
+                (secrets / "ai_encryption_key").unlink()
+                with self.assertRaisesRegex(RuntimeError, "密钥缺失"):
+                    deploy.check_existing_runtime(SimpleNamespace(ui_only=True))
+                self.assertFalse((secrets / "ai_encryption_key").exists())
+
     def test_prepare_directories_preserves_wordlist_bootstrap_state(self):
         with tempfile.TemporaryDirectory() as temporary:
             data = pathlib.Path(temporary) / "data"
