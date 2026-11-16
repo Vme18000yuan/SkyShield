@@ -320,11 +320,6 @@ export function AppSidebar({ warmup = false, ...props }: React.ComponentProps<ty
                     icon: semanticIcons.concept.scheduledScan,
                 },
                 {
-                    title: t('aiFindingReviews'),
-                    url: "/ai/finding-reviews/",
-                    icon: semanticIcons.concept.vulnerability,
-                },
-                {
                     title: t('aiSchedules'),
                     url: "/ai/schedules/",
                     icon: semanticIcons.action.schedule,

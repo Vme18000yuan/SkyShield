@@ -131,6 +131,52 @@ func TestAgentTriggerBackgroundConversationsIsolatedPostgres(t *testing.T) {
 	}
 	assertList([]string{manual}, []string{claimed.ConversationID})
 
+	// Retired review jobs must never be claimed, including before the first
+	// reconciliation. Running reviews stop cooperatively; other jobs survive.
+	queuedReview := createConversation(owner, "reporter")
+	queuedReviewJob := insertJob(owner, "reporter", "finding-case-review:"+queuedReview, "queued", &queuedReview)
+	if next, e := jobs.ClaimAgentJob(ctx); e != nil || next != nil {
+		t.Fatalf("retired queued review was claimed: %+v %v", next, e)
+	}
+	startingReview := createConversation(owner, "reporter")
+	startingReviewJob := insertJob(owner, "reporter", "finding-case-review:"+startingReview, "starting", &startingReview)
+	runningReview := createConversation(owner, "reporter")
+	runningReviewJob := insertJob(owner, "reporter", "finding-case-review:"+runningReview, "starting", &runningReview)
+	reviewRun, reviewInstance := uuid.NewString(), uuid.NewString()
+	if err = conversations.BeginRun(aiapp.WithAgentTriggerJob(ctx, runningReviewJob), owner, runningReview, reviewRun, reviewInstance, "legacy review"); err != nil {
+		t.Fatal(err)
+	}
+	otherReporter := createConversation(owner, "reporter")
+	otherReporterJob := insertJob(owner, "reporter", "902/event/1", "queued", &otherReporter)
+	otherRetest := createConversation(owner, "retester")
+	otherRetestJob := insertJob(owner, "retester", "retest:9999", "queued", &otherRetest)
+	if err = jobs.ReconcileAgentJobs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []struct {
+		id   int64
+		want string
+	}{{queuedReviewJob, "cancelled"}, {startingReviewJob, "cancelled"}, {runningReviewJob, "running"}, {otherReporterJob, "queued"}, {otherRetestJob, "queued"}} {
+		var status string
+		if err = db.QueryRowContext(ctx, `SELECT status FROM ai_agent_trigger_job WHERE id=$1`, check.id).Scan(&status); err != nil || status != check.want {
+			t.Fatalf("job %d state=%q, want %q: %v", check.id, status, check.want, err)
+		}
+	}
+	var reviewRunState string
+	if err = db.QueryRowContext(ctx, `SELECT status FROM ai_run WHERE id=$1`, reviewRun).Scan(&reviewRunState); err != nil || reviewRunState != "stopping" {
+		t.Fatalf("running review state=%q, want stopping: %v", reviewRunState, err)
+	}
+	if err = conversations.FinishRun(ctx, owner, runningReview, reviewRun, reviewInstance, "failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err = jobs.ReconcileAgentJobs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var reviewJobState string
+	if err = db.QueryRowContext(ctx, `SELECT status FROM ai_agent_trigger_job WHERE id=$1`, runningReviewJob).Scan(&reviewJobState); err != nil || reviewJobState != "cancelled" {
+		t.Fatalf("stopped review job state=%q: %v", reviewJobState, err)
+	}
+
 	review := createConversation(owner, "reporter")
 	insertJob(owner, "reporter", "finding-case-review:"+review, "queued", &review)
 	retest := createConversation(owner, "retester")

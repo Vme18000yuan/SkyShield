@@ -7,7 +7,6 @@ import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import { Markdown } from "@/components/settings/ai/artex-markdown"
 import { FindingCaseSuggestions } from "@/components/ai/artex/finding-case-suggestions"
-import { FindingCaseReviews, type FindingReviewSeed } from "@/components/ai/artex/finding-case-reviews"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -49,8 +48,6 @@ function TaskFindingCasesInner({ taskId, severity, query: filterQuery, mergeSeed
   const [reportSeverity, setReportSeverity] = React.useState("high")
   const [reportReason, setReportReason] = React.useState("")
   const [report, setReport] = React.useState("")
-  const [reviewSeed, setReviewSeed] = React.useState<FindingReviewSeed | null>(null)
-  const consumeReviewSeed = React.useCallback(() => setReviewSeed(null), [])
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => { setQuery(search.trim()); setFindingPage(0) }, 300)
@@ -114,7 +111,6 @@ function TaskFindingCasesInner({ taskId, severity, query: filterQuery, mergeSeed
   return <section className="space-y-3 rounded border p-3">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-medium">{t("title")}</h3><p className="text-xs text-muted-foreground">{t("description")}</p></div><Button size="sm" variant="outline" onClick={() => setMergeOpen(true)}>{t("merge")}</Button></div>
     <FindingCaseSuggestions taskId={taskId}/>
-    <FindingCaseReviews taskId={taskId} seed={reviewSeed} onSeedConsumed={consumeReviewSeed}/>
     {list.isError ? <p role="alert" className="text-sm text-destructive">{t("loadError")}</p> : <div className="divide-y rounded border">
       {list.data?.items?.map(item => <article key={item.id} className="flex flex-wrap items-center gap-2 p-3 text-sm"><div className="min-w-0 flex-1"><strong className="break-words">{item.title}</strong><p className="break-words text-xs text-muted-foreground">{item.reason}</p>{item.inherited && <span className="text-xs text-muted-foreground">{findingsT("inherited", { name: item.task_name })}</span>}</div><Badge variant="outline">{t("memberCount", { count: item.member_count })}</Badge>{item.has_report && item.report_version < item.version && <span className="text-xs text-muted-foreground">{t("reportOutdated")}</span>}<Button size="sm" variant="outline" onClick={() => setSelectedId(item.id)}>{t("details")}</Button></article>)}
       {!list.isLoading && !list.data?.items?.length && <p className="p-3 text-sm text-muted-foreground">{t("empty")}</p>}
@@ -135,7 +131,6 @@ function TaskFindingCasesInner({ taskId, severity, query: filterQuery, mergeSeed
     <Dialog open={!!selectedId} onOpenChange={open => { if (!open) setSelectedId(null) }}><DialogContent className="max-h-[90vh] overflow-auto sm:max-w-4xl"><DialogHeader><DialogTitle>{detail.data?.title || t("details")}</DialogTitle><DialogDescription>{detail.data?.reason || t("detailsDescription")}</DialogDescription></DialogHeader>
       {detail.isError ? <p role="alert" className="text-sm text-destructive">{t("loadError")}</p> : detail.data ? <div className="space-y-4">
         {detail.data.inherited && <p className="text-sm text-muted-foreground">{t("readOnly")} <Link className="text-primary underline" href={`/ai/tasks/${encodeURIComponent(detail.data.task_id)}/`}>{detail.data.task_name}</Link></p>}
-        {!detail.data.inherited && !!detail.data.members?.length && <div className="flex justify-end"><Button size="sm" variant="outline" onClick={() => { setReviewSeed({ findings: Object.fromEntries(detail.data!.members!.map(item => [item.id, label(item)])), caseId: detail.data!.id }); setSelectedId(null) }}>{t("reviewGroup")}</Button></div>}
         <section><h4 className="text-sm font-medium">{t("members")}</h4><div className="mt-2 divide-y rounded border">{detail.data.members?.map(item => <div key={item.id} className="flex flex-wrap items-center gap-2 p-2 text-sm"><div className="min-w-0 flex-1"><strong className="break-words">{label(item)}</strong><p className="break-words text-xs text-muted-foreground">{item.summary}</p></div><Badge variant="outline">{item.severity || "—"}</Badge><Button size="sm" variant="outline" onClick={() => setMemberId(current => current === item.id ? null : item.id)}>{memberId === item.id ? t("hideEvidence") : t("evidence")}</Button>{!detail.data!.inherited && <Button size="sm" variant="outline" onClick={() => { setDetachId(item.id); setDetachReason("") }}>{t("detach")}</Button>}</div>)}</div>
           {selectedMember && <div className="mt-2 rounded border p-3"><h5 className="text-sm font-medium">{label(selectedMember)} · {findingsT("evidence")}</h5>{memberDetail.isError ? <p role="alert" className="text-sm text-destructive">{findingsT("loadError")}</p> : memberDetail.data ? <><pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-muted p-3 text-xs">{memberDetail.data.evidence || findingsT("noEvidence")}</pre>{memberDetail.data.report && <div className="mt-2"><Markdown text={memberDetail.data.report} /></div>}</> : <p className="text-sm text-muted-foreground">{findingsT("loading")}</p>}</div>}
         </section>

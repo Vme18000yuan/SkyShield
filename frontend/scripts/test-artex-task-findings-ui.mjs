@@ -25,7 +25,6 @@ try{
   if(path==='/v1/aiTasks/30/assetInterceptRules')data={rules:[]}
   if(path==='/v1/aiTasks/30/findingCases')data={items:[],total:0,page:0,size:25}
   if(path==='/v1/aiTasks/30/findingCaseSuggestions')data={items:[],total:0,page:0,size:25}
-  if(path==='/v1/aiTasks/30/findingCaseReviews')data={items:[],total:0,page:0,size:25}
   if(path==='/v1/aiModelUsage/tasks/30')data={models:[]}
   if(path==='/v1/aiTasks/30/findings'){
    const severity=url.searchParams.get('severity'),q=url.searchParams.get('q'),page=Number(url.searchParams.get('page')||0);queries.push({severity,q,page})

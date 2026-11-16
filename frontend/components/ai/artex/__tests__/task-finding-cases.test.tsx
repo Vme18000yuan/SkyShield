@@ -20,17 +20,13 @@ const findings = [
 const own = { id: "8", task_id: "30", task_name: "Current", title: "Own group", reason: "same issue", severity: "", version: 2, report_version: 0, has_report: false, member_count: 2, inherited: false, created_at: "2026-01-01T00:00:00Z", members: findings, events: [{ id: "10", action: "merge", actor: "human", reason: "historical reason", finding_ids: ["1", "2"], created_at: "2026-01-01T00:00:00Z" }] }
 const inherited = { ...own, id: "9", task_id: "10", task_name: "Source task", title: "Inherited group", inherited: true, events: [] }
 const suggestion = { id: "20", task_id: "30", task_name: "Current", title: "Possible group", reason: "same endpoint", inherited: false, created_at: "2026-01-01T00:00:00Z", members: [...findings, { ...findings[1], id: "3", name: "Gamma" }] }
-const completedReview = { id: "50", task_id: "30", conversation_id: "22222222-2222-4222-8222-222222222222", state: "completed", error: "", finding_count: 1, created_at: "2026-01-01T00:00:00Z", findings: [findings[0]], conclusion: { summary: "Reviewed", decisions: [{ finding_id: "1", verdict: "independent", reason: "different path", root_cause_evidence: "proof" }] } }
 
 describe("task finding groups", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     let pending = [suggestion]
-    let reviews = [completedReview]
     requests.get.mockImplementation(async (url: string) => {
       if (url.endsWith("/findingCaseSuggestions")) return { data: { items: pending, total: pending.length, page: 0, size: 25 } }
-      if (url.endsWith("/findingCaseReviews")) return { data: { items: reviews, total: reviews.length, page: 0, size: 25 } }
-      if (url.endsWith("/findingCaseReviews/50")) return { data: completedReview }
       if (url.endsWith("/findingCases")) return { data: { items: [own, inherited], total: 2, page: 0, size: 25 } }
       if (url.endsWith("/findingCases/8")) return { data: own }
       if (url.endsWith("/findingCases/9")) return { data: inherited }
@@ -39,7 +35,7 @@ describe("task finding groups", () => {
       if (url.endsWith("/findings/1")) return { data: findings[0] }
       throw new Error(`unexpected GET ${url}`)
     })
-    requests.post.mockImplementation(async (url: string) => { if (url.endsWith("/findingCaseSuggestions/20/resolve")) pending = []; if (url.endsWith("/findingCaseReviews")) reviews = [{ ...completedReview, id: "51", state: "queued" }, ...reviews]; if (url.endsWith("/findingCaseReviews/51/cancel")) reviews = reviews.map(item => item.id === "51" ? { ...item, state: "stopped" } : item); return { data: { updated: true } } })
+    requests.post.mockImplementation(async (url: string) => { if (url.endsWith("/findingCaseSuggestions/20/resolve")) pending = []; return { data: { updated: true } } })
     requests.put.mockResolvedValue({ data: { updated: true } })
   })
 
@@ -142,74 +138,16 @@ describe("task finding groups", () => {
     await waitFor(() => expect(requests.post).toHaveBeenCalledWith("/aiTasks/30/findingCaseSuggestions/20/resolve", { accept: false, exclude: [] }))
   })
 
-  it("starts and cancels a queued historical review and shows completed decisions", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-    render(<QueryClientProvider client={client}><TaskFindingCases taskId="30" /></QueryClientProvider>)
-    await screen.findByText("state.completed")
-    const completedRow = screen.getByText("state.completed").closest("article")!
-    fireEvent.click(within(completedRow).getByRole("button", { name: "details" }))
-    let dialog = await screen.findByRole("dialog")
-    await within(dialog).findByText("Reviewed")
-    expect(within(dialog).getByText(/Alpha.*verdict.independent/)).toBeVisible()
-    fireEvent.click(within(dialog).getByRole("button", { name: "close" }))
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
-    fireEvent.click(screen.getByRole("button", { name: "start" }))
-    dialog = await screen.findByRole("dialog")
-    fireEvent.click(await within(dialog).findByRole("checkbox", { name: /Alpha/ }))
-    fireEvent.click(within(dialog).getByRole("button", { name: "confirmStart" }))
-    await waitFor(() => expect(requests.post).toHaveBeenCalledWith("/aiTasks/30/findingCaseReviews", { finding_ids: ["1"] }))
-    const queued = await screen.findByText("state.queued")
-    fireEvent.click(within(queued.closest("article")!).getByRole("button", { name: "stop" }))
-    await waitFor(() => expect(requests.post).toHaveBeenCalledWith("/aiTasks/30/findingCaseReviews/51/cancel"))
-    await screen.findByText("state.stopped")
-  })
-
-  it("prefills an AI review from an owned group", async () => {
+  it("does not offer AI review from a task or finding group", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     render(<QueryClientProvider client={client}><TaskFindingCases taskId="30" /></QueryClientProvider>)
     const row = (await screen.findByText("Own group")).closest("article")!
+    expect(screen.queryByRole("button", { name: "start" })).not.toBeInTheDocument()
     fireEvent.click(within(row).getByRole("button", { name: "details" }))
-    let dialog = await screen.findByRole("dialog")
-    fireEvent.click(await within(dialog).findByRole("button", { name: "reviewGroup" }))
-    await screen.findByText("selectDescription")
-    dialog = screen.getByRole("dialog")
-    expect(within(dialog).getByText('selected:{"count":2}')).toBeVisible()
-    fireEvent.click(within(dialog).getByRole("button", { name: "confirmStart" }))
-    await waitFor(() => expect(requests.post).toHaveBeenCalledWith("/aiTasks/30/findingCaseReviews", { finding_ids: ["1", "2"] }))
-  })
-
-  it("selects or removes the whole group when choosing a grouped finding", async () => {
-    const originalGet = requests.get.getMockImplementation()!
-    requests.get.mockImplementation(async (url: string, ...args: unknown[]) => url.endsWith("/findings")
-      ? { data: { items: [{ ...findings[0], case_id: "8" }], total: 1, page: 0, size: 25 } }
-      : originalGet(url, ...args))
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-    render(<QueryClientProvider client={client}><TaskFindingCases taskId="30" /></QueryClientProvider>)
-    fireEvent.click(await screen.findByRole("button", { name: "start" }))
     const dialog = await screen.findByRole("dialog")
-    const alpha = await within(dialog).findByRole("checkbox", { name: /Alpha/ })
-    fireEvent.click(alpha)
-    await within(dialog).findByText('selected:{"count":2}')
-    fireEvent.click(within(dialog).getByRole("button", { name: 'removeSelected:{"name":"Beta"}' }))
-    expect(within(dialog).getByText('selected:{"count":0}')).toBeVisible()
-    fireEvent.click(alpha)
-    await within(dialog).findByText('selected:{"count":2}')
-    fireEvent.click(within(dialog).getByRole("button", { name: "confirmStart" }))
-    await waitFor(() => expect(requests.post).toHaveBeenCalledWith("/aiTasks/30/findingCaseReviews", { finding_ids: ["1", "2"] }))
-  })
-
-  it("removes the whole group from a prefilled review", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-    render(<QueryClientProvider client={client}><TaskFindingCases taskId="30" /></QueryClientProvider>)
-    const row = (await screen.findByText("Own group")).closest("article")!
-    fireEvent.click(within(row).getByRole("button", { name: "details" }))
-    const detail = await screen.findByRole("dialog")
-    fireEvent.click(await within(detail).findByRole("button", { name: "reviewGroup" }))
-    await screen.findByText("selectDescription")
-    const dialog = screen.getByRole("dialog")
-    fireEvent.click(within(dialog).getByRole("button", { name: 'removeSelected:{"name":"Alpha"}' }))
-    expect(within(dialog).getByText('selected:{"count":0}')).toBeVisible()
-    expect(within(dialog).getByRole("button", { name: "confirmStart" })).toBeDisabled()
+    await within(dialog).findByText("Alpha")
+    expect(within(dialog).queryByRole("button", { name: "reviewGroup" })).not.toBeInTheDocument()
+    expect(requests.get.mock.calls.every(([url]) => !String(url).includes("findingCaseReviews"))).toBe(true)
   })
 
   it("opens an authorized finding from a direct task link", async () => {

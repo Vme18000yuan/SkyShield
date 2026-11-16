@@ -12,7 +12,7 @@ const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const requireFromVitest = createRequire(await realpath(path.join(frontend, "node_modules/vitest/package.json")))
 const viteBin = path.join(path.dirname(requireFromVitest.resolve("vite/package.json")), "bin/vite.js")
 const temporary = await mkdtemp(path.join(os.tmpdir(), "skyshield-case-browser-"))
-const port = 33326
+const port = Number(process.env.SKYSHIELD_CASE_TEST_PORT || 33326)
 const origin = `http://127.0.0.1:${port}`
 const zh = JSON.parse(await readFile(path.join(frontend, "messages/zh.json"), "utf8"))
 await symlink(path.join(frontend, "node_modules"), path.join(temporary, "node_modules"))
@@ -21,10 +21,9 @@ await writeFile(path.join(temporary, "entry.tsx"), `import React from "react";
 import {createRoot} from "react-dom/client";
 import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {TaskFindings} from ${JSON.stringify(path.join(frontend, "components/ai/artex/task-findings.tsx"))};
-import {GlobalFindingReview} from ${JSON.stringify(path.join(frontend, "components/ai/artex/global-finding-review.tsx"))};
-createRoot(document.getElementById("root")!).render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}>{location.pathname==='/global'?<GlobalFindingReview/>:<TaskFindings taskId="30"/>}</QueryClientProvider>);
+createRoot(document.getElementById("root")!).render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><TaskFindings taskId="30"/></QueryClientProvider>);
 `)
-await writeFile(path.join(temporary, "i18n.ts"), `const messages=${JSON.stringify({ aiFindingCases: zh.aiFindingCases, aiFindingDuplicates: zh.aiFindingDuplicates, aiFindingSuggestions: zh.aiFindingSuggestions, aiFindingReviews: zh.aiFindingReviews, aiGlobalFindingReview: zh.aiGlobalFindingReview, aiFindings: zh.aiFindings, common: zh.common })};
+await writeFile(path.join(temporary, "i18n.ts"), `const messages=${JSON.stringify({ aiFindingCases: zh.aiFindingCases, aiFindingDuplicates: zh.aiFindingDuplicates, aiFindingSuggestions: zh.aiFindingSuggestions, aiFindings: zh.aiFindings, common: zh.common })};
 export function useTranslations(namespace:string){return (key:string,params:Record<string,unknown>={})=>{let value:any=namespace.split('.').reduce((v,k)=>v?.[k],messages as any);for(const part of key.split('.'))value=value?.[part];return typeof value==='string'?value.replace(/\\{(\\w+)\\}/g,(_:string,k:string)=>String(params[k]??'')):key}};
 `)
 await writeFile(path.join(temporary, "auth.ts"), `export const useAuth=()=>({data:{user:{id:7}}});`)
@@ -72,19 +71,13 @@ try {
   const inherited = { ...own, id: "9", task_id: "10", task_name: "来源任务", title: "继承归并组", inherited: true, events: [] }
   const suggestion = { id: "20", task_id: "30", task_name: "当前任务", title: "待确认建议", reason: "同一端点但根因待确认", inherited: false, created_at: new Date().toISOString(), members: [...findings, { ...findings[1], id: "3", name: "测试发现丙" }] }
   let pendingSuggestions = [suggestion]
-  let reviewRows = []
   const requests = []
   await context.route("**/v1/**", async route => {
     const request = route.request(), url = new URL(request.url()), pathname = url.pathname
     requests.push({ pathname, method: request.method(), body: request.postDataJSON?.() })
     let data = { updated: true }
     if (request.method() === "GET" && pathname.endsWith("/findingCaseSuggestions")) data = { items: pendingSuggestions, total: pendingSuggestions.length, page: 0, size: 25 }
-    else if (request.method() === "GET" && pathname === "/v1/aiFindingReviewCandidates") data = { items: [{ ...findings[0], task_id: "30", task_name: "任务甲", target_name: "a.example", in_group: true, case_id: "8" }, { ...findings[1], id: "3", name: "测试发现丙", task_id: "40", task_name: "任务乙", target_name: "b.example", in_group: false }], total: 2, page: 0, size: 25 }
-    else if (request.method() === "POST" && pathname === "/v1/aiFindingCaseReviews") data = { reviews: [{ id: "60", task_id: "30", conversation_id: "11111111-1111-4111-8111-111111111111", state: "queued", finding_count: 2 }, { id: "61", task_id: "40", conversation_id: "22222222-2222-4222-8222-222222222222", state: "queued", finding_count: 1 }] }
     else if (request.method() === "POST" && pathname.endsWith("/findingCaseSuggestions/20/resolve")) pendingSuggestions = []
-    else if (request.method() === "GET" && pathname.endsWith("/findingCaseReviews")) data = { items: reviewRows, total: reviewRows.length, page: 0, size: 25 }
-    else if (request.method() === "POST" && pathname.endsWith("/findingCaseReviews")) reviewRows = [{ id: "50", task_id: "30", conversation_id: "22222222-2222-4222-8222-222222222222", state: "queued", error: "", finding_count: 2, created_at: new Date().toISOString() }]
-    else if (request.method() === "POST" && pathname.endsWith("/findingCaseReviews/50/cancel")) reviewRows = reviewRows.map(item => ({ ...item, state: "stopped" }))
     else if (request.method() === "GET" && pathname.endsWith("/findingCases")) data = { items: [own, inherited], total: 2, page: 0, size: 25 }
     else if (request.method() === "GET" && pathname.endsWith("/findingCases/8")) data = own
     else if (request.method() === "GET" && pathname.endsWith("/findingCases/9")) data = inherited
@@ -121,18 +114,7 @@ try {
   await dialog.getByLabel("统一报告", { exact: true }).fill("报告内容")
   await dialog.getByRole("button", { name: "保存报告" }).click()
   await expect.poll(() => requests.some(item => item.method === "PUT" && item.body?.report === "报告内容" && item.body?.version === 2)).toBe(true)
-  await dialog.getByRole("button", { name: "AI 审查整组" }).click()
-  dialog = page.getByRole("dialog")
-  await expect(dialog.getByText("已选择 2 条")).toBeVisible()
-  await dialog.getByRole("button", { name: "开始审查" }).click()
-  await expect.poll(() => requests.some(item => item.method === "POST" && item.pathname.endsWith("/findingCaseReviews") && item.body?.finding_ids?.length === 2)).toBe(true)
-  await expect(dialog).toHaveCount(0)
-  await page.locator("article").filter({ hasText: "等待中" }).getByRole("button", { name: "停止" }).click()
-  await expect.poll(() => requests.some(item => item.pathname.endsWith("/findingCaseReviews/50/cancel"))).toBe(true)
-  await expect(page.getByText("已停止", { exact: true })).toBeVisible()
-  await page.locator("article").filter({ hasText: "测试归并组" }).getByRole("button", { name: "查看归并组" }).click()
-  dialog = page.getByRole("dialog")
-  await expect(dialog.getByText("测试发现甲", { exact: true })).toBeVisible()
+  await expect(dialog.getByRole("button", { name: "AI 审查整组" })).toHaveCount(0)
   const reopenedRow = dialog.getByText("测试发现甲", { exact: true }).locator("..").locator("..")
   await reopenedRow.getByRole("button", { name: "移出", exact: true }).click()
   await dialog.getByRole("textbox", { name: "移出理由" }).fill("不是同一问题")
@@ -166,20 +148,10 @@ try {
   await expect(dialog.getByText("证据甲")).toBeVisible()
   await dialog.getByRole("button", { name: "确认归并" }).click()
   await expect.poll(() => requests.some(item => item.pathname.endsWith("/findingCaseSuggestions/20/resolve") && item.body?.accept === true && item.body?.exclude?.includes("3"))).toBe(true)
-  await page.goto(`${origin}/global`, { waitUntil: "domcontentloaded" })
-  await page.getByRole("checkbox", { name: "选择 任务甲 的 测试发现甲" }).click()
-  await expect(page.getByRole("button", { name: "移除 任务甲 的 测试发现乙" })).toBeVisible()
-  await page.getByRole("button", { name: "移除 任务甲 的 测试发现乙" }).click()
-  await expect(page.getByRole("checkbox", { name: "选择 任务甲 的 测试发现甲" })).not.toBeChecked()
-  await page.getByRole("checkbox", { name: "选择 任务甲 的 测试发现甲" }).click()
-  await expect(page.getByRole("button", { name: "移除 任务甲 的 测试发现乙" })).toBeVisible()
-  await page.getByRole("checkbox", { name: "选择 任务乙 的 测试发现丙" }).check()
-  await page.getByRole("button", { name: "发起批量审查" }).click()
-  await expect.poll(() => requests.some(item => item.pathname === "/v1/aiFindingCaseReviews" && item.body?.batches?.length === 2 && item.body.batches.some(batch => batch.task_id === "30" && batch.finding_ids.join(",") === "1,2") && item.body.batches.some(batch => batch.task_id === "40" && batch.finding_ids.join(",") === "3"))).toBe(true)
-  await expect(page.getByText("已排队的审查")).toBeVisible()
-  await expect(page.getByRole("link", { name: "查看执行记录" })).toHaveCount(2)
+  await expect(page.getByRole("button", { name: "发起 AI 审查" })).toHaveCount(0)
+  expect(requests.some(item => item.pathname.includes("findingCaseReviews") || item.pathname === "/v1/aiFindingCaseReviews")).toBe(false)
   expect(errors).toEqual([])
-  console.log(JSON.stringify({ passed: true, merge: true, evidence: true, report: true, detach: true, inheritedReadOnly: true, duplicateHints: true, suggestionReview: true, historicalReview: true, crossTaskReview: true, groupSelection: true }))
+  console.log(JSON.stringify({ passed: true, merge: true, evidence: true, report: true, detach: true, inheritedReadOnly: true, duplicateHints: true, suggestionReview: true, aiReviewRemoved: true }))
 } finally {
   if (browser) await browser.close()
   if (server.exitCode === null) {

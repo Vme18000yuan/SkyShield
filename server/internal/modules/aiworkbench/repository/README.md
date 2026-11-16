@@ -24,3 +24,9 @@
   an explicitly started user run remains visible, as do manual Reporter chats,
   historical finding reviews, retests, and other agents' conversations.
   Filtering never removes records or changes report generation.
+
+- Historical finding review creation is retired. The dispatcher excludes its
+  jobs and reconciliation cancels queued/starting reviews or requests a
+  cooperative stop for running reviews. Historical records and read/cancel
+  access remain available for audit; automatic Reporter jobs and retests are
+  unaffected.

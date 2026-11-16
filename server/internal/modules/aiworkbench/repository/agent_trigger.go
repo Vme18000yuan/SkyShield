@@ -161,6 +161,17 @@ func enqueueAgentJob(tx *gorm.DB, row triggerRow, options airuntime.AgentOptions
 
 func (s *AgentTriggerStore) ReconcileAgentJobs(ctx context.Context) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Historical finding reviews are retired. Serialize with claiming so a
+		// waiting review cannot start while its job is being cancelled.
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(?,?)`, 0x4147454e, 0x4a4f4253).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`UPDATE ai_run r SET status='stopping',terminal_reason='user_stop' FROM ai_agent_trigger_job j WHERE j.tenant_id=? AND j.agent_key='reporter' AND j.event_key LIKE 'finding-case-review:%' AND j.status='running' AND j.run_id=r.id AND r.tenant_id=j.tenant_id AND r.owner_user_id=j.owner_user_id AND r.status='running'`, assets.DefaultTenantID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`UPDATE ai_agent_trigger_job SET status='cancelled',error_message='AI 漏洞审查功能已停用',updated_at=CURRENT_TIMESTAMP WHERE tenant_id=? AND agent_key='reporter' AND event_key LIKE 'finding-case-review:%' AND status IN ('queued','starting')`, assets.DefaultTenantID).Error; err != nil {
+			return err
+		}
 		if err := tx.Exec(`UPDATE ai_run r SET status='interrupted',terminal_reason='lease_expired',finished_at=CURRENT_TIMESTAMP,error_message='触发运行租约已过期' FROM ai_agent_trigger_job j WHERE j.tenant_id=? AND j.run_id=r.id AND j.status='running' AND r.status IN ('running','stopping') AND r.lease_until<=CURRENT_TIMESTAMP`, assets.DefaultTenantID).Error; err != nil {
 			return err
 		}
@@ -195,7 +206,7 @@ func (s *AgentTriggerStore) ClaimAgentJob(ctx context.Context) (*aiapp.AgentTrig
 			AgentKey, Message, Title, Options, EventKey string
 			ConversationID                              *string
 		}
-		if err := tx.Raw(`SELECT j.id,j.owner_user_id,j.agent_key,j.message,j.title,j.event_key,COALESCE(o.options::text,'{}') options,j.conversation_id::text FROM ai_agent_trigger_job j JOIN ai_custom_agent a ON a.tenant_id=j.tenant_id AND a.agent_key=j.agent_key LEFT JOIN ai_agent_option o ON o.tenant_id=j.tenant_id AND o.agent_key=j.agent_key JOIN tenant_membership m ON m.tenant_id=j.tenant_id AND m.user_id=j.owner_user_id JOIN auth_user u ON u.id=m.user_id WHERE j.tenant_id=? AND j.status='queued' AND a.enabled=TRUE AND m.role IN ('admin','analyst') AND u.is_active=TRUE AND NOT EXISTS(SELECT 1 FROM ai_run r WHERE r.conversation_id=j.conversation_id AND r.status='running' AND r.lease_until>CURRENT_TIMESTAMP) ORDER BY j.id FOR UPDATE OF j SKIP LOCKED LIMIT 64`, assets.DefaultTenantID).Scan(&candidates).Error; err != nil {
+		if err := tx.Raw(`SELECT j.id,j.owner_user_id,j.agent_key,j.message,j.title,j.event_key,COALESCE(o.options::text,'{}') options,j.conversation_id::text FROM ai_agent_trigger_job j JOIN ai_custom_agent a ON a.tenant_id=j.tenant_id AND a.agent_key=j.agent_key LEFT JOIN ai_agent_option o ON o.tenant_id=j.tenant_id AND o.agent_key=j.agent_key JOIN tenant_membership m ON m.tenant_id=j.tenant_id AND m.user_id=j.owner_user_id JOIN auth_user u ON u.id=m.user_id WHERE j.tenant_id=? AND j.status='queued' AND NOT (j.agent_key='reporter' AND j.event_key LIKE 'finding-case-review:%') AND a.enabled=TRUE AND m.role IN ('admin','analyst') AND u.is_active=TRUE AND NOT EXISTS(SELECT 1 FROM ai_run r WHERE r.conversation_id=j.conversation_id AND r.status='running' AND r.lease_until>CURRENT_TIMESTAMP) ORDER BY j.id FOR UPDATE OF j SKIP LOCKED LIMIT 64`, assets.DefaultTenantID).Scan(&candidates).Error; err != nil {
 			return err
 		}
 		for _, candidate := range candidates {

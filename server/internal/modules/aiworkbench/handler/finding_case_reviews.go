@@ -2,8 +2,6 @@ package handler
 
 import (
 	"context"
-	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	aiapp "github.com/yyhuni/lunafox/server/internal/modules/aiworkbench/application"
@@ -11,7 +9,6 @@ import (
 )
 
 type findingCaseReviewApplication interface {
-	CreateCaseReview(context.Context, int, int64, []int64) (*aiapp.FindingCaseReview, error)
 	CaseReviews(context.Context, int, int64, int64, int, int) (aiapp.FindingCaseReviewPage, error)
 	CancelQueuedCaseReview(context.Context, int, int64, int64) error
 }
@@ -57,31 +54,6 @@ func (h *TaskHandler) FindingCaseReviews(c *gin.Context) {
 		return
 	}
 	c.Header("Cache-Control", "no-store")
-	if c.Request.Method == http.MethodPost {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8192)
-		var input struct {
-			FindingIDs []string `json:"finding_ids"`
-		}
-		if !httpdto.BindJSON(c, &input) {
-			return
-		}
-		ids := make([]int64, 0, len(input.FindingIDs))
-		for _, raw := range input.FindingIDs {
-			id, err := strconv.ParseInt(raw, 10, 64)
-			if err != nil || id <= 0 {
-				taskError(c, aiapp.ErrInvalidInput)
-				return
-			}
-			ids = append(ids, id)
-		}
-		review, err := app.CreateCaseReview(c.Request.Context(), user, task, ids)
-		if err != nil {
-			taskError(c, err)
-			return
-		}
-		httpdto.Success(c, review)
-		return
-	}
 	page, ok := trafficInt(c, "page", 0)
 	if !ok {
 		return

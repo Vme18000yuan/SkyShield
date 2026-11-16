@@ -502,8 +502,8 @@ func TestARTEXFindingCaseReviewsIsolatedPostgres(t *testing.T) {
 		t.Fatalf("stop running review: %q %v", queuedState, err)
 	}
 
-	// Exercise the dispatcher and real Agent tool loop, including the hosted
-	// review allowlist and the persisted conclusion handshake.
+	// Exercise the legacy Agent loop for an already-started review, including
+	// its tool allowlist and persisted conclusion. New reviews are not claimed.
 	agentReview, err := facade.CreateCaseReview(ctx, owner, task.ID, ids[2:3])
 	if err != nil {
 		t.Fatal(err)
@@ -536,11 +536,15 @@ func TestARTEXFindingCaseReviewsIsolatedPostgres(t *testing.T) {
 	jobCtx, stopJobs := context.WithCancel(ctx)
 	chat.Start(jobCtx)
 	defer func() { stopJobs(); <-chat.Done() }()
-	if err = triggerStore.InitializeAgentEvents(ctx); err != nil {
+	var agentJobID int64
+	var agentMessage string
+	if err = db.QueryRowContext(ctx, `SELECT j.id,j.message FROM ai_agent_trigger_job j JOIN ai_finding_case_review r ON r.job_id=j.id WHERE r.id=$1`, agentReview.ID).Scan(&agentJobID, &agentMessage); err != nil {
 		t.Fatal(err)
 	}
-	dispatcher := aiapp.NewAgentTriggerController(triggerStore, chat, nil)
-	if err = dispatcher.Tick(ctx, time.Now()); err != nil {
+	if _, err = db.ExecContext(ctx, `UPDATE ai_agent_trigger_job SET status='starting' WHERE id=$1 AND status='queued'`, agentJobID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = chat.Send(aiapp.WithAgentTriggerJob(ctx, agentJobID), owner, *agentReview.ConversationID, agentMessage); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(8 * time.Second)
@@ -600,18 +604,30 @@ func TestARTEXFindingCaseReviewsIsolatedPostgres(t *testing.T) {
 		t.Fatalf("foreign review HTTP: %d", out.Code)
 	}
 	created := request(http.MethodPost, base, ownerToken, fmt.Sprintf(`{"finding_ids":["%d"]}`, ids[2]))
-	var httpReview struct {
-		ID string `json:"id"`
+	if created.Code != http.StatusNotFound {
+		t.Fatalf("retired review create HTTP: %d %s", created.Code, created.Body.String())
 	}
-	if created.Code != http.StatusOK || json.Unmarshal(created.Body.Bytes(), &httpReview) != nil || httpReview.ID == "" {
-		t.Fatalf("review create HTTP: %d %s", created.Code, created.Body.String())
+	legacyReview, err := facade.CreateCaseReview(ctx, owner, task.ID, []int64{ids[2]})
+	if err != nil {
+		t.Fatal(err)
 	}
-	cancelPath := base + "/" + httpReview.ID + "/cancel"
+	cancelPath := fmt.Sprintf("%s/%d/cancel", base, legacyReview.ID)
 	if out := request(http.MethodPost, cancelPath, otherToken, ""); out.Code != http.StatusNotFound {
 		t.Fatalf("foreign review cancel HTTP: %d", out.Code)
 	}
 	if out := request(http.MethodPost, cancelPath, ownerToken, ""); out.Code != http.StatusOK {
 		t.Fatalf("review cancel HTTP: %d %s", out.Code, out.Body.String())
+	}
+	queuedReview, err := facade.CreateCaseReview(ctx, owner, task.ID, []int64{ids[2]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = airepo.NewAgentTriggerStore(orm).ReconcileAgentJobs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var retiredState string
+	if err = db.QueryRowContext(ctx, `SELECT state FROM ai_finding_case_review WHERE id=$1`, queuedReview.ID).Scan(&retiredState); err != nil || retiredState != "stopped" {
+		t.Fatalf("retired queued review state: %q %v", retiredState, err)
 	}
 	_, secondTarget, secondAsset := taskFixtureScope(t, ctx, db, "case-review-second.example")
 	secondTask, err := facade.Create(ctx, aiapp.CreateTaskInput{UserID: owner, Name: "第二个审查任务", Goal: "跨任务审查", TargetID: secondTarget, AssetIDs: []int64{secondAsset}})
@@ -724,25 +740,13 @@ func TestARTEXFindingCaseReviewsIsolatedPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if out := request(http.MethodGet, "/v1/aiFindingReviewCandidates?q=第二个审查任务", ownerToken, ""); out.Code != http.StatusOK || !strings.Contains(out.Body.String(), "第二任务发现") {
-		t.Fatalf("global candidates HTTP: %d %s", out.Code, out.Body.String())
+	if out := request(http.MethodGet, "/v1/aiFindingReviewCandidates?q=第二个审查任务", ownerToken, ""); out.Code != http.StatusNotFound {
+		t.Fatalf("retired global candidates HTTP: %d %s", out.Code, out.Body.String())
 	}
 	batchBody := fmt.Sprintf(`{"batches":[{"task_id":"%d","finding_ids":["%d"]},{"task_id":"%d","finding_ids":["%d"]}]}`, task.ID, ids[2], secondTask.ID, secondFinding.FindingID)
 	batchResponse := request(http.MethodPost, "/v1/aiFindingCaseReviews", ownerToken, batchBody)
-	var httpBatch struct {
-		Reviews []struct {
-			ID     string `json:"id"`
-			TaskID string `json:"task_id"`
-		} `json:"reviews"`
-	}
-	if batchResponse.Code != http.StatusOK || json.Unmarshal(batchResponse.Body.Bytes(), &httpBatch) != nil || len(httpBatch.Reviews) != 2 {
-		t.Fatalf("review batch HTTP: %d %s", batchResponse.Code, batchResponse.Body.String())
-	}
-	for _, item := range httpBatch.Reviews {
-		path := "/v1/aiTasks/" + item.TaskID + "/findingCaseReviews/" + item.ID + "/cancel"
-		if out := request(http.MethodPost, path, ownerToken, ""); out.Code != http.StatusOK {
-			t.Fatalf("cancel review batch HTTP: %d %s", out.Code, out.Body.String())
-		}
+	if batchResponse.Code != http.StatusNotFound {
+		t.Fatalf("retired review batch HTTP: %d %s", batchResponse.Code, batchResponse.Body.String())
 	}
 	var activityID int64
 	if err = db.QueryRowContext(ctx, `SELECT id FROM ai_conversation_activity WHERE conversation_id=$1::uuid AND detail LIKE '%proof-2%' ORDER BY id DESC LIMIT 1`, *agentReview.ConversationID).Scan(&activityID); err != nil {
