@@ -548,6 +548,13 @@
       "up": "000078_ai_conversation_vulnerability_reports.up.sql",
       "down": "000078_ai_conversation_vulnerability_reports.down.sql",
       "checksum": "sha256:012af97fefa461f47aa3a59c7d8b88429099f6111f11a8e186180dcfd543eecc"
+    },
+    {
+      "id": "000079",
+      "slug": "ai_task_vulnerability_projection",
+      "up": "000079_ai_task_vulnerability_projection.up.sql",
+      "down": "000079_ai_task_vulnerability_projection.down.sql",
+      "checksum": "sha256:635c6b70cc71cbd1f0b601c0742acd6c31e3550bbb5e9d36813f22f46d8ac692"
     }
   ]
 }
