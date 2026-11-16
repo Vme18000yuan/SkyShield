@@ -1,6 +1,7 @@
 package aivuln
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,13 +57,40 @@ func TestReportRequiresRealScopeAndEvidence(t *testing.T) {
 	if err := validateReport(r); err != nil {
 		t.Fatal(err)
 	}
-	for _, change := range []func(*Report){func(r *Report) { r.URL = "file:///etc/passwd" }, func(r *Report) { r.Severity = "severe" }, func(r *Report) { r.Evidence = "" }, func(r *Report) { r.EvidencePaths = []string{"../other/report.txt"} }, func(r *Report) { r.Response = "a\x00b" }} {
+	for _, change := range []func(*Report){func(r *Report) { r.URL = "file:///etc/passwd" }, func(r *Report) { r.Severity = "severe" }, func(r *Report) { r.Evidence = "" }, func(r *Report) { r.EvidencePaths = []string{"../other/report.txt"} }, func(r *Report) { r.Response = "a\x00b" }, func(r *Report) { r.Name = strings.Repeat("长", 1001) }, func(r *Report) { r.Name = "bad\x00name" }} {
 		bad := r
 		change(&bad)
 		if validateReport(bad) == nil {
 			t.Fatalf("accepted invalid report: %#v", bad)
 		}
 	}
+}
+
+func TestConversationReportNameSchemaAndLegacyCanonicalInput(t *testing.T) {
+	schema := (&Service{}).Tool(1).InputSchema()
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok || properties["name"] == nil {
+		t.Fatal("conversation report tool does not expose a name field")
+	}
+	required, ok := schema["required"].([]string)
+	if !ok || !containsString(required, "name") {
+		t.Fatal("conversation report tool does not require a name for new calls")
+	}
+	// Existing idempotency receipts hash this exact legacy shape. An omitted
+	// name must not change it when an older tool call is retried.
+	data, err := json.Marshal(Report{URL: "https://example.test/", VulnType: "access", Severity: "low", Summary: "summary", Evidence: "evidence"})
+	if err != nil || string(data) != `{"url":"https://example.test/","vuln_type":"access","severity":"low","summary":"summary","evidence":"evidence"}` {
+		t.Fatalf("legacy report canonical form changed: %s %v", data, err)
+	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func TestInfoGatherRawPacketPreservesBoundary(t *testing.T) {

@@ -43,6 +43,7 @@ func New(db *gorm.DB, root string, writer Writer) *Service {
 
 type Report struct {
 	TargetID      int      `json:"target_id,omitempty"`
+	Name          string   `json:"name,omitempty"`
 	URL           string   `json:"url"`
 	VulnType      string   `json:"vuln_type"`
 	Severity      string   `json:"severity"`
@@ -63,13 +64,13 @@ func validateReport(r Report) error {
 	if _, err := contractresults.ValidateObservedAssetURL(r.URL); err != nil || r.TargetID < 0 || len(r.URL) > 8192 {
 		return errors.New("请提供有效的 HTTP(S) URL 和目标 ID")
 	}
-	if strings.TrimSpace(r.VulnType) == "" || len(r.VulnType) > 200 || strings.TrimSpace(r.Summary) == "" || len(r.Summary) > 32000 || len(r.Evidence) > 64000 || len(r.Request) > maxEvidenceBytes || len(r.Response) > maxEvidenceBytes {
+	if utf8.RuneCountInString(r.Name) > 1000 || strings.TrimSpace(r.VulnType) == "" || len(r.VulnType) > 200 || strings.TrimSpace(r.Summary) == "" || len(r.Summary) > 32000 || len(r.Evidence) > 64000 || len(r.Request) > maxEvidenceBytes || len(r.Response) > maxEvidenceBytes {
 		return errors.New("漏洞类型、描述或证据长度无效")
 	}
 	if r.Severity != securitydomain.NormalizeSeverity(r.Severity) {
 		return errors.New("严重程度无效")
 	}
-	if !utf8.ValidString(r.URL+r.VulnType+r.Summary+r.Evidence+r.Request+r.Response) || strings.ContainsRune(r.URL+r.VulnType+r.Summary+r.Evidence+r.Request+r.Response, '\x00') || len(r.EvidencePaths) > 8 || len(r.TrafficIDs) > 8 {
+	if !utf8.ValidString(r.Name+r.URL+r.VulnType+r.Summary+r.Evidence+r.Request+r.Response) || strings.ContainsRune(r.Name+r.URL+r.VulnType+r.Summary+r.Evidence+r.Request+r.Response, '\x00') || len(r.EvidencePaths) > 8 || len(r.TrafficIDs) > 8 {
 		return errors.New("证据格式无效或数量超过限制")
 	}
 	if strings.TrimSpace(r.Evidence+r.Request+r.Response) == "" && len(r.EvidencePaths)+len(r.TrafficIDs) == 0 {
@@ -154,7 +155,13 @@ AND m.role IN ('admin','analyst') AND u.is_active AND t.status='active' FOR UPDA
 			return err
 		}
 		raw := map[string]any{"aiConversationId": conversation, "aiRunId": run, "evidence": input.Evidence, "status": "needs_review", "confidence": "agent_report"}
-		created, err := s.writer.CreateAIReportContext(dbtx.WithTransaction(ctx, tx), targetID, securityapp.VulnerabilityCreateItem{URL: input.URL, VulnType: input.VulnType, Severity: input.Severity, Source: "ai", Description: input.Summary, RawOutput: raw})
+		name := strings.TrimSpace(input.Name)
+		if name == "" {
+			// Older tool calls did not carry a separate title. Preserve their
+			// original label rather than inventing a name from evidence prose.
+			name = strings.TrimSpace(input.VulnType)
+		}
+		created, err := s.writer.CreateAIReportContext(dbtx.WithTransaction(ctx, tx), targetID, securityapp.VulnerabilityCreateItem{URL: input.URL, DisplayName: name, VulnType: input.VulnType, Severity: input.Severity, Source: "ai", Description: input.Summary, RawOutput: raw})
 		if err != nil {
 			return err
 		}

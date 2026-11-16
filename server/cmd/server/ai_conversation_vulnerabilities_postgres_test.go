@@ -84,10 +84,14 @@ func verifyAIConversationVulnerabilities(t *testing.T, ctx context.Context, db *
 		t.Fatal(err)
 	}
 	svc := aivuln.New(orm, root, writer)
-	input := aivuln.Report{URL: "https://chat-vuln.example/api", VulnType: "Access control", Severity: "low", Summary: "Fixture finding", Evidence: "Observed response", EvidencePaths: []string{"proof.txt"}, Request: "GET /api HTTP/1.1\r\nHost: chat-vuln.example\r\n\r\n", Response: "HTTP/1.1 200 OK\r\n\r\nsaved"}
+	input := aivuln.Report{Name: "未授权读取客户数据", URL: "https://chat-vuln.example/api", VulnType: "Access control", Severity: "low", Summary: "Fixture finding", Evidence: "Observed response", EvidencePaths: []string{"proof.txt"}, Request: "GET /api HTTP/1.1\r\nHost: chat-vuln.example\r\n\r\n", Response: "HTTP/1.1 200 OK\r\n\r\nsaved"}
 	result, err := svc.Register(ctx, user, run, "call-1", input)
 	if err != nil || !result.Created || result.VulnerabilityID == 0 {
 		t.Fatalf("register: %#v %v", result, err)
+	}
+	var displayName, kind string
+	if err = db.QueryRowContext(ctx, `SELECT display_name,vuln_type FROM vulnerability WHERE id=$1`, result.VulnerabilityID).Scan(&displayName, &kind); err != nil || displayName != input.Name || kind != input.VulnType {
+		t.Fatalf("conversation name and classification were not preserved: %q %q %v", displayName, kind, err)
 	}
 	if _, err = db.ExecContext(ctx, `UPDATE vulnerability SET reviewed=TRUE WHERE id=$1`, result.VulnerabilityID); err != nil {
 		t.Fatal(err)
@@ -101,6 +105,40 @@ func verifyAIConversationVulnerabilities(t *testing.T, ctx context.Context, db *
 	var reviewed bool
 	if err = db.QueryRowContext(ctx, `SELECT reviewed FROM vulnerability WHERE id=$1`, result.VulnerabilityID).Scan(&reviewed); err != nil || !reviewed {
 		t.Fatalf("review lost: %v %v", reviewed, err)
+	}
+	otherName := input
+	otherName.Name = "不同会话中的重复上报"
+	if duplicate, duplicateErr := svc.Register(ctx, user, run, "call-3", otherName); duplicateErr != nil || duplicate.Created || duplicate.VulnerabilityID != result.VulnerabilityID {
+		t.Fatalf("duplicate report changed identity: %+v %v", duplicate, duplicateErr)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT display_name,reviewed FROM vulnerability WHERE id=$1`, result.VulnerabilityID).Scan(&displayName, &reviewed); err != nil || displayName != input.Name || !reviewed {
+		t.Fatalf("duplicate overwrote original name or review: %q %v %v", displayName, reviewed, err)
+	}
+	legacyInput := input
+	legacyInput.Name = ""
+	legacyInput.URL = "https://chat-vuln.example/old-client"
+	legacyResult, legacyErr := svc.Register(ctx, user, run, "legacy-call", legacyInput)
+	if legacyErr != nil || !legacyResult.Created {
+		t.Fatalf("legacy caller without name failed: %+v %v", legacyResult, legacyErr)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT display_name FROM vulnerability WHERE id=$1`, legacyResult.VulnerabilityID).Scan(&displayName); err != nil || displayName != legacyInput.VulnType {
+		t.Fatalf("legacy name fallback failed: %q %v", displayName, err)
+	}
+	if replay, replayErr := svc.Register(ctx, user, run, "legacy-call", legacyInput); replayErr != nil || replay.Created || replay.VulnerabilityID != legacyResult.VulnerabilityID {
+		t.Fatalf("legacy report replay failed: %+v %v", replay, replayErr)
+	}
+	var scannerID int
+	if err = db.QueryRowContext(ctx, `INSERT INTO vulnerability(target_id,url,vuln_type,severity,source,display_name,description,reviewed,raw_output) VALUES($1,'https://chat-vuln.example/scanner','Access control','low','nuclei','scanner title','scanner evidence',TRUE,'{"keep":true}') RETURNING id`, target).Scan(&scannerID); err != nil {
+		t.Fatal(err)
+	}
+	scannerInput := input
+	scannerInput.URL = "https://chat-vuln.example/scanner"
+	if duplicate, duplicateErr := svc.Register(ctx, user, run, "scanner-collision", scannerInput); duplicateErr != nil || duplicate.Created || duplicate.VulnerabilityID != scannerID {
+		t.Fatalf("scanner collision did not preserve identity: %+v %v", duplicate, duplicateErr)
+	}
+	var scannerSource, scannerDescription string
+	if err = db.QueryRowContext(ctx, `SELECT display_name,source,description,reviewed FROM vulnerability WHERE id=$1`, scannerID).Scan(&displayName, &scannerSource, &scannerDescription, &reviewed); err != nil || displayName != "scanner title" || scannerSource != "nuclei" || scannerDescription != "scanner evidence" || !reviewed {
+		t.Fatalf("scanner data was overwritten: %q %q %q %v %v", displayName, scannerSource, scannerDescription, reviewed, err)
 	}
 	bad := input
 	bad.Summary = "different"
@@ -120,7 +158,7 @@ func verifyAIConversationVulnerabilities(t *testing.T, ctx context.Context, db *
 		t.Fatal(err)
 	}
 	evidence, err := svc.EvidenceForVulnerability(ctx, user, result.VulnerabilityID)
-	if err != nil || len(evidence) != 4 || evidence[1].Text != "immutable evidence" || evidence[0].Request != input.Request {
+	if err != nil || len(evidence) != 6 || evidence[1].Text != "immutable evidence" || evidence[0].Request != input.Request {
 		t.Fatalf("snapshot: %#v %v", evidence, err)
 	}
 	foreign, err := svc.EvidenceForVulnerability(ctx, other, result.VulnerabilityID)
