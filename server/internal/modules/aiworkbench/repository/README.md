@@ -13,3 +13,14 @@
 - Side-question admission reads the latest conversation run and its lease in
   the authorized transaction. The application supplies that checked status to
   the side answer independently of the potentially older context snapshot.
+- Deleting an owned conversation locks against trigger-job dispatch and
+  cancels its queued, starting, or running trigger jobs in the same transaction.
+  Completed jobs and unrelated conversations remain intact; review and retest
+  projections retain their existing stop/audit behavior. A waiting job must not
+  recreate a conversation after its owner deletes it.
+- Automatically triggered Reporter event/interval jobs use internal conversation
+  records for execution and audit, but are excluded from the interactive chat
+  list before its 200-item limit. A prior automatic conversation that contains
+  an explicitly started user run remains visible, as do manual Reporter chats,
+  historical finding reviews, retests, and other agents' conversations.
+  Filtering never removes records or changes report generation.

@@ -50,6 +50,9 @@ func (s *ConversationStore) ConversationAgent(ctx context.Context, user int, con
 
 func (s *ConversationStore) ListConversations(ctx context.Context, user int) ([]aiapp.Conversation, error) {
 	var items []aiapp.Conversation
+	// Automatically triggered Reporter runs retain their internal conversation
+	// for execution and audit, but must not occupy the user's chat list. The
+	// dispatcher-generated event key distinguishes them from manual reviews.
 	err := s.db.WithContext(ctx).Raw(`SELECT c.id::text,c.title,c.agent_key,b.profile_id::text AS llm_profile_id,c.pinned,c.created_at,c.updated_at,
 		EXISTS(SELECT 1 FROM ai_run r WHERE r.conversation_id=c.id AND r.status IN ('running','stopping') AND r.lease_until>clock_timestamp()) AS running,
 		EXISTS(SELECT 1 FROM ai_finding_case_review review WHERE review.conversation_id=c.id AND review.tenant_id=c.tenant_id AND review.owner_user_id=c.owner_user_id) AS review_read_only
@@ -57,6 +60,8 @@ func (s *ConversationStore) ListConversations(ctx context.Context, user int) ([]
 		JOIN tenant_membership m ON m.tenant_id=c.tenant_id AND m.user_id=c.owner_user_id
 		JOIN tenant t ON t.id=m.tenant_id JOIN auth_user u ON u.id=m.user_id
 		WHERE c.tenant_id=? AND c.owner_user_id=? AND t.status='active' AND u.is_active=TRUE AND tianqiong_ai.finding_case_review_conversation_visible(c.id)
+		AND NOT EXISTS(SELECT 1 FROM ai_agent_trigger_job j WHERE c.agent_key='reporter' AND j.tenant_id=c.tenant_id AND j.owner_user_id=c.owner_user_id AND j.conversation_id=c.id AND j.agent_key='reporter' AND j.event_key ~ '^[0-9]+/(event|interval)/[0-9]+$'
+			AND NOT EXISTS(SELECT 1 FROM ai_run r WHERE r.tenant_id=c.tenant_id AND r.owner_user_id=c.owner_user_id AND r.conversation_id=c.id AND NOT EXISTS(SELECT 1 FROM ai_agent_trigger_job source WHERE source.tenant_id=r.tenant_id AND source.owner_user_id=r.owner_user_id AND source.conversation_id=r.conversation_id AND source.run_id=r.id)))
 		ORDER BY c.pinned DESC,c.updated_at DESC,c.id LIMIT 200`, assetapp.DefaultTenantID, user).Scan(&items).Error
 	return items, err
 }

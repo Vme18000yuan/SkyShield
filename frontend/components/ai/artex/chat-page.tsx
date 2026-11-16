@@ -1068,7 +1068,7 @@ const ConversationItem = React.memo(function ConversationItem({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>删除对话「{conv.title || "新对话"}」？</AlertDialogTitle>
-            <AlertDialogDescription>此操作不可撤销。</AlertDialogDescription>
+            <AlertDialogDescription>此操作不可撤销；若有关联的自动任务，也会取消尚未完成的任务。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel variant="outline">取消</AlertDialogCancel>
@@ -1632,7 +1632,7 @@ export default function ChatPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>删除选中的 {selectedConversationCount} 个对话？</AlertDialogTitle>
-            <AlertDialogDescription>对话消息和执行记录将一并删除，此操作不可撤销。</AlertDialogDescription>
+            <AlertDialogDescription>对话消息和执行记录将一并删除；关联的未完成自动任务也会取消。此操作不可撤销。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel variant="outline" disabled={bulkDeleting}>取消</AlertDialogCancel>

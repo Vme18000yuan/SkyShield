@@ -221,6 +221,18 @@ func TestARTEXFindingCaseReviewsIsolatedPostgres(t *testing.T) {
 	if _, err = db.ExecContext(ctx, `UPDATE ai_tool_catalog SET enabled=true WHERE key='complete_finding_case_review'`); err != nil {
 		t.Fatal(err)
 	}
+	deletedReview, err := facade.CreateCaseReview(ctx, owner, task.ID, ids[:2])
+	if err != nil || deletedReview.ConversationID == nil {
+		t.Fatalf("create review to delete: %+v %v", deletedReview, err)
+	}
+	if deleted, e := conversations.DeleteOwnedConversations(ctx, owner, []string{*deletedReview.ConversationID}); e != nil || len(deleted) != 1 {
+		t.Fatalf("delete queued review conversation: %+v %v", deleted, e)
+	}
+	var deletedState, deletedJobState string
+	var deletedConversation sql.NullString
+	if err = db.QueryRowContext(ctx, `SELECT r.state,r.conversation_id::text,j.status FROM ai_finding_case_review r JOIN ai_agent_trigger_job j ON j.id=r.job_id WHERE r.id=$1`, deletedReview.ID).Scan(&deletedState, &deletedConversation, &deletedJobState); err != nil || deletedState != "stopped" || deletedConversation.Valid || deletedJobState != "cancelled" {
+		t.Fatalf("deleted review audit: state=%q conversation=%v job=%q err=%v", deletedState, deletedConversation.Valid, deletedJobState, err)
+	}
 	review, err := facade.CreateCaseReview(ctx, owner, task.ID, ids[:2])
 	if err != nil || review.State != "queued" || review.FindingCount != 2 {
 		t.Fatalf("review create: %+v %v", review, err)
@@ -409,7 +421,7 @@ func TestARTEXFindingCaseReviewsIsolatedPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, _ = start(limited)
+	run, instance = start(limited)
 	partialGroup, err := facade.MergeFindingCase(ctx, owner, task.ID, []int64{ids[3], ids[5]}, "已有归并组", "审查开始后人工确认")
 	if err != nil {
 		t.Fatal(err)
@@ -429,6 +441,11 @@ func TestARTEXFindingCaseReviewsIsolatedPostgres(t *testing.T) {
 		t.Fatalf("review changed an unselected suggestion: %q %v", broadState, err)
 	}
 	if _, err = conversations.StopRun(ctx, owner, *limited.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	// StopRun requests cancellation; the worker must acknowledge the terminal
+	// state before another review can start on the same task.
+	if err = conversations.FinishRun(ctx, owner, *limited.ConversationID, run, instance, "stopped"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = facade.CreateCaseReview(ctx, owner, task.ID, ids[3:5]); !errors.Is(err, aiapp.ErrTaskControlConflict) {

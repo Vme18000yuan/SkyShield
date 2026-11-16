@@ -52,6 +52,7 @@ describe("AI conversation actions", () => {
     fireEvent.click(within(await openMenu()).getByRole("menuitem", { name: "删除" }))
     const dialog = await screen.findByRole("alertdialog")
     expect(within(dialog).getByText("删除对话「删除测试对话」？")).toBeVisible()
+    expect(within(dialog).getByText(/关联的自动任务/)).toBeVisible()
     fireEvent.click(within(dialog).getByRole("button", { name: "删除" }))
     await waitFor(() => expect(fixtures.api.deleteConversation).toHaveBeenCalledWith(conversation.id))
     await waitFor(() => expect(screen.queryByRole("button", { name: "管理对话「删除测试对话」" })).not.toBeInTheDocument())

@@ -369,6 +369,15 @@ func verifyARTEXFindingReportsPostgres(t *testing.T, ctx context.Context, db *sq
 	if err = db.QueryRowContext(ctx, `SELECT count(*),COALESCE(max(conversation_id::text),'') FROM ai_agent_trigger_job WHERE agent_key='reporter' AND source_task_id=$1`, task.ID).Scan(&jobs, &conversationID); err != nil || jobs != 1 || conversationID == "" {
 		t.Fatalf("reporter trigger dispatch count=%d conversation=%q err=%v", jobs, conversationID, err)
 	}
+	listed, err := conversations.ListConversations(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range listed {
+		if item.ID == conversationID {
+			t.Fatal("automatic Reporter execution appeared in the interactive chat list")
+		}
+	}
 	if err = dispatcher.Tick(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
