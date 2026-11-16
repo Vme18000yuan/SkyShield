@@ -69,7 +69,6 @@ function RepeaterWorkspaceInner({ enabled }: { enabled: boolean }) {
         <label className="flex items-center gap-2"><input type="checkbox" checked={draft.verifyTls} disabled={tab.pending} onChange={e => edit({ verifyTls: e.target.checked })} />{t("verifyTls")}</label>
         <label className="flex items-center gap-2">{t("timeout")}<Input aria-label={t("timeout")} className="w-20" type="number" min={1} max={60} disabled={tab.pending} value={draft.timeoutSeconds} onChange={e => edit({ timeoutSeconds: Math.max(1, Math.min(60, Number(e.target.value) || 15)) })} /></label>
       </div>
-      <p className={textRole.helperText}>{t("rawTargetHint")}</p>
     </div>
     <div className="flex flex-wrap items-center gap-2">
       <label className="flex min-w-0 flex-1 items-center gap-2 text-sm">{t("history")}<select aria-label={t("history")} className="h-9 min-w-0 flex-1 rounded border bg-background px-2" disabled={tab.pending || !tab.history.length} value={tab.selected ?? ""} onChange={e => state.restore(e.target.value)}>

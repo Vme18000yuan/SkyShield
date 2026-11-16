@@ -4172,7 +4172,6 @@
     },
     "protocol": "协议",
     "automatic": "自动",
-    "rawTargetHint": "直接粘贴 Raw 请求后发送。请求行含完整 URL 时按其协议连接；否则从 Host 取主机和端口。自动模式下 HTTP/2 或 443 端口使用 HTTPS，其余使用 HTTP；明文 HTTP/2（h2c）请选择 HTTP。无 Body 的 GET 等请求会自动补齐结尾空行。",
     "rawPlaceholder": "GET / HTTP/1.1\nHost: example.com\nConnection: close\n\n",
     "resolvedTarget": "本次连接目标",
     "http2ViewHint": "HTTP/2 使用二进制帧传输。此处 Raw、Hex 和下载展示的是解码后的头部与正文，不是网络帧文件。",

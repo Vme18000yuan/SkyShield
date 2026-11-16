@@ -4142,7 +4142,6 @@
     },
     "protocol": "Protocol",
     "automatic": "Auto",
-    "rawTargetHint": "Paste Raw text and send. An absolute URL determines its scheme; otherwise Host supplies the destination. Auto uses HTTPS for HTTP/2 or port 443 and HTTP elsewhere. Select HTTP for cleartext HTTP/2 (h2c). Bodyless requests such as GET receive the final blank line automatically.",
     "rawPlaceholder": "GET / HTTP/1.1\nHost: example.com\nConnection: close\n\n",
     "resolvedTarget": "Connection destination",
     "http2ViewHint": "HTTP/2 uses binary frames. Raw, Hex and download here contain decoded headers/body, not captured network frames.",
