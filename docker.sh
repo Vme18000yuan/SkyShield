@@ -4,6 +4,12 @@ set -euo pipefail
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$project_dir"
 
+mkdir -p "$project_dir/.local"
+if [[ "${SKYSHIELD_UPDATER_CHILD:-}" != 1 && "${1:-start}" != logs && "${1:-start}" != status && "${1:-start}" != network-check ]]; then
+  exec 9>"$project_dir/.local/deployment.lock"
+  flock -n 9 || { printf '部署或更新正在执行，请稍后重试。\n' >&2; exit 1; }
+fi
+
 if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
   printf '需要安装 Docker Engine 和 Docker Compose 插件。\n' >&2
   exit 1
@@ -16,6 +22,8 @@ if [[ -f "$network_override" && ! -L "$network_override" ]]; then
   compose+=(-f "$network_override")
   network_adapter=true
 fi
+release_override="$project_dir/.local/updater/compose.release.json"
+if [[ -f "$release_override" && ! -L "$release_override" ]]; then compose+=(-f "$release_override"); fi
 usage() {
   printf '用法：./docker.sh [start|pull|run|restart|stop|status|logs [服务名...]|network-check [内网域名或IP]]\n'
 }
@@ -88,6 +96,7 @@ print_access_address() {
 
 start_existing_runtime() {
   local service
+  python3 "$project_dir/scripts/system-update.py" start --mode docker
   if [[ "$network_adapter" == true ]]; then
     start_runtime_service network-helper
     wait_runtime_service network-helper
@@ -105,6 +114,7 @@ start_existing_runtime() {
 case "${1:-start}" in
   start|pull)
     action="${1:-start}"
+    if [[ "$action" == start && -f "$release_override" ]]; then action=pull; fi
     if [[ $# -gt 1 ]]; then usage >&2; exit 2; fi
     if ! command -v openssl >/dev/null; then printf '首次启动需要 openssl 生成本地密钥。\n' >&2; exit 1; fi
     # The upstream Agent uses fixed volume names. Fail before creating secrets,
@@ -120,6 +130,9 @@ case "${1:-start}" in
     done
     bash "$project_dir/scripts/tianqiong-dev-init.sh"
     if ! command -v python3 >/dev/null; then printf '网络配置继承需要 Python 3，请先安装 python3。\n' >&2; exit 1; fi
+    if [[ "${SKYSHIELD_UPDATER_CHILD:-}" != 1 ]]; then
+      python3 "$project_dir/scripts/system-update.py" start --mode docker
+    fi
     network_args=(prepare --root "$project_dir")
     compose=(docker compose -f "$project_dir/compose.tianqiong.yaml")
     if [[ "$action" == "pull" ]]; then
@@ -128,6 +141,7 @@ case "${1:-start}" in
     fi
     network_override="$(python3 "$project_dir/scripts/deployment-network.py" "${network_args[@]}")"
     if [[ -n "$network_override" ]]; then compose+=(-f "$network_override"); fi
+    if [[ -f "$release_override" && ! -L "$release_override" ]]; then compose+=(-f "$release_override"); fi
     "${compose[@]}" config --quiet
     # Reject occupied host ports before downloading or building application images.
     python3 "$project_dir/scripts/deployment-network.py" preflight --root "$project_dir"

@@ -68,6 +68,12 @@ python3 scripts/test_server_image_tools.py solder110/skyshield-server:latest
 
 真实模型密钥通过运行时配置提供，不应提交至仓库或写入构建参数。`.local/`、`.env`、本机数据库、日志和编译产物不属于源码。
 
+## 系统更新
+
+系统更新入口位于“关于天穹”。本地与 Docker 部署均可通过宿主机独立更新进程检查稳定版本，
+由管理员确认后备份数据库与配置、安装版本并显示进度。首次接入、发布流程和失败恢复见
+[系统更新说明](docs/16-系统更新.md)。
+
 ## 来源与许可
 
 SkyShield 采用 **[GNU AGPL-3.0](LICENSE)**（SPDX：`AGPL-3.0-only`）。该声明适用于 SkyShield 自有代码及修改，并保留各部分原有的授权条件。

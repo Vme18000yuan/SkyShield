@@ -213,6 +213,9 @@ def prepare(root, hub=False):
     compose_args = ['compose', '-f', str(root / 'compose.tianqiong.yaml')]
     if hub:
         compose_args += ['-f', str(root / 'compose.hub.yaml')]
+    release_override = root / '.local/updater/compose.release.json'
+    if release_override.is_file():
+        compose_args += ['-f', str(release_override)]
     projection = json.loads(docker(*compose_args, 'config', '--format', 'json'))
     project = projection.get('name', 'tianqiong')
     if project != 'tianqiong':

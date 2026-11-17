@@ -56,6 +56,9 @@ SkyShield 的 Docker 入口为项目根目录的 `./docker.sh`，它使用
 
 ## 部署机网络继承
 
+系统自动检查与管理员确认安装更新见[系统更新说明](16-系统更新.md)。更新成功后将镜像
+摘要固定在 `.local/updater/compose.release.json`，日常部署继续使用已确认的版本。
+
 验证范围：已完成脚本回归、生成配置和隔离容器的 DNS/hosts、TCP、动态 Engine 创建验证；
 官方 Agent 领取真实扫描任务、结果回传及完整一键部署仍待独立环境验证。
 升级时须同时更新部署脚本与配套 Server、Bootstrap 镜像。旧版 Bootstrap 镜像不包含新增

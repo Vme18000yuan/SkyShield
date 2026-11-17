@@ -35,6 +35,10 @@ func registerRoutes(engine *gin.Engine, d *deps, jwtMiddleware gin.HandlerFunc) 
 	api := engine.Group("/v1")
 	protected := api.Group("")
 	protected.Use(jwtMiddleware)
+	if d.productUpdateHandler != nil {
+		protected.Use(d.productUpdateHandler.Maintenance)
+		d.productUpdateHandler.Register(protected)
+	}
 	if d.httpRepeaterHandler != nil {
 		repeaterrouter.Register(protected, d.httpRepeaterHandler)
 	}

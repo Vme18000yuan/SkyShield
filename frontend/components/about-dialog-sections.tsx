@@ -69,7 +69,7 @@ interface AboutDialogVersionInfoProps {
 
 export function AboutDialogVersionInfo({
   t,
-  githubRepo = "https://github.com/yyhuni/lunafox",
+  githubRepo = SKYSHIELD_GITHUB_URL,
   currentVersion,
   candidate,
   hasUpdate,

@@ -1,6 +1,8 @@
 name: tianqiong
 
 x-server-env: &server-env
+  SKYSHIELD_DEPLOYMENT_MODE: docker
+  SKYSHIELD_UPDATE_SOCKET: /run/skyshield-updater/control.sock
   DB_HOST: postgres
   DB_PORT: 5432
   DB_USER: tianqiong
@@ -120,6 +122,7 @@ services:
     environment: *server-env
     secrets: [db_password, jwt_secret, ai_encryption_key]
     volumes:
+      - ./.local/updater/socket:/run/skyshield-updater:ro
       - shared_data:/opt/lunafox
       - upgrade_state:/opt/lunafox/.lunafox/upgrade
     depends_on:

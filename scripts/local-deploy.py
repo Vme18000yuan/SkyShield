@@ -2,6 +2,7 @@
 """Build and supervise the native, single-machine development deployment."""
 
 import argparse
+import contextlib
 import base64
 import fcntl
 import hashlib
@@ -123,6 +124,8 @@ def environment():
         "TIANQIONG_AI_DATA_ROOT": str(DATA / "ai"), "TIANQIONG_AI_SKILLS_ROOT": str(ROOT / "resources/skills"),
         "TIANQIONG_INFO_GATHER_TOOLS_DIR": str(TOOLS),
         "TIANQIONG_LOCAL_PROXY_SOCKET": str(DATA / "agent/proxy.sock"),
+        "SKYSHIELD_DEPLOYMENT_MODE": "local",
+        "SKYSHIELD_UPDATE_SOCKET": str(ROOT / ".local/updater/socket/control.sock"),
         "SKYSHIELD_SYSTEM_DNS": os.environ.get("SKYSHIELD_SYSTEM_DNS", "1"),
         "ENGINE_INSTALL_INVENTORY_PATH": str(ROOT / "engine-inventory.yaml"), "ENGINE_INSTALL_REGISTRY": os.environ.get("SKYSHIELD_ENGINE_REGISTRY", "docker.io"),
         "MIGRATION_POLICY_PATH": str(ROOT / "server/cmd/server/migrations/policy.json"), "RELEASE_MANIFEST_PATH": str(ROOT / "release.manifest.yaml"),
@@ -307,6 +310,20 @@ def build(env, validate=None):
         if validate is not None:
             validate(server_changed, agent_changed)
         promote_binaries(items, stage)
+        revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, capture_output=True)
+        if revision.returncode == 0:
+            revision_value = revision.stdout.strip()
+            channel_path = ROOT / "updates/stable.json"
+            if channel_path.is_file():
+                channel_revision = json.loads(channel_path.read_text()).get("revision", "")
+                if re.fullmatch(r"[0-9a-f]{40}", channel_revision):
+                    equivalent = subprocess.run(["git", "diff", "--quiet", channel_revision, revision_value, "--", ".", ":(exclude)updates"], cwd=ROOT)
+                    if equivalent.returncode == 0:
+                        revision_value = channel_revision
+            marker = DATA / "build-revision.json"
+            temporary_marker = marker.with_suffix(".tmp")
+            temporary_marker.write_text(json.dumps({"revision": revision_value}) + "\n")
+            temporary_marker.replace(marker)
         return server_changed, agent_changed
 
 
@@ -437,11 +454,11 @@ def stop_managed(state, name):
         if not entry.get("owned"):
             fail(f"{name} 由其他方式启动，请先由原启动方式停止")
         os.kill(entry["pid"], signal.SIGTERM)
-        deadline = time.monotonic() + 20
+        deadline = time.monotonic() + 60
         while alive(entry) and time.monotonic() < deadline:
             time.sleep(0.2)
         if alive(entry):
-            fail(f"{name} 未能在 20 秒内停止，请检查日志")
+            fail(f"{name} 未能在 60 秒内停止，请检查日志")
     state.pop(name, None)
     write_state(state)
 
@@ -557,6 +574,8 @@ def restart_existing(args):
 
 def start(args):
     prepare_directories()
+    if os.environ.get("SKYSHIELD_UPDATER_CHILD") != "1":
+        call([sys.executable, ROOT / "scripts/system-update.py", "start", "--mode", "local"])
     env = environment()
     state = read_state()
     previous_frontend_stage = active_frontend_stage()
@@ -603,6 +622,9 @@ def start(args):
     call([server, "local-agent-bootstrap", AGENT_CREDENTIALS, "skyshield-local", VERSION], cwd=ROOT / "server", env=env)
     env["TIANQIONG_LOCAL_AGENT_INSTANCE_ID"] = json.loads(AGENT_CREDENTIALS.read_text())["instanceId"]
     if not alive(state.get("server")):
+        revision_file = DATA / "build-revision.json"
+        if revision_file.is_file():
+            env["SKYSHIELD_BUILD_REVISION"] = json.loads(revision_file.read_text()).get("revision", "")
         free_port(HTTP_PORT, LISTEN_HOST); free_port(GRPC_PORT, LISTEN_HOST)
         spawn(state, "server", [server], env, ROOT / "server")
     wait_for(lambda: http_ready(HTTP_PORT, "/healthChecks/readiness"), "Server", process=state.get("server"))
@@ -685,7 +707,12 @@ def main():
     args = parser.parse_args()
     try:
         DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with (DATA / "local-deploy.lock").open("a") as lock:
+        with contextlib.ExitStack() as stack:
+            if os.environ.get("SKYSHIELD_UPDATER_CHILD") != "1":
+                (ROOT / ".local").mkdir(exist_ok=True)
+                deployment_lock = stack.enter_context((ROOT / ".local/deployment.lock").open("a"))
+                fcntl.flock(deployment_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock = stack.enter_context((DATA / "local-deploy.lock").open("a"))
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             args.function(args)
     except BlockingIOError:

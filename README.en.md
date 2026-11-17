@@ -31,6 +31,14 @@ Database, JWT and AI encryption keys are generated once in `.local/secrets` and 
 
 The Docker stack uses a separately distributed closed-source LunaFox Agent image. It is not included in this repository and is subject to [its own terms](NOTICE-CLOSED-ARTIFACTS.md). Verify its terms and use an isolated Docker environment before deployment.
 
+## System updates
+
+For native and Docker updates, see the [system update guide](docs/16-系统更新.md).
+The host updater checks the SkyShield stable channel and installs a pinned
+release after administrator confirmation, with database/configuration backup
+and persistent progress. Older deployments require a one-time manual upgrade
+to install the new updater.
+
 ## Source and licenses
 
 SkyShield uses the **[GNU AGPL-3.0](LICENSE)** (`AGPL-3.0-only`). This grant covers SkyShield-authored code and modifications, subject to the retained terms for each part.

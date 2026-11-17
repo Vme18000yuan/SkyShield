@@ -137,6 +137,7 @@ import (
 	upgradehandler "github.com/yyhuni/lunafox/server/internal/modules/upgrade/handler"
 	upgradeinfra "github.com/yyhuni/lunafox/server/internal/modules/upgrade/infrastructure"
 	upgraderepo "github.com/yyhuni/lunafox/server/internal/modules/upgrade/repository"
+	"github.com/yyhuni/lunafox/server/internal/productupdate"
 	"gorm.io/gorm"
 )
 
@@ -249,6 +250,7 @@ type deps struct {
 	serverLocationScheduler *systemservice.ServerLocationScheduler
 	geolocationCoordinator  *geolocation.Coordinator
 	upgradeHandler          *upgradehandler.UpgradeHandler
+	productUpdateHandler    *productupdate.Handler
 	upgradeRecoveryJob      managedBackgroundJob
 
 	executionProviderConfigSource *catalogservice.ExecutionProviderConfigSource
@@ -534,8 +536,15 @@ func buildDependencies(infra *infra, cfg *config.Config) (*deps, error) {
 	resultIngestCoordinator := resultingestwiring.NewResultIngestMaterializationCoordinator(infra.db)
 	resultIngest := resultingestapp.NewResultIngestFacade(resultingestapp.ResultIngestFacadeDependencies{Subdomains: snapshot.subdomainSnapshotService, ScanSummary: resultIngestSummary, HostPorts: snapshot.hostPortSnapshotService, Websites: snapshot.websiteSnapshotService, WebsiteTechnologies: asset.websiteSvc, Endpoints: snapshot.endpointSnapshotService, Directories: snapshot.directorySnapshotService, Screenshots: snapshot.screenshotSnapshotService, Vulnerabilities: snapshot.vulnerabilitySnapshotService, Materialization: resultIngestCoordinator})
 	var upgradeHandler *upgradehandler.UpgradeHandler
+	var productUpdateHandler *productupdate.Handler
 	var upgradeRecoveryJob managedBackgroundJob
-	if !cfg.LocalMode {
+	deploymentMode := os.Getenv("SKYSHIELD_DEPLOYMENT_MODE")
+	if cfg.LocalMode {
+		deploymentMode = "local"
+	}
+	if deploymentMode == "local" || deploymentMode == "docker" {
+		productUpdateHandler = productupdate.New(infra.db, deploymentMode, os.Getenv("SKYSHIELD_UPDATE_SOCKET"))
+	} else if !cfg.LocalMode {
 		manifestSource, err := newUpgradeManifestSource(cfg.Upgrade)
 		if err != nil {
 			return nil, fmt.Errorf("configure release manifest source: %w", err)
@@ -1152,6 +1161,7 @@ func buildDependencies(infra *infra, cfg *config.Config) (*deps, error) {
 		taskProgressLogService:        scan.taskProgressLogService,
 		runtimeStreamRegistry:         streamRegistry,
 		upgradeHandler:                upgradeHandler,
+		productUpdateHandler:          productUpdateHandler,
 		upgradeRecoveryJob:            upgradeRecoveryJob,
 	}, nil
 }
