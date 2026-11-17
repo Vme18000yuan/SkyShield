@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "minimumUpdaterVersion": 1,
+  "version": "2026.11.17",
+  "revision": "85d3acb7b9b043729f74000ad633a85f491950e3",
+  "publishedAt": "2026-11-17T14:21:13.611991+00:00",
+  "notes": "# SkyShield 2026.11.17\n\n- 新增 SkyShield 本地与 Docker 部署统一的版本检查及管理员确认安装流程，替换本产品对上游 LunaFox 更新配置的依赖。\n- 更新进程独立运行在宿主机，通过私有 Unix socket 与 Server 通信，保留升级阶段和结果，支持 systemd 管理。\n- 安装前检查运行中的扫描/AI 任务、源码修改和磁盘空间；备份数据库及配置，Docker 按镜像摘要安装，本地编译安装。\n- 增加失败恢复记录、重复请求保护和本地历史前端构建清理；成功后保留当前构建及一个回滚构建。\n- 新增固定源码提交与镜像摘要的稳定发布渠道及生成工具。\n- 包含 AGPL-3.0 项目声明和“关于系统”协议标识更新，保留上游及第三方许可。\n\n首次接入需要在维护时间更新部署脚本和服务一次，之后可通过“关于天穹”检查及安装后续版本。自动安装要求官方 Git 克隆目录；旧版部署和 ZIP 部署请参考 docs/16-系统更新.md。\n\n本次完成静态检查和 linux/amd64 镜像构建，没有在当前运行环境执行完整升级、断线恢复或数据库恢复测试。应用停止后出现故障会进入需要恢复状态，不自动回退数据库。\n",
+  "images": {
+    "server": "docker.io/solder110/skyshield-server@sha256:ce087bb1ff791004868984162f46565e3cc14827dd37f479ea6ccc6e66f9e8e5",
+    "frontend": "docker.io/solder110/skyshield-frontend@sha256:b2c9fca0a99f8dad1091f39b31f75550c261e240086b03f705a4c8ab18b9e3b4",
+    "bootstrap": "docker.io/solder110/skyshield-bootstrap@sha256:c51b97a88f92f3e19ffd8388e93081dfc847fb3121cb6f2d22aab2000aeda9b5",
+    "nginx": "docker.io/solder110/skyshield-nginx@sha256:5416b710bc327408ec93747648096923955b3195145aa5afa3c19d7bb77993e5"
+  }
+}
