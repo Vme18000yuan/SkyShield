@@ -1,5 +1,7 @@
 # SkyShield
 
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+
 SkyShield is an attack surface management platform combining asset inventory, scan scheduling, vulnerability evidence, HTTP replay and AI agents. It builds on LunaFox and integrates ARTEX and Norma. Use scanning and testing features only on authorized targets.
 
 ## Local deployment
@@ -31,4 +33,6 @@ The Docker stack uses a separately distributed closed-source LunaFox Agent image
 
 ## Source and licenses
 
-LunaFox-derived source is GPL-3.0-only, `third_party/artex` is AGPL-3.0-only, `third_party/norma` is Apache-2.0 and `third_party/go-mitmproxy` is MIT. The original copyright and license scope are retained in [NOTICE](NOTICE); license texts and change notices are retained in their respective directories. Historical upstream release manifests do not represent SkyShield releases.
+SkyShield uses the **[GNU AGPL-3.0](LICENSE)** (`AGPL-3.0-only`). This grant covers SkyShield-authored code and modifications, subject to the retained terms for each part.
+
+LunaFox-derived source retains its `GPL-3.0-only` terms; the original [GPLv3 text](LICENSES/GPL-3.0-only.txt) and [upstream notice](LICENSES/LunaFox-NOTICE.txt) are preserved. GPLv3/AGPLv3 combinations follow section 13 of both licenses, including the remote-network source-offer requirements applicable to the combination. `third_party/artex` is `AGPL-3.0-only`, `third_party/norma` is `Apache-2.0` and `third_party/go-mitmproxy` is `MIT`; other dependencies and assets retain their own licenses. See [NOTICE](NOTICE) for scope and the [separate closed Agent terms](NOTICE-CLOSED-ARTIFACTS.md). Historical upstream release manifests do not represent SkyShield releases.

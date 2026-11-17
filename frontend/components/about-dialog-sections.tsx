@@ -260,7 +260,7 @@ export function AboutDialogLinks({ t }: { t: TranslationFn }) {
 }
 
 export function AboutDialogFooter({ t }: { t: TranslationFn }) {
-  return <p className="text-center text-xs text-muted-foreground">© 2026 {t("productName")} · GPL-3.0</p>
+  return <p className="text-center text-xs text-muted-foreground">© 2026 {t("productName")} · AGPL-3.0</p>
 }
 
 export { Separator }

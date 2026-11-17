@@ -1,17 +1,34 @@
-LunaFox deployment projection
+SkyShield
 
-SPDX-License-Identifier: GPL-3.0-only
+SPDX-License-Identifier: AGPL-3.0-only
 
-Copyright (C) 2026 LunaFox contributors.
+Copyright (C) 2026 SkyShield contributors.
 
-This license applies to first-party public Runtime and Engine source, deployment
-scripts, Compose/configuration templates, deployment documentation, and public
-release indexes exported to the public repository. It does not license the
-closed Agent artifact, private signing/release material, closed installer, or
-any other private source.
+SkyShield-authored code and modifications are offered under the GNU Affero
+General Public License, version 3 only, subject to the retained upstream terms
+described below. The complete AGPL version 3 text is provided in LICENSE.
 
-The complete GNU General Public License version 3 text is available at:
-https://www.gnu.org/licenses/gpl-3.0.txt
+Upstream source and third-party components retain their original copyrights,
+licenses and notices. This notice does not replace the licenses for those parts.
 
-This file is a licensing notice for the declared deployment scope. The SPDX
-identifier is intentionally GPL-3.0-only; no "or later" grant is made.
+LunaFox-derived public Runtime and Engine source, deployment files and related
+materials retain their GPL-3.0-only terms and Copyright (C) 2026 LunaFox
+contributors. The original upstream notice is preserved verbatim in
+LICENSES/LunaFox-NOTICE.txt, and its GPL version 3 license text is preserved in
+LICENSES/GPL-3.0-only.txt.
+
+GPLv3 and AGPLv3 section 13 permit their covered works to be combined while each
+part retains its applicable license. The AGPLv3 remote-network source-offer
+requirements apply to the combination as provided by those sections:
+https://www.gnu.org/licenses/gpl-3.0.html#section13
+https://www.gnu.org/licenses/agpl-3.0.html#section13
+
+Included third-party components include:
+- third_party/artex: AGPL-3.0-only; see its LICENSE and SKYSHIELD-NOTICE.md.
+- third_party/norma: Apache-2.0; see its LICENSE and SKYSHIELD-NOTICE.md.
+- third_party/go-mitmproxy: MIT; see its LICENSE and SKYSHIELD-NOTICE.md.
+- Other dependencies and bundled assets retain their respective notices.
+
+The closed LunaFox Agent artifact is not covered by SkyShield's AGPL grant.
+Its separate terms remain in NOTICE-CLOSED-ARTIFACTS.md. No license to private
+Agent source, signing material or other private upstream material is granted.

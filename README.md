@@ -1,5 +1,7 @@
 # SkyShield
 
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+
 天穹（SkyShield）是一个攻击面管理平台，将资产归集、扫描、漏洞管理与 AI Agent 测试整合到同一界面。项目基于 LunaFox，并集成 ARTEX 和 Norma 运行时。
 
 主要功能包括资产与根域名管理、扫描调度、漏洞证据查看、HTTP 数据包重放、AI 对话和自主任务。请仅对明确授权的目标使用扫描和测试功能。
@@ -68,4 +70,6 @@ python3 scripts/test_server_image_tools.py solder110/skyshield-server:latest
 
 ## 来源与许可
 
-项目保留上游版权及许可：LunaFox 的相应源码使用 GPL-3.0-only，`third_party/artex` 使用 AGPL-3.0-only，`third_party/norma` 使用 Apache-2.0，`third_party/go-mitmproxy` 使用 MIT。原版权和适用范围见 [NOTICE](NOTICE)，各部分的许可证和修改说明见各目录及 [LICENSE](LICENSE)。原有上游发行清单仅用于记录来源，不代表 SkyShield 已发布相同镜像或版本。
+SkyShield 采用 **[GNU AGPL-3.0](LICENSE)**（SPDX：`AGPL-3.0-only`）。该声明适用于 SkyShield 自有代码及修改，并保留各部分原有的授权条件。
+
+LunaFox 衍生源码继续遵循 `GPL-3.0-only`，原许可证和声明分别保存在 [GPLv3 原文](LICENSES/GPL-3.0-only.txt)及 [LunaFox 原始声明](LICENSES/LunaFox-NOTICE.txt)。GPLv3 与 AGPLv3 的组合遵循各自第 13 条，包括适用于组合作品的网络源码提供要求。`third_party/artex` 使用 `AGPL-3.0-only`，`third_party/norma` 使用 `Apache-2.0`，`third_party/go-mitmproxy` 使用 `MIT`；其他依赖和素材保留各自许可。完整范围见 [NOTICE](NOTICE)。闭源 Agent 继续受[独立条款](NOTICE-CLOSED-ARTIFACTS.md)约束。原有上游发行清单仅用于记录来源，不代表 SkyShield 已发布相同镜像或版本。

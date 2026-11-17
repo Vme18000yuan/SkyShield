@@ -176,6 +176,6 @@ docker compose up -d
 ---
 ## 许可证
 
-部署文件与第一方公开的 Runtime/Engine 源码采用 [GPL-3.0-only](LICENSE)；Engine Runtime Images 与 Engine Packages 是公开产物；第三方组件遵循各自的许可证与署名条款。
+部署文件与第一方公开的 Runtime/Engine 源码采用 [GPL-3.0-only](LICENSES/GPL-3.0-only.txt)；Engine Runtime Images 与 Engine Packages 是公开产物；第三方组件遵循各自的许可证与署名条款。
 
 > **GENERATED / READ-ONLY PROJECTION（生成投影，只读）。** 由 LunaFox 私有源码生成；发现问题请带上对应 release tag 按 [CONTRIBUTING.md](CONTRIBUTING.md) 反馈。
