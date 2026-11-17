@@ -13,6 +13,7 @@ import (
 
 	"github.com/yyhuni/lunafox/server/internal/config"
 	"github.com/yyhuni/lunafox/server/internal/database"
+	"github.com/yyhuni/lunafox/server/internal/deploymentnetwork"
 	catalogapp "github.com/yyhuni/lunafox/server/internal/modules/catalog/application"
 	catalogdomain "github.com/yyhuni/lunafox/server/internal/modules/catalog/domain"
 	catalogrepo "github.com/yyhuni/lunafox/server/internal/modules/catalog/repository"
@@ -58,6 +59,13 @@ func RunWordlistBootstrap(ctx context.Context, databaseConfig *config.DatabaseCo
 	if err != nil {
 		return err
 	}
+	var systemResolvers string
+	if os.Getenv("SKYSHIELD_SYSTEM_DNS") == "1" {
+		systemResolvers, err = deploymentnetwork.ResolverList(os.Getenv("SKYSHIELD_SYSTEM_RESOLVERS_FILE"))
+		if err != nil {
+			return fmt.Errorf("inherit deployment DNS: %w", err)
+		}
+	}
 
 	db, err := database.NewDatabase(databaseConfig)
 	if err != nil {
@@ -69,7 +77,13 @@ func RunWordlistBootstrap(ctx context.Context, databaseConfig *config.DatabaseCo
 	}
 	defer func() { _ = sqlDB.Close() }()
 
-	return bootstrapDefaultWordlists(ctx, db, basePath, imports)
+	if err := bootstrapDefaultWordlists(ctx, db, basePath, imports); err != nil {
+		return err
+	}
+	if systemResolvers != "" {
+		return syncSystemResolverWordlist(ctx, db, basePath, imports, systemResolvers)
+	}
+	return nil
 }
 
 func bootstrapDefaultWordlists(ctx context.Context, db *gorm.DB, basePath string, imports []defaultWordlistImport) error {

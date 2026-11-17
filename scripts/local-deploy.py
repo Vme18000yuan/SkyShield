@@ -123,6 +123,7 @@ def environment():
         "TIANQIONG_AI_DATA_ROOT": str(DATA / "ai"), "TIANQIONG_AI_SKILLS_ROOT": str(ROOT / "resources/skills"),
         "TIANQIONG_INFO_GATHER_TOOLS_DIR": str(TOOLS),
         "TIANQIONG_LOCAL_PROXY_SOCKET": str(DATA / "agent/proxy.sock"),
+        "SKYSHIELD_SYSTEM_DNS": os.environ.get("SKYSHIELD_SYSTEM_DNS", "1"),
         "ENGINE_INSTALL_INVENTORY_PATH": str(ROOT / "engine-inventory.yaml"), "ENGINE_INSTALL_REGISTRY": os.environ.get("SKYSHIELD_ENGINE_REGISTRY", "docker.io"),
         "MIGRATION_POLICY_PATH": str(ROOT / "server/cmd/server/migrations/policy.json"), "RELEASE_MANIFEST_PATH": str(ROOT / "release.manifest.yaml"),
         "LUNAFOX_UPGRADE_DEPLOYMENT_ROOT": str(ROOT), "LUNAFOX_UPGRADE_SOCKET_PATH": str(DATA / "upgrade/upgrader.sock"),
@@ -478,6 +479,12 @@ def agent_args():
             "--package-cache-root", DATA / "engine-packages", "--tools-dir", TOOLS, "--proxy-socket", DATA / "agent/proxy.sock", "--version", VERSION]
 
 
+def agent_environment():
+    allowed = ("PATH", "LANG", "LC_ALL", "TZ", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+               "http_proxy", "https_proxy", "all_proxy", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "CHROME_PATH")
+    return {key: os.environ[key] for key in allowed if key in os.environ}
+
+
 def update_local_engines(env, *, no_build):
     binary = BIN / "skyshield-local-engines"
     if not binary.is_file():
@@ -630,8 +637,7 @@ def start(args):
     if check.returncode:
         fail("本地扫描工具未准备完成；Server 和前端仍在运行，Agent 未领取任务")
     if not alive(state.get("agent")):
-        agent_env = {key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL", "TZ", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "CHROME_PATH") if key in os.environ}
-        spawn(state, "agent", agent_args(), agent_env, ROOT)
+        spawn(state, "agent", agent_args(), agent_environment(), ROOT)
     identity = env["TIANQIONG_LOCAL_AGENT_INSTANCE_ID"].replace("'", "''")
     wait_for(lambda: query(env, f"SELECT count(*) FROM agent a JOIN agent_runtime_status r ON r.agent_id=a.id WHERE a.instance_id='{identity}' AND a.status='online' AND r.last_heartbeat > now() - interval '1 minute'") == "1", "本地扫描 Agent", process=state.get("agent"))
     print(f"单机模式已启动：监听 {LISTEN_HOST}:{FRONTEND_PORT}，本机访问 http://127.0.0.1:{FRONTEND_PORT}，其他设备访问 http://<服务器IP>:{FRONTEND_PORT}")

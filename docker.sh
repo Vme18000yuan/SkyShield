@@ -10,8 +10,14 @@ if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; t
 fi
 
 compose=(docker compose -f "$project_dir/compose.tianqiong.yaml")
+network_override="$project_dir/.local/network/compose.network.yaml"
+network_adapter=false
+if [[ -f "$network_override" && ! -L "$network_override" ]]; then
+  compose+=(-f "$network_override")
+  network_adapter=true
+fi
 usage() {
-  printf '用法：./docker.sh [start|pull|run|restart|stop|status|logs [服务名...]]\n'
+  printf '用法：./docker.sh [start|pull|run|restart|stop|status|logs [服务名...]|network-check [内网域名或IP]]\n'
 }
 
 # Daily operations use the containers from the existing deployment. Looking up
@@ -19,7 +25,9 @@ usage() {
 declare -A runtime_containers
 load_runtime_containers() {
   local service ids state
-  for service in postgres redis loki server frontend nginx agent migrate volume-preflight bootstrap cert-init; do
+  local services=(postgres redis loki server frontend nginx agent migrate volume-preflight bootstrap cert-init)
+  if [[ "$network_adapter" == true ]]; then services+=(network-helper); fi
+  for service in "${services[@]}"; do
     ids="$("${compose[@]}" ps --all --quiet "$service")"
     if [[ -z "$ids" || "$ids" == *$'\n'* ]]; then
       printf '未找到唯一的 %s 容器；请先使用 ./docker.sh 或 ./docker.sh pull 完成部署。\n' "$service" >&2
@@ -65,8 +73,25 @@ start_runtime_service() {
   fi
 }
 
+print_access_address() {
+  local published port container
+  if published="$("${compose[@]}" port nginx 443 2>/dev/null)" && [[ "$published" == 0.0.0.0:* ]]; then
+    port="${published##*:}"
+  else
+    container="$("${compose[@]}" ps --quiet nginx)"
+    port="$(docker inspect --format '{{ index .Config.Labels "org.skyshield.network.public-port" }}' "$container" 2>/dev/null || true)"
+  fi
+  if [[ "$port" =~ ^[0-9]+$ ]]; then
+    printf '界面监听 0.0.0.0:%s；本机访问 https://localhost:%s，其他设备访问 https://<服务器IP>:%s。\n' "$port" "$port" "$port"
+  fi
+}
+
 start_existing_runtime() {
-  local service published port
+  local service
+  if [[ "$network_adapter" == true ]]; then
+    start_runtime_service network-helper
+    wait_runtime_service network-helper
+  fi
   for service in postgres redis loki; do start_runtime_service "$service"; done
   for service in postgres redis loki; do wait_runtime_service "$service"; done
   for service in server frontend nginx agent; do
@@ -74,10 +99,7 @@ start_existing_runtime() {
     wait_runtime_service "$service"
   done
   printf '现有 Docker 服务已启动，可使用 ./docker.sh status 查看状态。\n'
-  if published="$("${compose[@]}" port nginx 443 2>/dev/null)" && [[ "$published" == 0.0.0.0:* ]]; then
-    port="${published##*:}"
-    printf '界面监听 0.0.0.0:%s；本机访问 https://localhost:%s，其他设备访问 https://<服务器IP>:%s。\n' "$port" "$port" "$port"
-  fi
+  print_access_address
 }
 
 case "${1:-start}" in
@@ -97,21 +119,34 @@ case "${1:-start}" in
       fi
     done
     bash "$project_dir/scripts/tianqiong-dev-init.sh"
+    if ! command -v python3 >/dev/null; then printf '网络配置继承需要 Python 3，请先安装 python3。\n' >&2; exit 1; fi
+    network_args=(prepare --root "$project_dir")
+    compose=(docker compose -f "$project_dir/compose.tianqiong.yaml")
     if [[ "$action" == "pull" ]]; then
       compose+=(-f "$project_dir/compose.hub.yaml")
+      network_args+=(--hub)
     fi
+    network_override="$(python3 "$project_dir/scripts/deployment-network.py" "${network_args[@]}")"
+    if [[ -n "$network_override" ]]; then compose+=(-f "$network_override"); fi
     "${compose[@]}" config --quiet
+    # Reject occupied host ports before downloading or building application images.
+    python3 "$project_dir/scripts/deployment-network.py" preflight --root "$project_dir"
     if [[ "$action" == "pull" ]]; then
       "${compose[@]}" pull
+      if [[ -n "$network_override" ]]; then
+        helper_image="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["services"]["network-helper"]["image"])' "${network_override%.yaml}.json")"
+        if ! docker run --rm --network none --entrypoint /usr/local/bin/skyshield-network-helper "$helper_image" --help >/dev/null 2>&1; then
+          printf '当前 Bootstrap 镜像不包含网络适配器；请使用匹配本次源码的新版镜像标签，或显式关闭 SKYSHIELD_INHERIT_HOST_NETWORK。\n' >&2
+          exit 1
+        fi
+      fi
       "${compose[@]}" up -d --no-build --pull never
     else
       "${compose[@]}" up -d --build
     fi
+    python3 "$project_dir/scripts/deployment-network.py" stop-disabled --root "$project_dir"
     printf '服务已交由 Docker Compose 启动，可使用 ./docker.sh status 查看状态。\n'
-    if published="$("${compose[@]}" port nginx 443 2>/dev/null)" && [[ "$published" == 0.0.0.0:* ]]; then
-      port="${published##*:}"
-      printf '界面监听 0.0.0.0:%s；本机访问 https://localhost:%s，其他设备访问 https://<服务器IP>:%s。\n' "$port" "$port" "$port"
-    fi
+    print_access_address
     ;;
   run|restart)
     if [[ $# -ne 1 ]]; then usage >&2; exit 2; fi
@@ -123,6 +158,7 @@ case "${1:-start}" in
           docker stop --time 30 "${runtime_containers[$service]}" >/dev/null
         fi
       done
+      if [[ "$network_adapter" == true ]]; then docker stop --time 30 "${runtime_containers[network-helper]}" >/dev/null; fi
     fi
     start_existing_runtime
     ;;
@@ -137,6 +173,10 @@ case "${1:-start}" in
   logs)
     shift
     "${compose[@]}" logs --follow --tail=200 "$@"
+    ;;
+  network-check)
+    if [[ $# -gt 2 ]]; then usage >&2; exit 2; fi
+    python3 "$project_dir/scripts/deployment-network.py" check --root "$project_dir" "${@:2}"
     ;;
   -h|--help|help)
     usage

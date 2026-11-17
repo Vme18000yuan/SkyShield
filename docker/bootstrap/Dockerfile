@@ -36,6 +36,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     cd server && \
     go build -trimpath -buildvcs=false -o /out/server ./cmd/server && \
+    go build -trimpath -buildvcs=false -o /out/skyshield-network-helper ./cmd/network-helper && \
     go build -trimpath -buildvcs=false -o /out/lunafox-upgrader ./cmd/lunafox-upgrader
 
 FROM alpine:3.23.5
@@ -49,6 +50,7 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 COPY --from=builder /out/server /usr/local/bin/server
+COPY --from=builder /out/skyshield-network-helper /usr/local/bin/skyshield-network-helper
 COPY --from=builder /out/lunafox-upgrader /usr/local/bin/lunafox-upgrader
 COPY --from=builder /src/extensions/workflows /usr/local/share/lunafox/workflows
 COPY docker/bootstrap/bootstrap.sh /usr/local/bin/lunafox-bootstrap

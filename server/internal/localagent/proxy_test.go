@@ -3,6 +3,7 @@ package localagent
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/yyhuni/lunafox/server/internal/httpoutbound"
@@ -20,10 +21,16 @@ func TestLocalEngineUsesCurrentProxyPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer socket.Close()
+	t.Setenv("ALL_PROXY", "socks5://127.0.0.1:1080")
+	t.Setenv("no_proxy", ".corp.example,10.0.0.0/8")
+	values, force, err := localProxyEnvironment(filepath.Join(root, "proxy.sock"))
+	if err != nil || force || !slices.Contains(values, "ALL_PROXY=socks5://127.0.0.1:1080") || !slices.Contains(values, "no_proxy=.corp.example,10.0.0.0/8") {
+		t.Fatalf("inherited proxy values=%v err=%v", values, err)
+	}
 	if err := controller.Set(true, "http://127.0.0.1:1234"); err != nil {
 		t.Fatal(err)
 	}
-	values, force, err := localProxyEnvironment(filepath.Join(root, "proxy.sock"))
+	values, force, err = localProxyEnvironment(filepath.Join(root, "proxy.sock"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,13 +25,14 @@ Linux 环境安装 Go 1.26.10、Node.js 22、pnpm、Python 3、PostgreSQL 和 Re
 
 ## Docker 一键部署
 
-安装 Docker Engine、Docker Compose 插件和 OpenSSL 后执行：
+在 Linux 部署机上安装 Docker Engine、Docker Compose 插件、Python 3 和 OpenSSL 后执行：
 
 ```bash
 ./docker.sh                 # 从本地源码构建并启动
 ./docker.sh pull            # 拉取 Docker Hub 镜像并启动
 ./docker-start.sh           # 启动现有容器
 ./docker-restart.sh         # 重启现有容器
+./docker.sh network-check 内网域名或IP  # 比较部署机与 Server 的解析；支持 IP:端口/HTTP(S) URL
 ```
 
 启动后：
@@ -42,6 +43,8 @@ Linux 环境安装 Go 1.26.10、Node.js 22、pnpm、Python 3、PostgreSQL 和 Re
 - 全新部署的管理员账号：`admin`，初始密码：`admin`
 
 首次登录后请修改初始密码；已有数据卷会保留修改后的密码。首次启动使用自签名证书。可通过 `.env` 配置用于生成链接和证书的 `PUBLIC_HOST` 以及访问端口 `PUBLIC_PORT`，参考 [.env.example](.env.example)。日常启动、重启复用已有容器，不构建或拉取镜像；重启会中断正在执行的任务。使用 `./docker.sh status` 查看状态，`./docker.sh logs` 查看日志，`./docker.sh stop` 停止服务并保留数据。
+
+默认启用部署机网络继承：应用组件、Agent 和动态扫描引擎使用 Linux 宿主网络，沿用部署机的路由/VPN；DNS 优先使用活动的 systemd-resolved，保留分域解析，并读取部署机 hosts 和 HTTP/HTTPS/ALL_PROXY/NO_PROXY 配置。PostgreSQL、Redis 和 Loki 仍使用项目网桥，HTTPS 浏览器入口仍为 `8443`。宿主执行模式需要 `3000`、`8080`、`9090` 和 HTTPS 入口端口未被其他程序占用；可用 `.env` 中的 `SKYSHIELD_NETWORK_MODE=bridge` 选择网桥隔离，此时 VPN/防火墙须允许容器网桥转发。这里的宿主机指运行 Docker 的 Linux 主机或虚拟机；物理电脑的 VPN 不会自动成为虚拟机的网络。具体配置和诊断见 [Docker 部署说明](docs/15-Docker一键部署.md)。
 
 发布镜像位于 Docker Hub 的 `solder110/skyshield-server`、`skyshield-frontend`、`skyshield-bootstrap` 和 `skyshield-nginx`，默认使用 `latest`；可在 `.env` 设置 `SKYSHIELD_IMAGE_TAG` 为指定的 `sha-<提交号>`。当前发布的镜像平台为 `linux/amd64`。
 

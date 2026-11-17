@@ -33,7 +33,7 @@ func localProxyEnvironment(path string) ([]string, bool, error) {
 			return nil, false, errors.New("local proxy policy is invalid")
 		}
 		var inherited []string
-		for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"} {
+		for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"} {
 			if value, ok := os.LookupEnv(name); ok {
 				inherited = append(inherited, name+"="+value)
 			}

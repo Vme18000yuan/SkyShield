@@ -16,6 +16,15 @@ SPEC.loader.exec_module(deploy)
 
 
 class LocalDeployTests(unittest.TestCase):
+    def test_agent_inherits_host_proxy_without_server_credentials(self):
+        with mock.patch.dict(os.environ, {"ALL_PROXY": "socks5://127.0.0.1:1080", "no_proxy": ".corp.example",
+                                          "DB_PASSWORD": "fixture-only", "TIANQIONG_AI_ENCRYPTION_KEY": "fixture-only"}):
+            env = deploy.agent_environment()
+        self.assertEqual(env['ALL_PROXY'], 'socks5://127.0.0.1:1080')
+        self.assertEqual(env['no_proxy'], '.corp.example')
+        self.assertNotIn('DB_PASSWORD', env)
+        self.assertNotIn('TIANQIONG_AI_ENCRYPTION_KEY', env)
+
     def test_old_engine_binary_reports_how_to_rebuild(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)

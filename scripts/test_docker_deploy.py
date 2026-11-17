@@ -20,6 +20,7 @@ class DockerDeployTests(unittest.TestCase):
         (self.root / "bin").mkdir()
         shutil.copy2(ROOT / "docker.sh", self.root / "docker.sh")
         shutil.copy2(ROOT / "scripts/tianqiong-dev-init.sh", self.root / "scripts/tianqiong-dev-init.sh")
+        shutil.copy2(ROOT / "scripts/deployment-network.py", self.root / "scripts/deployment-network.py")
         (self.root / "compose.tianqiong.yaml").write_text("services: {}\n")
         (self.root / "compose.hub.yaml").write_text("services: {}\n")
         fake = self.root / "bin/docker"
@@ -66,6 +67,7 @@ if "port" in args and "nginx" in args:
 ''')
         fake.chmod(0o755)
         self.env = os.environ.copy()
+        self.env["SKYSHIELD_INHERIT_HOST_NETWORK"] = "0"
         self.env["PATH"] = str(self.root / "bin") + os.pathsep + self.env["PATH"]
         self.env["SKYSHIELD_TEST_DOCKER_CALLS"] = str(self.root / "calls.jsonl")
         self.env["SKYSHIELD_TEST_CONTAINER_STATES"] = str(self.root / "states.json")
