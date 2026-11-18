@@ -15,7 +15,7 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-func (s *TaskStore) TaskCoverageGraph(ctx context.Context, user int, taskID int64) (aiapp.CoverageGraph, error) {
+func (s *TaskStore) TaskCoverageGraph(ctx context.Context, user int, taskID int64, hideCDN bool) (aiapp.CoverageGraph, error) {
 	out := aiapp.CoverageGraph{Nodes: []aiapp.CoverageGraphNode{}, Edges: []aiapp.CoverageGraphEdge{}}
 	task, err := s.GetTask(ctx, user, taskID)
 	if err != nil {
@@ -25,7 +25,7 @@ func (s *TaskStore) TaskCoverageGraph(ctx context.Context, user int, taskID int6
 	if err != nil {
 		return out, err
 	}
-	assets, truncated, err := airuntime.TaskCoverageAssets(ctx, db, user, taskID)
+	assets, truncated, err := airuntime.TaskCoverageAssets(ctx, db, user, taskID, hideCDN)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, aiapp.ErrTaskNotFound
 	}

@@ -10,11 +10,12 @@ import { useAuth } from "@/hooks/use-auth"
 import { useCoverageGraph, useCoverageRefs } from "@/hooks/use-asset-coverage"
 import type { CoverageNode, CoverageScope } from "@/types/asset-coverage.types"
 import { CoverageAssetDetailBody } from "./coverage-asset-detail"
+import { CdnVisibilityToggle } from "@/components/assets/cdn-visibility-toggle"
 import { CoverageTopology } from "./coverage-topology"
 import { CoverageTree } from "./coverage-tree"
 import { buildCoverageTree } from "./coverage-tree-model"
 
-type CoverageGraphProps = { scope: CoverageScope; coverageEnabled?: boolean; sourceNames?: Record<string, string> }
+type CoverageGraphProps = { scope: CoverageScope; showCdn?: boolean; coverageEnabled?: boolean; sourceNames?: Record<string, string> }
 
 export function AssetCoverageGraph(props: CoverageGraphProps) {
   const user = useAuth().data?.user?.id
@@ -22,12 +23,13 @@ export function AssetCoverageGraph(props: CoverageGraphProps) {
   return <AccountCoverageGraph key={`${user}:${JSON.stringify(props.scope)}`} {...props} />
 }
 
-function AccountCoverageGraph({ scope, coverageEnabled = true, sourceNames = {} }: CoverageGraphProps) {
+function AccountCoverageGraph({ scope, showCdn, coverageEnabled = true, sourceNames = {} }: CoverageGraphProps) {
   const t = useTranslations("aiTasks.coverageGraph")
   const [mode, setMode] = React.useState<"tree" | "topology">("tree")
   const [selectedKey, setSelectedKey] = React.useState<string | null>(null)
   const [topologyDetailOpen, setTopologyDetailOpen] = React.useState(false)
-  const graph = useCoverageGraph(scope)
+  const [localShowCdn, setLocalShowCdn] = React.useState(false)
+  const graph = useCoverageGraph(scope, !(showCdn ?? localShowCdn))
   const data = React.useMemo(() => {
     if (!graph.data) return null
     return coverageEnabled ? graph.data : { ...graph.data, nodes: graph.data.nodes.map(node => ({ ...node, tested: false })) }
@@ -53,7 +55,8 @@ function AccountCoverageGraph({ scope, coverageEnabled = true, sourceNames = {} 
         <Button size="sm" variant={mode === "tree" ? "surface" : "ghost"} aria-pressed={mode === "tree"} onClick={() => { setMode("tree"); setTopologyDetailOpen(false) }}><ListTree className="size-4" />{t("treeView")}</Button>
         <Button size="sm" variant={mode === "topology" ? "surface" : "ghost"} aria-pressed={mode === "topology"} onClick={() => setMode("topology")}><Network className="size-4" />{t("topologyView")}</Button>
       </div>
-      {mode === "topology" && <span className="text-muted-foreground">{t("foldHint")}</span>}
+      {mode === "topology" && <span className="text-xs text-muted-foreground">{t("topologyHint")}</span>}
+      {showCdn === undefined && <CdnVisibilityToggle shown={localShowCdn} onChange={setLocalShowCdn} />}
       <Button size="sm" variant="outline" onClick={() => { void graph.refetch(); if (selected?.asset_id) void refs.refetch() }} disabled={graph.isFetching}>{t("refresh")}</Button>
       {!graph.isError && graph.data?.truncated && <span className="text-amber-600">{t("truncated")}{mode === "tree" ? ` ${t("treeSearchLimit")}` : ""}</span>}
     </div>
@@ -66,7 +69,7 @@ function AccountCoverageGraph({ scope, coverageEnabled = true, sourceNames = {} 
           </aside>
         </div>
       </div>
-      {mode === "topology" && <CoverageTopology graph={data} onSelect={selectTopology} />}
+      {mode === "topology" && <CoverageTopology graph={data} onSelect={selectTopology} onShowTree={() => { setMode("tree"); setTopologyDetailOpen(false) }} />}
     </>}
     <Sheet open={mode === "topology" && topologyDetailOpen && !!selected && !graph.isError} onOpenChange={setTopologyDetailOpen}><SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
       <SheetHeader className="border-b p-4"><SheetTitle>{selected ? t(`kinds.${selected.kind}`) : t("asset")}</SheetTitle><SheetDescription className="break-all">{selected?.label}</SheetDescription></SheetHeader>{mode === "topology" ? detail : null}

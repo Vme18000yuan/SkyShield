@@ -102,6 +102,7 @@ func (s *Service) Register(ctx context.Context, user int, run, call string, inpu
 	}
 	canonical, _ := json.Marshal(input)
 	hash := fmt.Sprintf("%x", sha256.Sum256(canonical))
+	newReceipt := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var conversation, tenant string
 		err := tx.Raw(`SELECT r.conversation_id::text,r.tenant_id::text FROM ai_run r
@@ -186,9 +187,13 @@ AND m.role IN ('admin','analyst') AND u.is_active AND t.status='active' FOR UPDA
 		if err = tx.Exec(`INSERT INTO ai_conversation_vulnerability_report(tenant_id,owner_user_id,conversation_id,run_id,tool_use_id,input_hash,vulnerability_id,report,evidence) VALUES(?::uuid,?,?::uuid,?::uuid,?,?,?,?::jsonb,?::jsonb)`, tenant, user, conversation, run, call, hash, out.VulnerabilityID, string(canonical), string(body)).Error; err != nil {
 			return err
 		}
+		newReceipt = true
 		out.Created = created > 0
 		out.Message = "已同步到漏洞管理，等待人工复核"
 		return nil
 	})
+	if err == nil && newReceipt {
+		s.linkRecordedEvidence(ctx, user, run, call, input.TrafficIDs)
+	}
 	return out, err
 }

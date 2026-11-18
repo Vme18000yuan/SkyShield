@@ -43,11 +43,15 @@ type CoverageAssetRefs struct {
 	Findings []CoverageAssetRef `json:"findings"`
 }
 type CoverageGraphStore interface {
-	TaskCoverageGraph(context.Context, int, int64) (CoverageGraph, error)
+	TaskCoverageGraph(context.Context, int, int64, bool) (CoverageGraph, error)
 	TaskAssetRefs(context.Context, int, int64, int64) (CoverageAssetRefs, error)
 }
 
 func (f *TaskFacade) CoverageGraph(ctx context.Context, user int, taskID int64) (CoverageGraph, error) {
+	return f.CoverageGraphView(ctx, user, taskID, false)
+}
+
+func (f *TaskFacade) CoverageGraphView(ctx context.Context, user int, taskID int64, hideCDN bool) (CoverageGraph, error) {
 	if user <= 0 || taskID <= 0 {
 		return CoverageGraph{}, ErrInvalidInput
 	}
@@ -55,7 +59,7 @@ func (f *TaskFacade) CoverageGraph(ctx context.Context, user int, taskID int64) 
 	if !ok {
 		return CoverageGraph{}, ErrTaskNotFound
 	}
-	return store.TaskCoverageGraph(ctx, user, taskID)
+	return store.TaskCoverageGraph(ctx, user, taskID, hideCDN)
 }
 func (f *TaskFacade) AssetRefs(ctx context.Context, user int, taskID, assetID int64) (CoverageAssetRefs, error) {
 	if user <= 0 || taskID <= 0 || assetID <= 0 {

@@ -10,7 +10,7 @@ import (
 )
 
 type coverageGraphApplication interface {
-	CoverageGraph(context.Context, int, int64) (aiapp.CoverageGraph, error)
+	CoverageGraphView(context.Context, int, int64, bool) (aiapp.CoverageGraph, error)
 	AssetRefs(context.Context, int, int64, int64) (aiapp.CoverageAssetRefs, error)
 }
 
@@ -28,7 +28,11 @@ func (h *TaskHandler) CoverageGraph(c *gin.Context) {
 		taskError(c, aiapp.ErrTaskNotFound)
 		return
 	}
-	graph, err := app.CoverageGraph(c.Request.Context(), user, task)
+	hideCDN, valid := httpdto.OptionalQueryBool(c, "hideCdn")
+	if !valid {
+		return
+	}
+	graph, err := app.CoverageGraphView(c.Request.Context(), user, task, hideCDN)
 	if err != nil {
 		taskError(c, err)
 		return

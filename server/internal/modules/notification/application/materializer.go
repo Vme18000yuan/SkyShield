@@ -20,7 +20,7 @@ type Materializer struct {
 }
 
 func NewMaterializer(transaction MaterializationTransaction, facts FactStore, audience AudienceStore, destinations DestinationFanoutStore, renderer TemplateRenderer, notifier RealtimeNotifier) *Materializer {
-	if transaction == nil || facts == nil || audience == nil || destinations == nil || renderer == nil {
+	if transaction == nil || facts == nil || audience == nil || renderer == nil {
 		panic("notification materializer dependencies are required")
 	}
 	return &Materializer{transaction: transaction, facts: facts, audience: audience, destinations: destinations, renderer: renderer, notifier: notifier}
@@ -50,6 +50,9 @@ func (materializer *Materializer) Materialize(ctx context.Context, event domain.
 		})
 		if err != nil {
 			return err
+		}
+		if materializer.destinations == nil {
+			return nil
 		}
 		locale := domain.LocaleEnglish
 		if len(projection.Recipients) > 0 {

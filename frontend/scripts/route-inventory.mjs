@@ -10,6 +10,9 @@ const defaultAppDir = path.resolve(scriptDir, "../app")
 export const excludedPrefixes = Object.freeze(["/prototypes"])
 export const excludedPattern = /\/demo(\/|$)/i
 export const serverRedirectAliases = new Map([
+  ["/settings/notifications", { redirectTarget: "/settings/ai/notifications/" }],
+  ["/ai/finding-reviews", { redirectTarget: "/vulnerabilities/" }],
+  ["/token-purchase", { redirectTarget: "https://all-in-ai.site" }],
   [
     "/targets/[id]/relations",
     {

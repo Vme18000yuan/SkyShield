@@ -278,9 +278,9 @@ function NotifyPage() {
     <div className="flex flex-1 flex-col gap-4 md:gap-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">通知推送</h1>
+          <h1 className="text-xl font-semibold tracking-tight">AI 通知推送</h1>
           <p className="text-muted-foreground text-sm">
-            发现漏洞时推送到钉钉 / 飞书 / 企业微信等渠道 · 每个渠道可独立设推送时机与过滤规则
+            推送扫描、AI 对话和 AI 任务发现的漏洞。每个渠道可单独设置严重度、实时推送或定时汇总。
           </p>
           <p className="text-muted-foreground text-xs">启用渠道后，发现名称、摘要和关联资产会发送至所配置的地址。</p>
         </div>

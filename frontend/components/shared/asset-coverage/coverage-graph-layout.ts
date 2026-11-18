@@ -5,6 +5,10 @@ export type CoverageFold = { key: string; groupId: string; parentKey: string; ki
 
 export const COVERAGE_FOLD_LIMIT = 20
 export const COVERAGE_FOLD_STEP = 20
+// Apply these limits before constructing React Flow nodes or sending work to D3.
+export const TOPOLOGY_NODE_LIMIT = 200
+export const TOPOLOGY_EDGE_LIMIT = 400
+const ASSET_LIMIT = 180 // leave room for folded groups
 
 function sortAssets(a: CoverageNode, b: CoverageNode): number {
   if (a.tested !== b.tested) return a.tested ? -1 : 1
@@ -13,7 +17,7 @@ function sortAssets(a: CoverageNode, b: CoverageNode): number {
 
 // Edges point from a child to its parent. Fold each parent's children by kind,
 // without hiding a shared child that is already visible through another parent.
-export function coverageVisible(graph: CoverageGraph, expanded: ReadonlyMap<string, number>) {
+export function coverageVisible(graph: CoverageGraph, expanded: ReadonlyMap<string, number>, collapsed: ReadonlySet<string> = new Set()) {
   const byKey = new Map(graph.nodes.map(node => [node.key, node]))
   const children = new Map<string, string[]>()
   const hasParent = new Set<string>()
@@ -31,15 +35,19 @@ export function coverageVisible(graph: CoverageGraph, expanded: ReadonlyMap<stri
     children.set(edge.dst, items)
   }
 
-  const roots = graph.nodes.filter(node => !hasParent.has(node.key)).sort(sortAssets).map(node => node.key)
+  const roots = [...byKey.values()].filter(node => !hasParent.has(node.key)).sort(sortAssets).map(node => node.key)
   // A malformed or legacy cyclic component must remain reachable in the UI.
   const reachable = new Set<string>()
   const markReachable = (start: string) => {
+    if (reachable.has(start)) return
+    reachable.add(start)
     const queue = [start]
     for (let i = 0; i < queue.length; i++) {
-      if (reachable.has(queue[i])) continue
-      reachable.add(queue[i])
-      queue.push(...(children.get(queue[i]) ?? []))
+      for (const child of children.get(queue[i]) ?? []) {
+        if (reachable.has(child)) continue
+        reachable.add(child)
+        queue.push(child)
+      }
     }
   }
   for (const root of roots) markReachable(root)
@@ -50,38 +58,68 @@ export function coverageVisible(graph: CoverageGraph, expanded: ReadonlyMap<stri
     }
   }
 
-  const visible = new Set(roots)
-  const queue = [...roots]
+  // Reserve the first traversal for connected roots, so thousands of standalone
+  // IPs cannot use every slot before a domain's children are visited.
+  const rank = (key: string) => {
+    const node = byKey.get(key)!
+    if (node.kind === "company" || node.kind === "root_domain") return 0
+    return children.has(key) ? 1 : 2
+  }
+  roots.sort((a, b) => rank(a) - rank(b) || sortAssets(byKey.get(a)!, byKey.get(b)!))
+  const visible = new Set<string>()
   const candidates: CoverageFold[] = []
-  for (let i = 0; i < queue.length; i++) {
-    const parent = queue[i]
-    const groups = new Map<CoverageKind, CoverageNode[]>()
-    for (const key of children.get(parent) ?? []) {
-      const node = byKey.get(key)
-      if (!node) continue
-      const items = groups.get(node.kind) ?? []
-      items.push(node)
-      groups.set(node.kind, items)
-    }
-    for (const [kind, items] of groups) {
-      items.sort(sortAssets)
-      const groupId = JSON.stringify([parent, kind])
-      const limit = Math.max(COVERAGE_FOLD_LIMIT, expanded.get(groupId) ?? COVERAGE_FOLD_LIMIT)
-      for (const item of items.slice(0, limit)) {
-        if (!visible.has(item.key)) {
-          visible.add(item.key)
-          queue.push(item.key)
-        }
+  const treeEdges: CoverageEdge[] = []
+  let limited = false
+  for (const root of roots) {
+    if (visible.has(root)) continue
+    if (visible.size >= ASSET_LIMIT) { limited = true; break }
+    visible.add(root)
+    const queue = [root]
+    for (let i = 0; i < queue.length; i++) {
+      const parent = queue[i]
+      const groups = new Map<CoverageKind, CoverageNode[]>()
+      for (const key of children.get(parent) ?? []) {
+        const node = byKey.get(key)!
+        const group = groups.get(node.kind) ?? []
+        group.push(node)
+        groups.set(node.kind, group)
       }
-      const hidden = items.slice(limit)
-      if (hidden.length) candidates.push({ key: `fold:${groupId}`, groupId, parentKey: parent, kind, hidden })
+      for (const [kind, items] of groups) {
+        items.sort(sortAssets)
+        const groupId = JSON.stringify([parent, kind])
+        const limit = collapsed.has(parent) ? 0 : Math.max(COVERAGE_FOLD_LIMIT, expanded.get(groupId) ?? COVERAGE_FOLD_LIMIT)
+        const hidden: CoverageNode[] = []
+        for (let at = 0; at < items.length; at++) {
+          const item = items[at]
+          if (visible.has(item.key)) continue
+          if (at >= limit || visible.size >= ASSET_LIMIT) {
+            if (at < limit) limited = true
+            hidden.push(item)
+          } else {
+            visible.add(item.key)
+            queue.push(item.key)
+            treeEdges.push({ src: item.key, dst: parent })
+          }
+        }
+        if (hidden.length) candidates.push({ key: `fold:${groupId}`, groupId, parentKey: parent, kind, hidden })
+      }
     }
   }
-  const folds = candidates.map(fold => ({ ...fold, hidden: fold.hidden.filter(node => !visible.has(node.key)) })).filter(fold => fold.hidden.length > 0)
+  const allFolds = candidates.map(fold => ({ ...fold, hidden: fold.hidden.filter(node => !visible.has(node.key)) })).filter(fold => fold.hidden.length)
+  const folds = allFolds.slice(0, TOPOLOGY_NODE_LIMIT - visible.size)
+  const displayedEdges = [...treeEdges, ...folds.map(fold => ({ src: fold.key, dst: fold.parentKey }))]
+  const included = new Set(treeEdges.map(edge => JSON.stringify([edge.src, edge.dst])))
+  for (const edge of edges) {
+    if (!visible.has(edge.src) || !visible.has(edge.dst) || collapsed.has(edge.dst) || included.has(JSON.stringify([edge.src, edge.dst]))) continue
+    if (displayedEdges.length >= TOPOLOGY_EDGE_LIMIT) { limited = true; break }
+    displayedEdges.push(edge)
+  }
   return {
-    nodes: graph.nodes.filter(node => visible.has(node.key)),
+    nodes: [...byKey.values()].filter(node => visible.has(node.key)),
     folds,
-    edges: [...edges.filter(edge => visible.has(edge.src) && visible.has(edge.dst)), ...folds.map(fold => ({ src: fold.key, dst: fold.parentKey }))],
+    edges: displayedEdges,
+    limited: limited || folds.length < allFolds.length,
+    canExpand: visible.size < ASSET_LIMIT,
   }
 }
 

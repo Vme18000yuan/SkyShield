@@ -28,7 +28,12 @@ import (
 func registerRoutes(engine *gin.Engine, d *deps, jwtMiddleware gin.HandlerFunc) {
 	// MCP shares the Server lifecycle and public edge with REST, but uses its
 	// own static-key admission and protocol handler instead of JWT routing.
-	engine.Any("/mcp", gin.WrapH(d.mcpHandler))
+	if d.mcpClients != nil {
+		engine.Any("/mcp", gin.WrapH(d.mcpClients.Handler(d.mcpHandler)))
+		engine.Any("/mcp/clients", gin.WrapH(d.mcpClients.Handler(nil)))
+	} else {
+		engine.Any("/mcp", gin.WrapH(d.mcpHandler))
+	}
 
 	assetrouter.RegisterHealthRoutes(engine, d.healthHandler)
 
@@ -38,6 +43,9 @@ func registerRoutes(engine *gin.Engine, d *deps, jwtMiddleware gin.HandlerFunc) 
 	if d.productUpdateHandler != nil {
 		protected.Use(d.productUpdateHandler.Maintenance)
 		d.productUpdateHandler.Register(protected)
+	}
+	if d.mcpClients != nil {
+		d.mcpClients.RegisterManagement(protected)
 	}
 	if d.httpRepeaterHandler != nil {
 		repeaterrouter.Register(protected, d.httpRepeaterHandler)
@@ -138,8 +146,8 @@ func registerRoutes(engine *gin.Engine, d *deps, jwtMiddleware gin.HandlerFunc) 
 	scanrouter.RegisterScanRoutes(protected, d.scanHandler, d.taskProgressLogHandler)
 	scheduledscanrouter.RegisterScheduledScanRoutes(protected, d.scheduledScanHandler)
 	securityrouter.RegisterSecurityRoutes(protected, d.vulnerabilityHandler)
-	if d.notificationInboxHandler != nil || d.notificationDestinationHandler != nil || d.notificationSSEHandler != nil {
-		notificationrouter.RegisterNotificationRoutes(protected, d.notificationInboxHandler, d.notificationDestinationHandler, d.notificationSSEHandler)
+	if d.notificationInboxHandler != nil || d.notificationSSEHandler != nil {
+		notificationrouter.RegisterNotificationRoutes(protected, d.notificationInboxHandler, nil, d.notificationSSEHandler)
 	}
 	if d.loginVisualHandler != nil {
 		loginvisualrouter.RegisterLoginVisualRoutes(api, protected, d.loginVisualHandler)

@@ -28,6 +28,8 @@ type ProviderResolver func(context.Context, int) (llm.Provider, string, bool, er
 type ProfileProviderResolver func(context.Context, int, string) (llm.Provider, string, bool, error)
 type ToolResolver func(int) []tool.CoreTool
 
+type manualChatTimingKey struct{}
+
 type ConversationFacade struct {
 	chatBudget            airuntime.ModelRunBudgetResolver
 	governor              *airuntime.ExecutionGovernor
@@ -359,6 +361,7 @@ func (f *ConversationFacade) send(ctx context.Context, userID int, conversationI
 	f.lifecycleMu.Unlock()
 	background := ""
 	if AgentTriggerJobFromContext(ctx) == 0 {
+		runCtx = context.WithValue(runCtx, manualChatTimingKey{}, true)
 		background = mentionSource
 	}
 	transferred = true
@@ -443,8 +446,10 @@ func (f *ConversationFacade) execute(ctx context.Context, cancel context.CancelF
 	if prompt == "" {
 		prompt = "你是天穹攻击面管理平台的安全助手。请基于可用资产和证据回答，不要编造事实。"
 	}
+	manualChat, _ := ctx.Value(manualChatTimingKey{}).(bool)
 	_, err := f.runner.Run(ctx, airuntime.ChatRun{
-		BudgetResolver: f.chatBudget,
+		ObserveToolTiming: manualChat,
+		BudgetResolver:    f.chatBudget,
 		HistoryRequired: func(ctx context.Context) (bool, error) {
 			if store, ok := f.store.(interface {
 				RequiresTranscript(context.Context, int, string, string) (bool, error)
@@ -473,6 +478,19 @@ func (f *ConversationFacade) execute(ctx context.Context, cancel context.CancelF
 			return f.mcp(ctx, userID, key)
 		},
 	}, func(event airuntime.Activity) {
+		if event.Kind == "tool_started" {
+			// A live timing hint is optional. The result also carries its timestamps.
+			if event.ToolTiming != nil {
+				if store, ok := f.store.(interface {
+					MarkConversationToolStarted(context.Context, int, string, string, string, string, time.Time) error
+				}); ok {
+					markCtx, stop := context.WithTimeout(ctx, time.Second)
+					_ = store.MarkConversationToolStarted(markCtx, userID, conversationID, runID, f.instanceID, event.ToolTiming.Occurrence, event.ToolTiming.StartedAt)
+					stop()
+				}
+			}
+			return
+		}
 		activityMu.Lock()
 		if event.TerminalReason != "" {
 			terminalReason = event.TerminalReason

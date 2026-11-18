@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 
 import {
   ArrowUpIcon,
@@ -11,6 +12,7 @@ import {
   ListChecksIcon,
   Loader2Icon,
   MoreHorizontalIcon,
+  Network,
   PaperclipIcon,
   PencilIcon,
   PinIcon,
@@ -29,6 +31,7 @@ import { TodoPopover } from "@/components/ai/artex/todo-popover";
 import { ApprovalExecutionFocus, useApprovalFocus, useApprovalHistory } from "@/components/ai/artex/approval-execution-focus";
 import { Transcript } from "@/components/ai/artex/transcript";
 import { ConversationTraffic } from "@/components/ai/artex/task-traffic";
+import { ConversationExploration } from "@/components/ai/conversation-exploration";
 import {
   AlertDialog,
   AlertDialogClose as AlertDialogAction,
@@ -501,6 +504,7 @@ function ChatView({
   onConvUpdated: () => void;
 }) {
   const approvalFocus = useApprovalFocus({ conversationId: conv.id });
+  const explorationText = useTranslations("aiChat.exploration");
   const [messages, setMessages] = React.useState<Activity[]>([]);
   const [running, setRunning] = React.useState(false);
   const [polling, setPolling] = React.useState(false);
@@ -513,6 +517,7 @@ function ChatView({
   const [sending, setSending] = React.useState(false);
   const [stopping, setStopping] = React.useState(false);
   const [trafficOpen, setTrafficOpen] = React.useState(false);
+  const [explorationOpen, setExplorationOpen] = React.useState(false);
   // 方式1 文件上传:已上传的附件(落到 sessions/conv-<id>/uploads/),随下条消息一起发。
   const [attachments, setAttachments] = React.useState<ChatAttachment[]>(initial?.attachments ?? []);
   const [uploading, setUploading] = React.useState(false);
@@ -839,6 +844,7 @@ function ChatView({
         {running && <LiveBadge />}
         <SideQuestionButton side={side} />
         <Button variant="outline" size="sm" onClick={() => setTrafficOpen(true)}>流量记录</Button>
+        <Button variant="outline" size="sm" onClick={() => setExplorationOpen(true)}><Network className="size-3.5" />{explorationText("title")}</Button>
         <div className="text-muted-foreground ml-auto flex min-w-0 max-w-full items-center justify-end gap-x-3 gap-y-1 text-xs max-sm:w-full max-sm:flex-wrap">
           {tokenTotal.turns > 0 && (
             <span title="agent 循环轮次（模型调用次数）" className="tabular-nums">
@@ -908,6 +914,12 @@ function ChatView({
         <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-5xl">
           <DialogHeader><DialogTitle>流量记录</DialogTitle><DialogDescription>当前对话录制的请求与响应；任务触发的流量可在对应任务中查看。</DialogDescription></DialogHeader>
           {trafficOpen && <ConversationTraffic conversationId={conv.id} />}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={explorationOpen} onOpenChange={setExplorationOpen}>
+        <DialogContent className="max-h-[95vh] w-[96vw] max-w-[96vw]! overflow-hidden">
+          <DialogHeader><DialogTitle>{explorationText("title")}</DialogTitle><DialogDescription>{explorationText("description")}</DialogDescription></DialogHeader>
+          {explorationOpen && <ConversationExploration conversationId={conv.id} running={running} />}
         </DialogContent>
       </Dialog>
     </SideQuestionWorkspace>

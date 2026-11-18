@@ -8,8 +8,9 @@ function coveragePath(scope: CoverageScope) {
 }
 
 export const AssetCoverageService = {
-  async graph(scope: CoverageScope, signal?: AbortSignal): Promise<CoverageGraph> {
-    return (await api.get<CoverageGraph>(`${coveragePath(scope)}/coverageGraph`, { signal, params: scope.kind === "root" ? { organizationId: scope.organizationId } : undefined })).data
+  async graph(scope: CoverageScope, signal?: AbortSignal, hideCdn?: boolean): Promise<CoverageGraph> {
+    const params = { ...(scope.kind === "root" ? { organizationId: scope.organizationId } : {}), ...(hideCdn !== undefined ? { hideCdn } : {}) }
+    return (await api.get<CoverageGraph>(`${coveragePath(scope)}/coverageGraph`, { signal, params: Object.keys(params).length ? params : undefined })).data
   },
   async refs(scope: CoverageScope, assetId: string, signal?: AbortSignal): Promise<CoverageRefs> {
     if (!/^[1-9]\d*$/.test(assetId)) throw new Error("Invalid asset ID")

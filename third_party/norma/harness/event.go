@@ -12,17 +12,19 @@ import "github.com/Autumn-27/norma/llm"
 type EventKind string
 
 const (
-	KindText       EventKind = "text"        // assistant text delta
-	KindThinking   EventKind = "thinking"    // reasoning delta
-	KindToolUse    EventKind = "tool_use"    // a tool is about to run
-	KindToolResult EventKind = "tool_result" // a tool finished
-	KindProgress   EventKind = "progress"    // mid-tool progress
-	KindUsage      EventKind = "usage"       // cumulative token usage so far (per model turn)
-	KindResult     EventKind = "result"      // terminal event (loop finished)
+	KindText        EventKind = "text"         // assistant text delta
+	KindThinking    EventKind = "thinking"     // reasoning delta
+	KindToolUse     EventKind = "tool_use"     // a tool is about to run
+	KindToolResult  EventKind = "tool_result"  // a tool finished
+	KindToolStarted EventKind = "tool_started" // optional observation of an actual invocation
+	KindProgress    EventKind = "progress"     // mid-tool progress
+	KindUsage       EventKind = "usage"        // cumulative token usage so far (per model turn)
+	KindResult      EventKind = "result"       // terminal event (loop finished)
 )
 
 // Event is one item in the loop's output stream.
 type Event struct {
+	ToolTiming *ToolTiming
 	Kind       EventKind
 	Text       string            // KindText / KindThinking / KindProgress
 	ToolUse    *llm.ContentBlock // KindToolUse

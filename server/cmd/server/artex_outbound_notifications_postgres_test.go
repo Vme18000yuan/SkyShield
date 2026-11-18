@@ -336,4 +336,84 @@ func TestARTEXOutboundNotificationsIsolatedPostgres(t *testing.T) {
 	if hidden, e := store.Deliveries(ctx, owner, 0, 25); e != nil || hidden.Total != 0 {
 		t.Fatalf("archived task history visible: %+v %v", hidden, e)
 	}
+	verifyRegistryPush(t, ctx, db, store, owner, other, target)
+}
+
+// The native registry has no task identifier. A repeated chat report must not
+// become another notification or disclose the chat to other channel owners.
+func verifyRegistryPush(t *testing.T, ctx context.Context, db *sql.DB, store *ainotification.Store, owner, other, target int) {
+	t.Helper()
+	const tenant = "00000000-0000-0000-0000-000000000001"
+	exec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, query, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`INSERT INTO ai_notification_channels(tenant_id,owner_user_id,name,kind,enabled,enabled_at,mode,config_cipher)
+  VALUES ($1,$2,'other account','webhook',TRUE,clock_timestamp(),'realtime',decode('00','hex'))`, tenant, other)
+	var vid int
+	if err := db.QueryRowContext(ctx, `INSERT INTO vulnerability(target_id,url,vuln_type,severity,source) VALUES($1,'https://fixture.invalid/scan','fixture','high','nuclei') RETURNING id`, target).Scan(&vid); err != nil {
+		t.Fatal(err)
+	}
+	chat, run := uuid.NewString(), uuid.NewString()
+	exec(`INSERT INTO ai_conversation(id,tenant_id,owner_user_id,title) VALUES($1,$2,$3,'push fixture')`, chat, tenant, owner)
+	exec(`INSERT INTO ai_run(id,tenant_id,conversation_id,owner_user_id,status,lease_owner,lease_until) VALUES($1,$2,$3,$4,'completed',$5,clock_timestamp())`, run, tenant, chat, owner, uuid.NewString())
+	for _, call := range []string{"first", "duplicate"} {
+		exec(`INSERT INTO ai_conversation_vulnerability_report(tenant_id,owner_user_id,conversation_id,run_id,tool_use_id,input_hash,vulnerability_id,report,evidence)
+   VALUES($1,$2,$3,$4,$5,repeat('0',64),$6,'{"name":"chat only","summary":"public summary"}','[{"text":"private evidence"}]')`, tenant, owner, chat, run, call, vid)
+	}
+	for i := 0; i < 10; i++ {
+		processed, err := store.FanOutOne(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !processed {
+			break
+		}
+	}
+	for user, count := range map[int]int64{owner: 2, other: 1} {
+		page, err := store.Deliveries(ctx, user, 0, 20)
+		if err != nil || page.Total != count {
+			t.Fatalf("user %d expected %d registered notifications: %+v %v", user, count, page, err)
+		}
+		for _, item := range page.Items {
+			if item.VulnerabilityID != int64(vid) || item.TaskID != 0 || item.Title == "chat only" && user != owner {
+				t.Fatalf("wrong source or audience: %+v", item)
+			}
+		}
+	}
+	// An info-gather risk needs both the registry row and the matching import
+	// receipt. Neither its raw-output IDs nor another user's channel is enough.
+	gather := uuid.NewString()
+	exec(`INSERT INTO ai_info_gather_run(id,tenant_id,owner_user_id,execution_id,tool_use_id,target,target_kind,mode,status)
+ VALUES($1,$2,$3,$4,'gather','fixture.invalid','HOST','fast','completed')`, gather, tenant, owner, uuid.NewString())
+	exec(`INSERT INTO ai_info_gather_record(run_id,kind,record_id,payload) VALUES($1,'vulnerability',repeat('a',64),'{}')`, gather)
+	exec(`INSERT INTO vulnerability(target_id,url,vuln_type,severity,source,raw_output) VALUES($1,'https://fixture.invalid/gather','fixture gather','info','info-gath',jsonb_build_object('runId',$2::text,'recordId',repeat('a',64)))`, target, gather)
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM ai_notification_events WHERE gather_run_id=$1`, gather).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("unbound gather notification: %d %v", count, err)
+	}
+	exec(`UPDATE ai_info_gather_record SET status='imported',target_id=$2 WHERE run_id=$1`, gather, target)
+	if _, err := store.FanOutOne(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ownPage, err := store.Deliveries(ctx, owner, 0, 20)
+	if err != nil || ownPage.Total != 3 {
+		t.Fatalf("owner gather notification: %+v %v", ownPage, err)
+	}
+	foreign, err := store.Deliveries(ctx, other, 0, 20)
+	if err != nil || foreign.Total != 1 {
+		t.Fatalf("gather notification disclosed: %+v %v", foreign, err)
+	}
+	exec(`DELETE FROM vulnerability WHERE id=$1`, vid)
+	pageAfterDelete, err := store.Deliveries(ctx, owner, 0, 20)
+	if err != nil || pageAfterDelete.Total != 1 {
+		t.Fatalf("registry deletion must remove its scan and chat deliveries: %+v %v", pageAfterDelete, err)
+	}
+	exec(`UPDATE target SET deleted_at=clock_timestamp() WHERE id=$1`, target)
+	page, err := store.Deliveries(ctx, owner, 0, 20)
+	if err != nil || page.Total != 0 {
+		t.Fatalf("deleted target still visible: %+v %v", page, err)
+	}
 }

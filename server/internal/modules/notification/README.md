@@ -2,9 +2,9 @@
 
 `notification` owns canonical occurrence validation, outbox materialization,
 per-user inbox projections, installation destinations, and durable delivery
-state. Every active user receives an in-product inbox projection for each
-supported occurrence; Discord, WeCom, and Feishu retain independent
-installation-owned exact-kind delivery policies. Producer modules may append a
+state. SkyShield uses the inbox and SSE projections. External delivery goes through
+`internal/ainotification` and its account-owned channels. Existing installation
+credentials stay in place; they are not copied or attributed to a user. Producer modules may append a
 typed occurrence through a narrow transaction-owned port; they do not render
 messages, expand recipients, or perform network I/O.
 
@@ -20,7 +20,7 @@ and message are immutable projection snapshots after materialization.
 
 The vocabulary is deliberately split at the domain boundary: inbox decoding
 uses `InboxSupportedKinds`, while installation destination settings and fanout
-use `ExternallyDeliverableKinds`. `nuclei-poc-sync-succeeded` and
+use `ExternallyDeliverableKinds` in the legacy module. SkyShield routes new registered scan vulnerabilities and owned chat reports into the AI notification queue. AI task findings keep their existing event identity and account scope. The `000082` migration retires previously configured installation senders. Operators who used them can configure a personal channel under AI notification settings. `nuclei-poc-sync-succeeded` and
 `nuclei-poc-sync-failed` are producer-owned Nuclei terminal facts accepted only
 by the inbox pipeline; they cannot be subscribed to or delivered through
 Discord, WeCom, Feishu, or another external destination. The failed kind also

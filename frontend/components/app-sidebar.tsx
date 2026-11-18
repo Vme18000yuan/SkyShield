@@ -420,10 +420,6 @@ export function AppSidebar({ warmup = false, ...props }: React.ComponentProps<ty
                     icon: semanticIcons.concept.apiKey,
                     items: [
                         {
-                            title: t('notifications'),
-                            url: "/settings/notifications/",
-                        },
-                        {
                             title: t('httpProxy'),
                             url: "/settings/http-proxy/",
                         },

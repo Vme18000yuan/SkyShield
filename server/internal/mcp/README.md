@@ -1,5 +1,18 @@
 # MCP Server Boundary
 
+The public `/mcp` route authenticates a client for every request. Named clients
+and newly issued default keys use the scoped catalog in `external/`. The Go
+SDK negotiates Streamable HTTP, including the 2025 initialize handshake and
+2026 discovery. The local frontend proxies its same-origin URL to the scoped
+handler at `/mcp/clients`. New keys have exactly the tools their owner granted.
+Organization-limited conversations expose matching findings. Full text from
+unassigned personal chats requires an explicit all-organizations grant and
+the conversation tool. Review is a separate write permission. Credential
+management and connection diagnostics are accessible from the header.
+
+Credentials issued before migration 83 retain the following historical
+catalog on the original gateway until their owner saves a scoped policy.
+
 `internal/mcp` is the protocol adapter for the `/mcp` investigation and
 constrained-creation surface. It owns Streamable HTTP admission, static-key
 authentication, bounded tool execution, MCP-specific DTOs, error mapping, and

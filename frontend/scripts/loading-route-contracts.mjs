@@ -391,17 +391,6 @@ const routeLoadingGeometryInventory = {
       ],
     },
   },
-  route_settings_notifications: {
-    "notification-settings-page-route": {
-      // The two external destination workbench is the complete visible
-      // cold-entry surface; it has no inbox or preferences geometry.
-      requiredSlots: [
-        "surface",
-        "notification-settings-header",
-        "notification-settings-channel-workbench",
-      ],
-    },
-  },
   route_settings_system_logs: {
     "system-logs-page-route": {
       requiredSlots: [
@@ -617,6 +606,20 @@ function withLoadingGeometryContract(contract) {
 }
 
 const protectedRouteIds = [
+  "route_ai_approvals",
+  "route_ai_info_gather",
+  "route_ai_traffic",
+  "route_asset_monitor",
+  "route_asset_monitor_screen",
+  "route_assets_applications_id",
+  "route_assets_root_domains_id",
+  "route_settings_ai_asset_intercept",
+  "route_settings_ai_intercept",
+  "route_settings_ai_notifications",
+  "route_settings_ai_runtime",
+  "route_settings_http_proxy",
+  "route_tools_repeater",
+  "route_vulnerabilities_id",
   "route_organizations_id",
   "route_scan_history_id_directories",
   "route_scan_history_id_endpoints",
@@ -632,7 +635,6 @@ const protectedRouteIds = [
   "route_scan_config_blacklist",
   "route_settings_database_health",
   "route_settings_login_visual",
-  "route_settings_notifications",
   "route_settings_support",
   "route_settings_system_logs",
   "route_targets_id_directories",
@@ -719,9 +721,6 @@ const routeFirstScreenOwnerConfigs = {
   ]),
   route_settings_login_visual: createFirstScreenOwnerConfig([
     createFirstScreenOwner("login-visual-settings-page-route"),
-  ]),
-  route_settings_notifications: createFirstScreenOwnerConfig([
-    createFirstScreenOwner("notification-settings-page-route"),
   ]),
   route_settings_support: createFirstScreenOwnerConfig([
     createFirstScreenOwner("support-page-route"),

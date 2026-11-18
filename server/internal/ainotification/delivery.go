@@ -187,7 +187,7 @@ func (s *Store) FinishClaim(ctx context.Context, claim *deliveryClaim, items []c
 }
 
 func (s *Store) assetNames(ctx context.Context, claim *deliveryClaim, item claimedDelivery) ([]string, error) {
-	if len(item.Snapshot.AssetIDs) == 0 {
+	if item.Snapshot.TaskID == 0 || len(item.Snapshot.AssetIDs) == 0 {
 		return []string{}, nil
 	}
 	raw, _ := json.Marshal(item.Snapshot.AssetIDs)
@@ -222,7 +222,9 @@ func (s *Store) message(ctx context.Context, claim *deliveryClaim, items []claim
 			return notify.Message{}, err
 		}
 		detail := ""
-		if claim.BaseURL != "" {
+		if claim.BaseURL != "" && item.Snapshot.TaskID == 0 {
+			detail = fmt.Sprintf("%s/vulnerabilities/%d/", claim.BaseURL, item.Snapshot.FindingID)
+		} else if claim.BaseURL != "" {
 			detail = fmt.Sprintf("%s/ai/tasks/%d/?tab=findings&finding=%d", claim.BaseURL, item.Snapshot.TaskID, item.Snapshot.FindingID)
 		}
 		out.Items = append(out.Items, notify.Item{FindingID: item.Snapshot.FindingID, Name: item.Snapshot.Name, VulnClass: item.Snapshot.VulnClass, Severity: item.Snapshot.Severity, Summary: item.Snapshot.Summary, Assets: names, DetailURL: detail, FromStatus: item.Snapshot.FromStatus, ToStatus: item.Snapshot.ToStatus})

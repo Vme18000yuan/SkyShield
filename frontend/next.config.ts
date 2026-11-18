@@ -93,6 +93,7 @@ const nextConfig: NextConfig = {
     if (isVercel) {
       if (!vercelBackendOrigin) return [];
       return [
+        { source: '/mcp', destination: `${vercelBackendOrigin}/mcp/clients` },
         {
           source: '/v1/:path*',
           destination: `${vercelBackendOrigin}/v1/:path*`,
@@ -106,6 +107,7 @@ const nextConfig: NextConfig = {
       throw new Error('API_PORT must be a valid TCP port');
     }
     return [
+      { source: '/mcp', destination: `http://${apiHost}:${apiPort}/mcp/clients` },
       // Proxy the versioned backend API during local Next.js development.
       {
         source: '/v1/:path*',

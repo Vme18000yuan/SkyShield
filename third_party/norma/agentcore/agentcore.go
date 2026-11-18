@@ -26,6 +26,7 @@ import (
 
 // Options configures a Session (FR-07).
 type Options struct {
+	ObserveToolTiming bool
 	// Provider is the LLM backend (any Anthropic- or OpenAI-format endpoint, or
 	// a custom implementation).
 	Provider llm.Provider
@@ -505,6 +506,7 @@ func (s *Session) Prompt(ctx context.Context, input string) iter.Seq2[harness.Ev
 		reminderExtra = s.opts.SystemReminderFunc()
 	}
 	in := harness.QueryInput{
+		ObserveToolTiming:   s.opts.ObserveToolTiming,
 		Provider:            s.opts.Provider,
 		System:              s.system(),
 		DynamicBoundary:     s.opts.DynamicBoundary,

@@ -75,7 +75,12 @@ describe("build-route-todo contract", () => {
         redirectTarget: "/scan/config/engines/",
       }),
     ]))
-    expect(redirectAliases).toHaveLength(4)
+    expect(redirectAliases).toEqual(expect.arrayContaining([
+      expect.objectContaining({ routePattern: "/settings/notifications", redirectTarget: "/settings/ai/notifications/" }),
+      expect.objectContaining({ routePattern: "/ai/finding-reviews", redirectTarget: "/vulnerabilities/" }),
+      expect.objectContaining({ routePattern: "/token-purchase", redirectTarget: "https://all-in-ai.site" }),
+    ]))
+    expect(redirectAliases).toHaveLength(7)
 
     expect(routeInventory.routes.map((route) => route.routePattern)).toEqual(expect.arrayContaining([
       "/targets/[id]/websites/[websiteId]/[[...section]]",

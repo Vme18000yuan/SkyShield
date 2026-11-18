@@ -16,6 +16,7 @@ type PortAsset struct {
 	Organizations []AssetOrganization `json:"organizations"`
 }
 type PortQuery struct {
+	HideCDN        bool
 	TenantID       string
 	OrganizationID int
 	RootDomainID   int64
@@ -24,6 +25,7 @@ type PortQuery struct {
 	Limit          int
 }
 type PortListInput struct {
+	HideCDN        bool
 	UserID         int
 	OrganizationID int
 	RootDomainID   int64
@@ -58,7 +60,7 @@ func (f *Facade) ListPorts(ctx context.Context, input PortListInput) (*PortListR
 	if !member {
 		return nil, ErrForbidden
 	}
-	query := PortQuery{TenantID: DefaultTenantID, OrganizationID: input.OrganizationID, RootDomainID: input.RootDomainID, Query: input.Query, Offset: (input.Page - 1) * input.PageSize, Limit: input.PageSize}
+	query := PortQuery{HideCDN: input.HideCDN, TenantID: DefaultTenantID, OrganizationID: input.OrganizationID, RootDomainID: input.RootDomainID, Query: input.Query, Offset: (input.Page - 1) * input.PageSize, Limit: input.PageSize}
 	items, total, err := f.store.ListPorts(ctx, query)
 	if err != nil {
 		return nil, err

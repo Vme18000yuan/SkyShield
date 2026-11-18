@@ -33,8 +33,9 @@ export interface NotificationMeta {
 
 export interface NotificationDelivery {
   id: string
-  finding_id: string
-  task_id: string
+  finding_id?: string
+  task_id?: string
+  vulnerability_id?: string
   event_kind: string
   channel_id: string
   channel_name: string

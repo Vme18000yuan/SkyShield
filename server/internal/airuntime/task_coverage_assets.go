@@ -36,7 +36,7 @@ const humanTaskAssetPermissionSQL = `WITH permitted AS (
 
 // TaskCoverageAssets reads the same unified assets as list_assets, with a
 // bounded graph size. The caller must additionally authorize the task owner.
-func TaskCoverageAssets(ctx context.Context, db *sql.DB, user int, taskID int64) ([]CoverageAssetProjection, bool, error) {
+func TaskCoverageAssets(ctx context.Context, db *sql.DB, user int, taskID int64, hideCDN bool) ([]CoverageAssetProjection, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	var permitted bool
@@ -46,7 +46,11 @@ func TaskCoverageAssets(ctx context.Context, db *sql.DB, user int, taskID int64)
 	if !permitted {
 		return nil, false, sql.ErrNoRows
 	}
-	rows, err := db.QueryContext(ctx, humanTaskAssetPermissionSQL+` SELECT a.asset_id,a.tested FROM permitted p CROSS JOIN LATERAL tianqiong_ai.task_scope_assets(p.id,p.owner_user_id) a ORDER BY a.asset_id DESC LIMIT 5001`, taskID, user)
+	query := humanTaskAssetPermissionSQL + ` SELECT a.asset_id,a.tested FROM permitted p CROSS JOIN LATERAL tianqiong_ai.task_scope_assets(p.id,p.owner_user_id) a`
+	if hideCDN {
+		query += ` WHERE NOT public.tq_inventory_cdn_asset(a.asset_type,a.label,p.tenant_id,0,COALESCE(p.target_id,0))`
+	}
+	rows, err := db.QueryContext(ctx, query+` ORDER BY a.asset_id DESC LIMIT 5001`, taskID, user)
 	if err != nil {
 		return nil, false, err
 	}

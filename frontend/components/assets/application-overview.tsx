@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useApplicationOverview } from "@/hooks/use-asset-entities"
 import { normalizeError } from "@/lib/errors/normalize-error"
+import { assetInventoryHref } from "@/lib/asset-inventory-navigation"
 import { AssetOrganizationFilter } from "./asset-organization-filter"
 import { AssetPagination } from "./asset-pagination"
 
@@ -28,7 +29,7 @@ export function ApplicationOverview({ id }: { id: string }) {
   const { application, websites, totalSize } = overview.data
   const changeOrganization = (org?: number) => { setPage(1); router.replace(`/assets/applications/${encodeURIComponent(id)}/${org ? `?organizationId=${org}` : ""}`) }
   return <div className={COMPACT_PAGE_SHELL_CLASS}><div className={`${COMPACT_CONTENT_GUTTER_CLASS} space-y-5`}>
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm text-muted-foreground">{t("applicationOverview")}</p><h1 className="mt-1 break-all text-2xl font-semibold">{application.label}</h1><p className="mt-1 text-sm text-muted-foreground">{application.organizations?.length ? application.organizations.map(item => item.name).join("、") : t("unassignedOrganization")}</p></div><Button variant="outline" render={<Link href={`/assets/${organizationId ? `?organizationId=${organizationId}` : ""}`} />}>{t("backToAssets")}</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm text-muted-foreground">{t("applicationOverview")}</p><h1 className="mt-1 break-all text-2xl font-semibold">{application.label}</h1><p className="mt-1 text-sm text-muted-foreground">{application.organizations?.length ? application.organizations.map(item => item.name).join("、") : t("unassignedOrganization")}</p></div><Button variant="outline" render={<Link href={assetInventoryHref({ organizationId, view: "inventory", type: "app", showCdn: params.get("showCdn") === "1" })} />}>{t("backToAssets")}</Button></div>
     <div className="grid gap-3 md:grid-cols-2"><Card><CardContent className="space-y-2 p-4"><p className="text-sm text-muted-foreground">{t("applicationWebsites")}</p><p className="text-2xl font-semibold tabular-nums">{totalSize.toLocaleString(locale)}</p></CardContent></Card><Card><CardContent className="space-y-2 p-4"><p className="text-sm text-muted-foreground">{t("applicationEvidence")}</p><p className="text-sm">{(application.applicationSources ?? 0)>0 ? t("applicationRecognizedDescription") : t("applicationManualDescription")}</p></CardContent></Card></div>
     <section className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">{t("applicationWebsites")}</h2><AssetOrganizationFilter value={organizationId} onChange={changeOrganization} /></div>
       <Table><TableHeader><TableRow><TableHead>{t("url")}</TableHead><TableHead>{t("pageTitle")}</TableHead><TableHead>{t("applicationEvidence")}</TableHead><TableHead>{t("firstSeen")}</TableHead></TableRow></TableHeader><TableBody>

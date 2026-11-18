@@ -24,6 +24,7 @@ func RegisterAIWorkbenchRoutes(protected *gin.RouterGroup, h *handler.Conversati
 	protected.GET("/aiSideQuestions/:question/events", h.SideQuestionEvents)
 	protected.POST("/aiConversations/:conversation/messages", h.Send)
 	protected.GET("/aiConversations/:conversation/activities", h.Activities)
+	protected.GET("/aiConversations/:conversation/exploration", h.Exploration)
 	protected.GET("/aiConversations/:conversation/traffic", h.Traffic)
 	protected.GET("/aiConversations/:conversation/traffic/exchange", h.TrafficExchange)
 	protected.GET("/aiConversations/:conversation/traffic/blob", h.TrafficBlob)

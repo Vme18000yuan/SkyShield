@@ -11,7 +11,7 @@ import (
 )
 
 type rootCoverageReader interface {
-	RootDomainCoverage(context.Context, int, int64, int) (assetapp.RootCoverageGraph, error)
+	RootDomainCoverageView(context.Context, int, int64, int, bool) (assetapp.RootCoverageGraph, error)
 	RootDomainCoverageRefs(context.Context, int, int64, int, int64) (assetapp.RootCoverageRefs, error)
 }
 
@@ -50,7 +50,11 @@ func (h *AssetEntityHandler) rootCoverage(c *gin.Context, refs bool) {
 		}
 		result, err = reader.RootDomainCoverageRefs(c.Request.Context(), user, root, org, id)
 	} else {
-		result, err = reader.RootDomainCoverage(c.Request.Context(), user, root, org)
+		hideCDN, valid := httpdto.OptionalQueryBool(c, "hideCdn")
+		if !valid {
+			return
+		}
+		result, err = reader.RootDomainCoverageView(c.Request.Context(), user, root, org, hideCDN)
 	}
 	if err != nil {
 		switch {

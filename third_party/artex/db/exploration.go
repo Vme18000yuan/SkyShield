@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Autumn-27/norma/harness"
 )
 
 // ErrIntentStateConflict marks a failed compare-and-set transition. Callers use
@@ -85,6 +87,8 @@ type Node struct {
 
 // Activity is one worker execution step (= old task_activity).
 type Activity struct {
+	ToolTiming *harness.ToolTiming `json:"-"`
+
 	TerminalReason string          `json:"terminal_reason,omitempty"`
 	ID             int64           `json:"id"`
 	NodeID         *int64          `json:"node_id,omitempty"`

@@ -1,6 +1,6 @@
 # Asset inventory
 
-The inventory can be filtered by organization and supports totals and direct page jumps. The “all” view combines canonical asset records with host:port observations; port rows do not fabricate a canonical asset identity or offer asset-specific AI actions. Explicit service observations are shown as such, while names inferred only from common port numbers are labeled as estimates.
+The `/assets/` entry opens a paginated organization directory. An organization opens its exact counts of root domains, subdomains and IPs. Each count and the inventory link preserve organization and CDN scope. The explicit all-assets view keeps unassigned assets reachable, and existing `?q=` search links open the matching inventory. The “all” view combines canonical asset records with host:port observations; port rows do not fabricate a canonical asset identity or offer asset-specific AI actions. Explicit service observations are shown as such, while names inferred only from common port numbers are labeled as estimates.
 
 Root-domain rows navigate to an overview and related inventory scoped to the chosen organization. The backend derives relationships from root-source mappings, active target bindings, and recorded IP/domain associations. A root overview does not authorize a broader scan. Original URL, method, observation, and provenance data remain intact even though the list omits the method and source-count columns.
 

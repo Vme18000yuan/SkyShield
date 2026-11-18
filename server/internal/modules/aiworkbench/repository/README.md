@@ -1,5 +1,20 @@
 # Conversation storage
 
+The authenticated exploration endpoint also accepts `view=timeline`. Its overview covers the selected run, while `from` pages the merged call/result cards in durable call order. Only an opened source drawer fetches full activity detail. User checklist items and asset mentions come from the saved user message. A completed Todo item represents the recorded checklist status.
+
+Each section includes a task purpose and its source activity IDs. A successful checklist update with one active item or a public task declaration establishes a boundary. Older runs can present localized topics inferred from several recorded steps. The response labels the source and keeps the chronological ordinals for paging and evidence links. An unsupported purpose is reported as unknown.
+
+Migration 84 adds optional observation fields for interactive chat. Actual start and finish timestamps surround the tool implementation after admission. A fresh occurrence ID pairs each returned record even if the provider repeats its tool ID. Overlap requires intersecting measured intervals. An older ambiguous pair stays unresolved. A registered finding can link to its originating call and earlier successful reads of the same saved evidence through scoped activity IDs.
+
+- `ReadConversationExploration` is a read-only, owner/tenant-fenced projection of
+  saved chat runs, tool-call/result pairs and vulnerability registration receipts.
+  It paginates runs and calls independently of the chat's loaded transcript window.
+  Execution order is not a causal claim; a tool result is not a confirmed finding.
+  Missing results remain running only while the run lease is live, otherwise unknown.
+  Finding nodes require an actual `ai_conversation_vulnerability_report` row.
+  Full inputs, outputs and HTTP evidence are fetched only on explicit selection
+  through the existing authenticated detail/evidence endpoints.
+
 - Activity rows are a readable projection. PostgreSQL text cannot store NUL:
   `printableActivityText` renders it as `\x00` and replaces invalid UTF-8 for
   display. Raw session transcripts and workspace artifacts remain unchanged.

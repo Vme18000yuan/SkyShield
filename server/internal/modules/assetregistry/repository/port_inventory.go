@@ -10,7 +10,7 @@ import (
 )
 
 func portSources(q assetapp.PortQuery, includeCanonicalServices bool) (string, []any) {
-	filter, filterArgs := assetFilters(assetapp.AssetQuery{TenantID: q.TenantID, OrganizationID: q.OrganizationID, RootDomainID: q.RootDomainID}, false)
+	filter, filterArgs := assetFilters(assetapp.AssetQuery{HideCDN: q.HideCDN, TenantID: q.TenantID, OrganizationID: q.OrganizationID, RootDomainID: q.RootDomainID}, false)
 	// Coverage already loaded canonical services/endpoints. Only project extra
 	// observations there, without re-evaluating the expensive asset scope.
 	if !includeCanonicalServices {
@@ -30,6 +30,10 @@ func portSources(q assetapp.PortQuery, includeCanonicalServices bool) (string, [
 	args := []any{q.OrganizationID, q.OrganizationID, q.OrganizationID}
 	args = append(args, filterArgs...)
 	args = append(args, q.TenantID)
+	if q.HideCDN {
+		query += ` AND NOT public.tq_inventory_is_cdn(h.ip,e.tenant_id,?,0)`
+		args = append(args, q.OrganizationID)
+	}
 	if q.OrganizationID > 0 {
 		query += ` AND EXISTS(SELECT 1 FROM org_targets ot WHERE ot.org_id=? AND ot.target_id=h.target_id)`
 		args = append(args, q.OrganizationID)
@@ -48,6 +52,10 @@ func portSources(q assetapp.PortQuery, includeCanonicalServices bool) (string, [
 	 WHERE e.tenant_id=? AND e.asset_type='ip' AND (o.original_target_id IS NULL OR t.id IS NOT NULL AND t.deleted_at IS NULL)
 	 AND (CASE WHEN (p.value->>'port') ~ '^[0-9]{1,5}$' THEN (p.value->>'port')::integer END) BETWEEN 1 AND 65535`
 	args = append(args, q.TenantID)
+	if q.HideCDN {
+		query += ` AND NOT public.tq_inventory_cdn_asset('ip',e.label,e.tenant_id,?,0)`
+		args = append(args, q.OrganizationID)
+	}
 	if q.OrganizationID > 0 {
 		query += ` AND (o.organization_id=? OR EXISTS(SELECT 1 FROM org_targets ot WHERE ot.org_id=? AND ot.target_id=o.target_id))`
 		args = append(args, q.OrganizationID, q.OrganizationID)
@@ -59,7 +67,7 @@ func portSources(q assetapp.PortQuery, includeCanonicalServices bool) (string, [
 	query += `), raw_port_sources AS (
 	 SELECT source_asset_id,source_target_id,source_organization_id,label,first_seen_at,last_seen_at,observed_service FROM service_assets WHERE label IS NOT NULL
 	 UNION ALL SELECT asset_id,target_id,NULL::integer,lower(rtrim(host,'.'))||':'||port::text,created_at,created_at,''::text FROM host_sources WHERE host ~* '^[a-z0-9][a-z0-9.-]*[a-z0-9]$'
-	 UNION ALL SELECT asset_id,target_id,NULL::integer,host(ip)||':'||port::text,created_at,created_at,''::text FROM host_sources
+	 UNION ALL SELECT asset_id,target_id,NULL::integer,(CASE WHEN family(ip)=6 THEN '['||host(ip)||']' ELSE host(ip) END)||':'||port::text,created_at,created_at,''::text FROM host_sources
 	 UNION ALL SELECT source_asset_id,source_target_id,source_organization_id,label,first_seen_at,last_seen_at,observed_service FROM observed_ports
 	), port_sources AS (SELECT * FROM raw_port_sources WHERE label IS NOT NULL`
 	if q.Query != "" {

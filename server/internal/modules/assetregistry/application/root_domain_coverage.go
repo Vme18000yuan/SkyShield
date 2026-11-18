@@ -89,6 +89,10 @@ func (f *Facade) rootCoverageRoot(ctx context.Context, user int, root int64, org
 // RootDomainCoverage uses inventory membership, not a task's potentially narrower scope.
 // Confirmation evidence is restricted to tasks the requesting user can read.
 func (f *Facade) RootDomainCoverage(ctx context.Context, user int, rootID int64, org int) (RootCoverageGraph, error) {
+	return f.RootDomainCoverageView(ctx, user, rootID, org, false)
+}
+
+func (f *Facade) RootDomainCoverageView(ctx context.Context, user int, rootID int64, org int, hideCDN bool) (RootCoverageGraph, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	out := RootCoverageGraph{Nodes: []RootCoverageNode{}, Edges: []RootCoverageEdge{}}
@@ -100,7 +104,7 @@ func (f *Facade) RootDomainCoverage(ctx context.Context, user int, rootID int64,
 	if !ok {
 		return out, errors.New("root coverage unavailable")
 	}
-	assets, err := evidence.ListRootCoverageAssets(ctx, AssetQuery{TenantID: DefaultTenantID, RootDomainID: rootID, OrganizationID: org, Limit: 5000})
+	assets, err := evidence.ListRootCoverageAssets(ctx, AssetQuery{HideCDN: hideCDN, TenantID: DefaultTenantID, RootDomainID: rootID, OrganizationID: org, Limit: 5000})
 	if err != nil {
 		return out, fmt.Errorf("root coverage assets: %w", err)
 	}
@@ -134,7 +138,7 @@ func (f *Facade) RootDomainCoverage(ctx context.Context, user int, rootID int64,
 	}
 	// Port observations have no canonical asset ID and cannot imply tested status.
 	if len(out.Nodes) < 5000 {
-		ports, e := evidence.ListRootCoveragePorts(ctx, PortQuery{TenantID: DefaultTenantID, RootDomainID: rootID, OrganizationID: org, Limit: 5001})
+		ports, e := evidence.ListRootCoveragePorts(ctx, PortQuery{HideCDN: hideCDN, TenantID: DefaultTenantID, RootDomainID: rootID, OrganizationID: org, Limit: 5001})
 		if e != nil {
 			return out, fmt.Errorf("root coverage ports: %w", e)
 		}

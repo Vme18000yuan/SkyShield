@@ -12,21 +12,22 @@ import (
 )
 
 type Delivery struct {
-	ID          int64      `json:"id,string"`
-	FindingID   int64      `json:"finding_id,string"`
-	TaskID      int64      `json:"task_id,string"`
-	EventKind   string     `json:"event_kind"`
-	ChannelID   int64      `json:"channel_id,string"`
-	ChannelName string     `json:"channel_name"`
-	ChannelKind string     `json:"channel_kind"`
-	State       string     `json:"state"`
-	Attempts    int        `json:"attempts"`
-	LastError   string     `json:"last_error"`
-	CreatedAt   time.Time  `json:"created_at"`
-	SentAt      *time.Time `json:"sent_at,omitempty"`
-	NextAttempt time.Time  `json:"next_attempt_at"`
-	Title       string     `json:"title"`
-	Severity    string     `json:"severity"`
+	ID              int64      `json:"id,string"`
+	FindingID       int64      `json:"finding_id,omitempty,string"`
+	VulnerabilityID int64      `json:"vulnerability_id,omitempty,string"`
+	TaskID          int64      `json:"task_id,omitempty,string"`
+	EventKind       string     `json:"event_kind"`
+	ChannelID       int64      `json:"channel_id,string"`
+	ChannelName     string     `json:"channel_name"`
+	ChannelKind     string     `json:"channel_kind"`
+	State           string     `json:"state"`
+	Attempts        int        `json:"attempts"`
+	LastError       string     `json:"last_error"`
+	CreatedAt       time.Time  `json:"created_at"`
+	SentAt          *time.Time `json:"sent_at,omitempty"`
+	NextAttempt     time.Time  `json:"next_attempt_at"`
+	Title           string     `json:"title"`
+	Severity        string     `json:"severity"`
 }
 
 type DeliveryPage struct {
@@ -53,7 +54,7 @@ func (s *Store) FilteredDeliveries(ctx context.Context, user, page, size int, ch
 	if err := db.Raw(`SELECT count(*)`+from, assets.DefaultTenantID, user, user, channelID, channelID, state, state).Row().Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := db.Raw(`SELECT d.id,e.finding_id,e.task_id,e.kind,c.id,c.name,c.kind,d.state,d.attempts,d.last_error,d.created_at,d.sent_at,d.next_attempt_at,e.snapshot`+from+` ORDER BY d.id DESC LIMIT ? OFFSET ?`, assets.DefaultTenantID, user, user, channelID, channelID, state, state, size, page*size).Rows()
+	rows, err := db.Raw(`SELECT d.id,COALESCE(e.finding_id,0),COALESCE(e.task_id,0),COALESCE(e.vulnerability_id,0),e.kind,c.id,c.name,c.kind,d.state,d.attempts,d.last_error,d.created_at,d.sent_at,d.next_attempt_at,e.snapshot`+from+` ORDER BY d.id DESC LIMIT ? OFFSET ?`, assets.DefaultTenantID, user, user, channelID, channelID, state, state, size, page*size).Rows()
 	if err != nil {
 		return out, err
 	}
@@ -61,7 +62,7 @@ func (s *Store) FilteredDeliveries(ctx context.Context, user, page, size int, ch
 	for rows.Next() {
 		var item Delivery
 		var raw []byte
-		if err = rows.Scan(&item.ID, &item.FindingID, &item.TaskID, &item.EventKind, &item.ChannelID, &item.ChannelName, &item.ChannelKind, &item.State, &item.Attempts, &item.LastError, &item.CreatedAt, &item.SentAt, &item.NextAttempt, &raw); err != nil {
+		if err = rows.Scan(&item.ID, &item.FindingID, &item.TaskID, &item.VulnerabilityID, &item.EventKind, &item.ChannelID, &item.ChannelName, &item.ChannelKind, &item.State, &item.Attempts, &item.LastError, &item.CreatedAt, &item.SentAt, &item.NextAttempt, &raw); err != nil {
 			return out, err
 		}
 		snapshot, e := decodeSnapshot(raw)

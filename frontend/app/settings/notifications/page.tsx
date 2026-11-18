@@ -1,5 +1,5 @@
-import { NotificationSettingsWorkspace } from "./notification-settings-workspace"
+import { redirect } from "next/navigation"
 
 export default function NotificationSettingsPage() {
-  return <NotificationSettingsWorkspace />
+  redirect("/settings/ai/notifications/")
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/Autumn-27/artex/traffic"
 	"github.com/google/uuid"
 	assetapp "github.com/yyhuni/lunafox/server/internal/modules/assetregistry/application"
+	"github.com/yyhuni/lunafox/server/internal/pkg/dbtx"
 )
 
 const maxEvidenceBytes = 128 << 10
@@ -120,18 +121,19 @@ func (s *Service) snapshot(ctx context.Context, user int, tenant, conversation s
 // EvidenceForVulnerability never accepts a client-supplied filesystem path.
 // Both conversation and info-gather evidence are restricted to their owner.
 func (s *Service) EvidenceForVulnerability(ctx context.Context, user, id int) ([]Evidence, error) {
+	db := dbtx.Resolve(ctx, s.db).WithContext(ctx)
 	items := []Evidence{}
 	var target int
 	var address, source string
 	var raw []byte
-	err := s.db.WithContext(ctx).Raw(`SELECT v.target_id,v.url,v.source,v.raw_output FROM vulnerability v JOIN target t ON t.id=v.target_id AND t.deleted_at IS NULL WHERE v.id=? AND EXISTS(SELECT 1 FROM tenant_membership m JOIN auth_user u ON u.id=m.user_id JOIN tenant tn ON tn.id=m.tenant_id WHERE m.user_id=? AND m.tenant_id=?::uuid AND u.is_active AND tn.status='active')`, id, user, assetapp.DefaultTenantID).Row().Scan(&target, &address, &source, &raw)
+	err := db.Raw(`SELECT v.target_id,v.url,v.source,v.raw_output FROM vulnerability v JOIN target t ON t.id=v.target_id AND t.deleted_at IS NULL WHERE v.id=? AND EXISTS(SELECT 1 FROM tenant_membership m JOIN auth_user u ON u.id=m.user_id JOIN tenant tn ON tn.id=m.tenant_id WHERE m.user_id=? AND m.tenant_id=?::uuid AND u.is_active AND tn.status='active')`, id, user, assetapp.DefaultTenantID).Row().Scan(&target, &address, &source, &raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.WithContext(ctx).Raw(`SELECT evidence FROM ai_conversation_vulnerability_report WHERE vulnerability_id=? AND owner_user_id=? AND tenant_id=?::uuid ORDER BY id LIMIT 20`, id, user, assetapp.DefaultTenantID).Rows()
+	rows, err := db.Raw(`SELECT evidence FROM ai_conversation_vulnerability_report WHERE vulnerability_id=? AND owner_user_id=? AND tenant_id=?::uuid ORDER BY id LIMIT 20`, id, user, assetapp.DefaultTenantID).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +168,7 @@ func (s *Service) EvidenceForVulnerability(ctx context.Context, user, id int) ([
 		}
 		var payload []byte
 		// Legacy rows have no recordId. Match the imported record by target+URL.
-		err = s.db.WithContext(ctx).Raw(`SELECT r.payload FROM ai_info_gather_record r JOIN ai_info_gather_run g ON g.id=r.run_id WHERE g.id=?::uuid AND g.tenant_id=?::uuid AND g.owner_user_id=? AND r.status='imported' AND r.target_id=? AND r.kind IN ('vulnerability','observation') AND (r.payload->>'url'=? OR r.payload->>'value'=? OR ('dns://'||(r.payload->>'value'))=?) AND (?='' OR r.record_id=?) ORDER BY r.kind DESC LIMIT 1`, meta.RunID, assetapp.DefaultTenantID, user, target, address, address, address, meta.RecordID, meta.RecordID).Row().Scan(&payload)
+		err = db.Raw(`SELECT r.payload FROM ai_info_gather_record r JOIN ai_info_gather_run g ON g.id=r.run_id WHERE g.id=?::uuid AND g.tenant_id=?::uuid AND g.owner_user_id=? AND r.status='imported' AND r.target_id=? AND r.kind IN ('vulnerability','observation') AND (r.payload->>'url'=? OR r.payload->>'value'=? OR ('dns://'||(r.payload->>'value'))=?) AND (?='' OR r.record_id=?) ORDER BY r.kind DESC LIMIT 1`, meta.RunID, assetapp.DefaultTenantID, user, target, address, address, address, meta.RecordID, meta.RecordID).Row().Scan(&payload)
 		if errors.Is(err, sql.ErrNoRows) {
 			return items, nil
 		}

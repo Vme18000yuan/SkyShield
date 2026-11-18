@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 
 import { RefreshCwIcon, RotateCcwIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -130,7 +131,7 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
                       <Badge variant="outline" className={toneClasses[statusMeta("severity", d.severity).tone]}>
                         {statusMeta("severity", d.severity).label}
                       </Badge>
-                      <span className="truncate text-sm">{d.title || "（无标题）"}</span>
+                      {d.vulnerability_id ? <Link href={`/vulnerabilities/${encodeURIComponent(d.vulnerability_id)}/`} className="truncate text-sm text-primary hover:underline">{d.title || `#${d.vulnerability_id}`}</Link> : <span className="truncate text-sm">{d.title || "（无标题）"}</span>}
                       {d.event_kind === "finding_status_changed" && (
                         <Badge variant="outline" className="shrink-0">
                           状态变更

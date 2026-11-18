@@ -30,6 +30,10 @@ const organizationAssetCTE = `WITH org_targets AS (
  WHERE (obs.original_target_id IS NULL OR t.id IS NOT NULL AND t.deleted_at IS NULL) AND (obs.organization_id=d.org_id OR EXISTS(SELECT 1 FROM org_targets ot WHERE ot.org_id=d.org_id AND ot.target_id=obs.target_id))
 ) `
 
+// OrganizationAssetMembershipCTE is also used to authorize persisted task
+// summaries against the same organization/asset membership as the UI.
+const OrganizationAssetMembershipCTE = organizationAssetCTE
+
 func assetFilters(q assetapp.AssetQuery, includeCursor bool) (string, []any) {
 	where := []string{`e.tenant_id = ?`, `(e.is_manual OR
 	 EXISTS(SELECT 1 FROM asset_observation o LEFT JOIN target t ON t.id=o.target_id WHERE o.tenant_id=e.tenant_id AND o.asset_id=e.id AND (o.original_target_id IS NULL OR t.id IS NOT NULL AND t.deleted_at IS NULL)) OR
@@ -43,6 +47,10 @@ func assetFilters(q assetapp.AssetQuery, includeCursor bool) (string, []any) {
 	 EXISTS(SELECT 1 FROM asset_root_domain_visible_source rs WHERE rs.tenant_id=e.tenant_id AND rs.root_asset_id=e.id) OR
 	 EXISTS(SELECT 1 FROM asset_root_domain_target rt JOIN target t ON t.id=rt.target_id AND t.deleted_at IS NULL WHERE rt.tenant_id=e.tenant_id AND rt.root_asset_id=e.id))`}
 	args := []any{q.TenantID}
+	if q.HideCDN {
+		where = append(where, `NOT public.tq_inventory_cdn_asset(e.asset_type::text,e.label,e.tenant_id,?,?)`)
+		args = append(args, q.OrganizationID, q.TargetID)
+	}
 	if q.AssetType != "" {
 		where = append(where, `e.asset_type = ?`)
 		args = append(args, q.AssetType)

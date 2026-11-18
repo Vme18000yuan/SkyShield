@@ -569,6 +569,27 @@
       "up": "000081_ai_conversation_vulnerability_names.up.sql",
       "down": "000081_ai_conversation_vulnerability_names.down.sql",
       "checksum": "sha256:531bf255937e9f72cc23f6a7f617c46c2dd0ac6309f0a7ea67ad0d3862ed404a"
+    },
+    {
+      "id": "000082",
+      "slug": "inventory_views_and_notifications",
+      "up": "000082_inventory_views_and_notifications.up.sql",
+      "down": "000082_inventory_views_and_notifications.down.sql",
+      "checksum": "sha256:704d598fb721de18f508090d89fd4e9c758bf74b0f84fbfb61f9d3bf088b2b29"
+    },
+    {
+      "id": "000083",
+      "slug": "mcp_clients",
+      "up": "000083_mcp_clients.up.sql",
+      "down": "000083_mcp_clients.down.sql",
+      "checksum": "sha256:5345117dbdb8e47383e861f92e65072e6b00feefc01ac0f774b5b72d3abd87d9"
+    },
+    {
+      "id": "000084",
+      "slug": "conversation_step_timing",
+      "up": "000084_conversation_step_timing.up.sql",
+      "down": "000084_conversation_step_timing.down.sql",
+      "checksum": "sha256:ba2d6ebb9d412f1e78b2ac031d1a9c605e7f8f7533e2d2269751b449a1e2b116"
     }
   ]
 }

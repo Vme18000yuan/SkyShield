@@ -28,6 +28,7 @@ type AssetOrganization struct {
 }
 
 type AssetQuery struct {
+	HideCDN               bool
 	TenantID              string
 	AssetType             string
 	AssetCategory         string

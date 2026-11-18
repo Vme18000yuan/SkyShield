@@ -38,12 +38,12 @@ func (f *Facade) ListInventory(ctx context.Context, input PortListInput) (*Inven
 	if !member {
 		return nil, ErrForbidden
 	}
-	entities := AssetQuery{TenantID: DefaultTenantID, OrganizationID: input.OrganizationID, RootDomainID: input.RootDomainID, Query: input.Query, ExcludeNonWebServices: true}
+	entities := AssetQuery{HideCDN: input.HideCDN, TenantID: DefaultTenantID, OrganizationID: input.OrganizationID, RootDomainID: input.RootDomainID, Query: input.Query, ExcludeNonWebServices: true}
 	entityTotal, err := f.store.CountAssets(ctx, entities)
 	if err != nil {
 		return nil, err
 	}
-	ports := PortQuery{TenantID: DefaultTenantID, OrganizationID: input.OrganizationID, RootDomainID: input.RootDomainID, Query: input.Query, Limit: 0}
+	ports := PortQuery{HideCDN: input.HideCDN, TenantID: DefaultTenantID, OrganizationID: input.OrganizationID, RootDomainID: input.RootDomainID, Query: input.Query, Limit: 0}
 	_, portTotal, err := f.store.ListPorts(ctx, ports)
 	if err != nil {
 		return nil, err

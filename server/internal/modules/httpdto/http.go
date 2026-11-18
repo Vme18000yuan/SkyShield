@@ -47,6 +47,19 @@ func Paginated[T any](c *gin.Context, data []T, total int64, page, pageSize int)
 	shared.Paginated(c, data, total, page, pageSize)
 }
 
+// OptionalQueryBool rejects malformed filters instead of silently widening a list.
+func OptionalQueryBool(c *gin.Context, name string) (bool, bool) {
+	switch c.Query(name) {
+	case "", "false":
+		return false, true
+	case "true":
+		return true, true
+	default:
+		BadRequest(c, "Invalid "+name)
+		return false, false
+	}
+}
+
 // DispatchCustomMethod adapts Google-style `:verb` routes to Gin's wildcard
 // matcher. Gin cannot register sibling literal colon routes such as
 // `/targets:batchCreate` and `/targets:batchDelete`, so callers must expose one

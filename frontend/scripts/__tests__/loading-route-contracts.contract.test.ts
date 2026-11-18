@@ -355,7 +355,6 @@ describe("loading route contracts", () => {
       ["route_scan_scheduled", "scheduled-scan-page-route"],
       ["route_scan_config_data_sources", "api-keys-page-route"],
       ["route_settings_database_health", "database-health-page-route"],
-      ["route_settings_notifications", "notification-settings-page-route"],
       ["route_settings_support", "support-page-route"],
       ["route_settings_system_logs", "system-logs-page-route"],
     ] as const) {
@@ -366,18 +365,6 @@ describe("loading route contracts", () => {
         intent: "data",
       })
     }
-  })
-
-  it("measures the complete external-destination notification settings workbench", () => {
-    const notificationGeometry = getRouteLoadingContract("route_settings_notifications")?.geometry.owners.find(
-      (owner: { owner: string }) => owner.owner === "notification-settings-page-route"
-    )
-
-    expect(notificationGeometry?.requiredSlots).toEqual([
-      "surface",
-      "notification-settings-header",
-      "notification-settings-channel-workbench",
-    ])
   })
 
   it("registers every previously unpaired inventory first-screen owner with its exact geometry slots", () => {

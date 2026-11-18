@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { McpClientManager } from "@/components/mcp-client-manager"
 import { useTranslations } from "next-intl"
 
 import { semanticIcons } from "@/components/icons"
@@ -41,7 +42,7 @@ export function getMcpClientConfiguration(client: McpClient, endpoint: string, k
     case "vscode":
       return JSON.stringify({
         servers: {
-          lunafox: {
+          skyshield: {
             type: "http",
             url: endpoint,
             headers: { Authorization: authorization },
@@ -51,7 +52,7 @@ export function getMcpClientConfiguration(client: McpClient, endpoint: string, k
     case "cursor":
       return JSON.stringify({
         mcpServers: {
-          lunafox: {
+          skyshield: {
             type: "streamable-http",
             url: endpoint,
             headers: { Authorization: authorization },
@@ -61,7 +62,7 @@ export function getMcpClientConfiguration(client: McpClient, endpoint: string, k
     case "claudeCode":
       return JSON.stringify({
         mcpServers: {
-          lunafox: {
+          skyshield: {
             type: "http",
             url: endpoint,
             headers: { Authorization: authorization },
@@ -70,7 +71,7 @@ export function getMcpClientConfiguration(client: McpClient, endpoint: string, k
       }, null, 2)
     case "codex":
       return [
-        "[mcp_servers.lunafox]",
+        "[mcp_servers.skyshield]",
         `url = "${escapeTomlString(endpoint)}"`,
         `http_headers = { Authorization = "${escapeTomlString(authorization)}" }`,
       ].join("\n")
@@ -80,6 +81,7 @@ export function getMcpClientConfiguration(client: McpClient, endpoint: string, k
 export function McpAccessPopover() {
   const t = useTranslations("mcpIntegration")
   const [open, setOpen] = React.useState(false)
+  const [managerKey, setManagerKey] = React.useState<string | null>(null)
   const [endpoint, setEndpoint] = React.useState(MCP_PATH)
   const [client, setClient] = React.useState<McpClient>("vscode")
   const [revealedKey, setRevealedKey] = React.useState<string | null>(null)
@@ -156,7 +158,7 @@ export function McpAccessPopover() {
   const generationPending = generateMcpKey.isPending
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <><Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger render={<Button type="button" variant="ghost" size="icon-sm" layout="compactAction" aria-label={t("open")} />}>
         <McpIcon className="size-4" />
         <span className="sr-only">{t("open")}</span>
@@ -174,6 +176,8 @@ export function McpAccessPopover() {
           </div>
 
           <Separator />
+
+          <Button size="sm" variant="outline" onClick={() => { setManagerKey(revealedKey ?? ""); handleOpenChange(false) }}>{t("manageClients")}</Button>
 
           <div className="space-y-2">
             <Label htmlFor="mcp-popover-url">{t("endpoint.label")}</Label>
@@ -301,5 +305,6 @@ export function McpAccessPopover() {
         />
       </PopoverContent>
     </Popover>
+    {managerKey !== null && <McpClientManager endpoint={endpoint} initialKey={managerKey} onClose={() => setManagerKey(null)} />}</>
   )
 }

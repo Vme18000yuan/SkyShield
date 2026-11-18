@@ -3,7 +3,6 @@
 package notificationwiring
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/yyhuni/lunafox/server/internal/modules/notification/application"
 	"github.com/yyhuni/lunafox/server/internal/modules/notification/handler"
-	"github.com/yyhuni/lunafox/server/internal/modules/notification/provider"
 	"github.com/yyhuni/lunafox/server/internal/modules/notification/repository"
 	"gorm.io/gorm"
 )
@@ -19,12 +17,10 @@ import (
 // Module contains the notification boundaries and managed workers that must
 // share one process-local realtime broker and one database composition root.
 type Module struct {
-	InboxHandler       *handler.NotificationInboxHandler
-	DestinationHandler *handler.NotificationDestinationHandler
-	SSEHandler         *handler.NotificationSSEHandler
-	OutboxWorker       *application.OutboxWorker
-	DeliveryWorker     *application.DeliveryWorker
-	RetentionJob       *application.RetentionJob
+	InboxHandler *handler.NotificationInboxHandler
+	SSEHandler   *handler.NotificationSSEHandler
+	OutboxWorker *application.OutboxWorker
+	RetentionJob *application.RetentionJob
 }
 
 // NewNotificationWorkerOwner creates a process-unique lease owner. The owner
@@ -38,7 +34,7 @@ func NewNotificationWorkerOwner() (string, error) {
 }
 
 // NewNotificationModule wires handlers, workers, repositories, templates,
-// and provider adapters around one notification database and lease owner.
+// and the inbox retention job around one notification database and lease owner.
 func NewNotificationModule(db *gorm.DB, workerOwner string) (*Module, error) {
 	if db == nil {
 		panic("notification wiring database is required")
@@ -50,47 +46,24 @@ func NewNotificationModule(db *gorm.DB, workerOwner string) (*Module, error) {
 
 	outboxStore := repository.NewOutboxRepository(db)
 	inboxStore := repository.NewInboxRepository(db)
-	destinationStore := repository.NewDestinationRepository(db)
 	deliveryStore := repository.NewDeliveryRepository(db)
-	authorizer := repository.NewActiveSuperuserRepository(db)
-	adapters := []application.ProviderAdapter{
-		provider.NewDiscordAdapter(nil),
-		provider.NewWeComAdapter(nil),
-		provider.NewFeishuAdapter(nil),
-	}
-	if err := application.ValidateFixedProviderAdapters(adapters); err != nil {
-		return nil, fmt.Errorf("validate notification provider adapters: %w", err)
-	}
-	if err := application.ReconcileDestinations(context.Background(), destinationStore); err != nil {
-		return nil, fmt.Errorf("reconcile notification destinations: %w", err)
-	}
 	realtimeHub := application.NewRealtimeHub()
 	materializer := application.NewMaterializer(
 		repository.NewTransactionCoordinator(db),
 		repository.NewFactRepository(db),
 		repository.NewAudienceRepository(db),
-		destinationStore,
+		nil, // SkyShield delivers external messages through account-owned AI channels.
 		application.NewTemplates(),
 		realtimeHub,
 	)
 	inboxService := application.NewInboxService(inboxStore, inboxStore)
-	destinationSettings := application.NewDestinationSettingsService(destinationStore, authorizer)
-	destinationHandler := handler.NewNotificationDestinationHandler(destinationSettings)
-	destinationHandler.SetTestDeliveryService(application.NewTestDeliveryService(authorizer, adapters))
 
 	return &Module{
-		InboxHandler:       handler.NewNotificationInboxHandler(inboxService),
-		DestinationHandler: destinationHandler,
-		SSEHandler:         handler.NewNotificationSSEHandler(realtimeHub),
+		InboxHandler: handler.NewNotificationInboxHandler(inboxService),
+		SSEHandler:   handler.NewNotificationSSEHandler(realtimeHub),
 		OutboxWorker: application.NewOutboxWorker(outboxStore, materializer, application.OutboxWorkerOptions{
 			Owner: workerOwner + "-outbox",
 		}),
-		DeliveryWorker: application.NewDeliveryWorker(
-			deliveryStore,
-			destinationStore,
-			adapters,
-			application.DeliveryWorkerOptions{Owner: workerOwner + "-delivery"},
-		),
 		RetentionJob: application.NewRetentionJob(outboxStore, inboxStore, deliveryStore, application.RetentionJobOptions{}),
 	}, nil
 }

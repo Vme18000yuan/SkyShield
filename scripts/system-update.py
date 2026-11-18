@@ -44,6 +44,29 @@ mutex = threading.RLock()
 check_mutex = threading.Lock()
 
 
+def select_state(mode):
+    global STATE, SOCKET_DIR, SOCKET
+    STATE = ROOT / ('.local/updater-local' if mode == 'local' else '.local/updater')
+    SOCKET_DIR = STATE / 'socket'
+    SOCKET = SOCKET_DIR / 'control.sock'
+
+
+def select_cli_mode(explicit):
+    if explicit:
+        return explicit
+    available = []
+    for mode, relative in (('local', '.local/updater-local/socket/control.sock'), ('docker', '.local/updater/socket/control.sock')):
+        path = ROOT / relative
+        try:
+            if path.is_socket() and os.access(path, os.R_OK | os.W_OK):
+                available.append(mode)
+        except PermissionError:
+            continue
+    if len(available) > 1:
+        raise RuntimeError('同时存在本地和 Docker 更新进程，请用 --mode local 或 --mode docker 指定。')
+    return available[0] if available else 'docker'
+
+
 def now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -591,7 +614,8 @@ def stop_daemon():
 def install_service(mode):
     prepare_state()
     if not shutil.which('systemctl'):raise RuntimeError('此主机没有 systemd，请使用 ./update.sh start 或配置自己的进程管理器。')
-    name = 'skyshield-updater-' + hashlib.sha256(str(ROOT).encode()).hexdigest()[:12] + '.service'
+    service_identity = str(ROOT) if mode == 'docker' else str(ROOT) + ':local'
+    name = 'skyshield-updater-' + hashlib.sha256(service_identity.encode()).hexdigest()[:12] + '.service'
     user = [] if os.geteuid() == 0 else ['--user']
     directory = Path('/etc/systemd/system') if not user else Path.home()/'.config/systemd/user'
     directory.mkdir(parents=True, exist_ok=True)
@@ -624,6 +648,7 @@ def main():
     parser.add_argument('--mode',choices=['local','docker']);parser.add_argument('--confirm',action='store_true')
     args=parser.parse_args()
     try:
+        select_state(select_cli_mode(args.mode))
         if args.action in ('serve','start','install-service'):
             if not args.mode:raise RuntimeError('请用 --mode local 或 --mode docker 指定部署方式。')
             {'serve':serve,'start':start,'install-service':install_service}[args.action](args.mode);return 0

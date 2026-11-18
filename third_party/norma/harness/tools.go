@@ -27,10 +27,10 @@ func acceptsRawInput(t tool.CoreTool) bool {
 // executor's goroutines (read-only access to loop config; permission/hook
 // callbacks are the host's responsibility to make safe).
 func (l *loop) execOne(use llm.ContentBlock, emitProgress func(tool.ProgressInfo)) (llm.ContentBlock, []llm.Message) {
-	return l.execOneContext(l.ctx, use, emitProgress)
+	return l.execOneContext(l.ctx, use, nil, emitProgress)
 }
 
-func (l *loop) execOneContext(ctx context.Context, use llm.ContentBlock, emitProgress func(tool.ProgressInfo)) (llm.ContentBlock, []llm.Message) {
+func (l *loop) execOneContext(ctx context.Context, use llm.ContentBlock, clock *toolClock, emitProgress func(tool.ProgressInfo)) (llm.ContentBlock, []llm.Message) {
 	if ctx.Err() != nil {
 		return llm.ToolResultText(use.ID, "工具未启动：执行已取消", true), nil
 	}
@@ -103,7 +103,13 @@ func (l *loop) execOneContext(ctx context.Context, use llm.ContentBlock, emitPro
 	// toolCtx carries the run's MaxDuration deadline, so a tool that overruns the
 	// wall-clock budget is interrupted here (the turn loop then enters wrap-up). During
 	// the wrap-up phase toolCtx is the live parent ctx, so settlement tools run freely.
+	if clock != nil {
+		ctx = clock.start(ctx)
+	}
 	res, err := t.Call(ctx, input, tc)
+	if clock != nil {
+		clock.finish()
+	}
 	if err != nil {
 		res = tool.Errorf("Error: " + err.Error())
 	}

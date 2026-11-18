@@ -17,6 +17,8 @@ import (
 
 // QueryInput is a fully-resolved request to run the loop.
 type QueryInput struct {
+	ObserveToolTiming bool
+
 	Provider        llm.Provider
 	System          []string
 	DynamicBoundary int
@@ -225,7 +227,8 @@ type budgetTracker struct {
 }
 
 type loop struct {
-	ctx context.Context
+	observedRounds, observedBatches int
+	ctx                             context.Context
 	// toolCtx bounds tool execution with the run's MaxDuration deadline, so a tool
 	// that overruns the wall-clock budget is interrupted mid-flight (the model call
 	// stays on ctx — streams are never cut mid-flight). Derived from ctx, so a parent
@@ -941,10 +944,11 @@ func (l *loop) streamAndExecute(schemas []llm.ToolSchema) (asst llm.Message, exe
 			err = journalErr
 			return true
 		}
-		if !l.emit(Event{Kind: KindToolUse, ToolUse: &block}) {
+		clock := exec.newClock()
+		if !l.emit(Event{Kind: KindToolUse, ToolUse: &block, ToolTiming: clock.snapshot()}) {
 			return false
 		}
-		exec.add(block)
+		exec.add(block, clock)
 		return exec.drain()
 	}
 
@@ -1028,10 +1032,11 @@ func (l *loop) completeAndExecute(req llm.CompletionRequest) (asst llm.Message, 
 			if journalErr := l.recordToolIntent(block); journalErr != nil {
 				return asst, exec, stopReason, journalErr, false, false
 			}
-			if !l.emit(Event{Kind: KindToolUse, ToolUse: &block}) {
+			clock := exec.newClock()
+			if !l.emit(Event{Kind: KindToolUse, ToolUse: &block, ToolTiming: clock.snapshot()}) {
 				return asst, exec, stopReason, nil, true, false
 			}
-			exec.add(block)
+			exec.add(block, clock)
 			if !exec.drain() { // surface any results ready so far (FIFO)
 				return asst, exec, stopReason, nil, true, false
 			}

@@ -13,6 +13,7 @@ import (
 	"github.com/Autumn-27/artex/db"
 	"github.com/Autumn-27/artex/intercept"
 	"github.com/Autumn-27/artex/sidequestion"
+	"github.com/Autumn-27/norma/harness"
 	"github.com/Autumn-27/norma/llm"
 	"github.com/Autumn-27/norma/tool"
 	"github.com/Autumn-27/norma/transcript"
@@ -22,6 +23,8 @@ import (
 // ChatRun contains only server-resolved identities and capabilities. Callers
 // must authorize the user and serialize runs across server instances.
 type ChatRun struct {
+	ObserveToolTiming bool
+
 	BudgetResolver        ModelRunBudgetResolver
 	HistoryRequired       func(context.Context) (bool, error)
 	LocalTools            bool
@@ -53,6 +56,7 @@ type ChatRun struct {
 }
 
 type Activity struct {
+	ToolTiming       *harness.ToolTiming `json:"-"`
 	TerminalReason   string
 	Kind             string
 	Tool             string
@@ -193,6 +197,9 @@ func (r *ChatRunner) Run(ctx context.Context, run ChatRun, emit func(Activity)) 
 		window = modelOptions.ContextWindow
 	}
 	chat := agent.NewChatAgent(run.Provider, run.Model, filepath.Join(userRoot, "work"), store, window)
+	if run.ObserveToolTiming {
+		chat.ObserveToolTiming()
+	}
 	tools := append([]tool.CoreTool{}, run.Tools...)
 	tools = append(tools, scopedTrafficTools(capture)...)
 	if run.LocalTools {
@@ -234,8 +241,8 @@ func (r *ChatRunner) Run(ctx context.Context, run ChatRun, emit func(Activity)) 
 	return chat.Chat(ctx, run.AgentKey, run.SessionID, run.Message, run.MaxTurns, run.MaxDuration, false, func(event db.Activity) {
 		if emit != nil {
 			emit(Activity{
-				TerminalReason: event.TerminalReason,
-				Kind:           event.Kind, Tool: event.Tool, ToolUseID: event.ToolUseID, IsError: event.IsError,
+				TerminalReason: event.TerminalReason, ToolTiming: event.ToolTiming,
+				Kind: event.Kind, Tool: event.Tool, ToolUseID: event.ToolUseID, IsError: event.IsError,
 				Summary: event.Summary, Detail: event.Detail, InputTokens: event.InputTokens,
 				OutputTokens: event.OutputTokens, CacheReadTokens: event.CacheReadTokens, CacheWriteTokens: event.CacheWriteTokens,
 			})

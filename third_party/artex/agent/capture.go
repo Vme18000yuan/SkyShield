@@ -105,12 +105,18 @@ func captureRunSession(ctx context.Context, s *agentcore.Session, input string, 
 				continue
 			}
 			flush()
-			toolNames[ev.ToolUse.ID] = ev.ToolUse.Name
+			key := ev.ToolUse.ID
+			if ev.ToolTiming != nil {
+				key = ev.ToolTiming.Occurrence
+			}
+			toolNames[key] = ev.ToolUse.Name
 			in := string(ev.ToolUse.Input)
 			lastTool.start(ev.ToolUse.ID, ev.ToolUse.Name, in)
 			auditTrace.Start(ev.ToolUse.ID, ev.ToolUse.Name, ev.ToolUse.Input)
-			rec(db.Activity{Kind: "tool_use", Tool: ev.ToolUse.Name, ToolUseID: ev.ToolUse.ID,
+			rec(db.Activity{Kind: "tool_use", Tool: ev.ToolUse.Name, ToolUseID: ev.ToolUse.ID, ToolTiming: ev.ToolTiming,
 				Summary: ev.ToolUse.Name + " " + firstLine(in, 200), Detail: in})
+		case harness.KindToolStarted:
+			rec(db.Activity{Kind: "tool_started", ToolTiming: ev.ToolTiming})
 		case harness.KindToolResult:
 			if ev.ToolResult == nil {
 				continue
@@ -119,7 +125,15 @@ func captureRunSession(ctx context.Context, s *agentcore.Session, input string, 
 			out := blocksText(ev.ToolResult.Content)
 			lastTool.done(ev.ToolResult.ToolUseID)
 			auditTrace.Complete(ev.ToolResult.ToolUseID, out, ev.ToolResult.IsError)
-			rec(db.Activity{Kind: "tool_result", Tool: toolNames[ev.ToolResult.ToolUseID], ToolUseID: ev.ToolResult.ToolUseID,
+			key := ev.ToolResult.ToolUseID
+			if ev.ToolTiming != nil {
+				key = ev.ToolTiming.Occurrence
+			}
+			name := toolNames[key]
+			if ev.ToolTiming != nil {
+				delete(toolNames, key)
+			}
+			rec(db.Activity{Kind: "tool_result", Tool: name, ToolUseID: ev.ToolResult.ToolUseID, ToolTiming: ev.ToolTiming,
 				IsError: ev.ToolResult.IsError, Summary: firstLine(out, 200), Detail: out})
 		case harness.KindText:
 			addDelta("text", ev.Text)

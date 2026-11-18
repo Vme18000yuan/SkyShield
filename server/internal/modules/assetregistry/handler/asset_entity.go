@@ -13,6 +13,7 @@ import (
 )
 
 type assetReader interface {
+	OrganizationOverview(context.Context, int, int, bool) (*assetapp.OrganizationAssetOverview, error)
 	List(context.Context, assetapp.ListInput) (*assetapp.ListResult, error)
 	ListPorts(context.Context, assetapp.PortListInput) (*assetapp.PortListResult, error)
 	ListInventory(context.Context, assetapp.PortListInput) (*assetapp.InventoryResult, error)
@@ -92,7 +93,11 @@ func (h *AssetEntityHandler) ListInventory(c *gin.Context) {
 		httpdto.BadRequest(c, "Invalid rootDomainId")
 		return
 	}
-	result, err := h.reader.ListInventory(c.Request.Context(), assetapp.PortListInput{UserID: user, Page: page, PageSize: size, OrganizationID: org, RootDomainID: root, Query: c.Query("q")})
+	hideCDN, ok := httpdto.OptionalQueryBool(c, "hideCdn")
+	if !ok {
+		return
+	}
+	result, err := h.reader.ListInventory(c.Request.Context(), assetapp.PortListInput{HideCDN: hideCDN, UserID: user, Page: page, PageSize: size, OrganizationID: org, RootDomainID: root, Query: c.Query("q")})
 	if err != nil {
 		switch {
 		case errors.Is(err, assetapp.ErrInvalidQuery):
@@ -159,7 +164,11 @@ func (h *AssetEntityHandler) ListPorts(c *gin.Context) {
 		httpdto.BadRequest(c, "Invalid rootDomainId")
 		return
 	}
-	result, err := h.reader.ListPorts(c.Request.Context(), assetapp.PortListInput{UserID: user, Page: page, PageSize: size, OrganizationID: org, RootDomainID: root, Query: c.Query("q")})
+	hideCDN, ok := httpdto.OptionalQueryBool(c, "hideCdn")
+	if !ok {
+		return
+	}
+	result, err := h.reader.ListPorts(c.Request.Context(), assetapp.PortListInput{HideCDN: hideCDN, UserID: user, Page: page, PageSize: size, OrganizationID: org, RootDomainID: root, Query: c.Query("q")})
 	if err != nil {
 		switch {
 		case errors.Is(err, assetapp.ErrInvalidQuery):
@@ -191,7 +200,11 @@ func (h *AssetEntityHandler) RootDomainOverview(c *gin.Context) {
 		httpdto.BadRequest(c, "Invalid organizationId")
 		return
 	}
-	root, err := h.reader.List(c.Request.Context(), assetapp.ListInput{UserID: user, AssetType: "root_domain", AssetID: id, OrganizationID: org, PageSize: 1})
+	hideCDN, ok := httpdto.OptionalQueryBool(c, "hideCdn")
+	if !ok {
+		return
+	}
+	root, err := h.reader.List(c.Request.Context(), assetapp.ListInput{HideCDN: hideCDN, UserID: user, AssetType: "root_domain", AssetID: id, OrganizationID: org, PageSize: 1})
 	if err != nil {
 		if errors.Is(err, assetapp.ErrInvalidQuery) {
 			httpdto.BadRequest(c, "Invalid root domain query")
@@ -208,14 +221,14 @@ func (h *AssetEntityHandler) RootDomainOverview(c *gin.Context) {
 	}
 	counts := map[string]int64{}
 	for _, item := range []struct{ key, kind, category string }{{"subdomains", "subdomain", ""}, {"ips", "ip", ""}, {"apps", "app", ""}, {"web", "", "web"}, {"urls", "endpoint", ""}} {
-		result, e := h.reader.List(c.Request.Context(), assetapp.ListInput{UserID: user, AssetType: item.kind, AssetCategory: item.category, RootDomainID: id, OrganizationID: org, Page: 1, PageSize: 1})
+		result, e := h.reader.List(c.Request.Context(), assetapp.ListInput{HideCDN: hideCDN, UserID: user, AssetType: item.kind, AssetCategory: item.category, RootDomainID: id, OrganizationID: org, Page: 1, PageSize: 1})
 		if e != nil {
 			httpdto.InternalError(c, "Failed to load root domain assets")
 			return
 		}
 		counts[item.key] = result.TotalSize
 	}
-	ports, err := h.reader.ListPorts(c.Request.Context(), assetapp.PortListInput{UserID: user, RootDomainID: id, OrganizationID: org, Page: 1, PageSize: 1})
+	ports, err := h.reader.ListPorts(c.Request.Context(), assetapp.PortListInput{HideCDN: hideCDN, UserID: user, RootDomainID: id, OrganizationID: org, Page: 1, PageSize: 1})
 	if err != nil {
 		httpdto.InternalError(c, "Failed to load root domain ports")
 		return
@@ -283,8 +296,12 @@ func (h *AssetEntityHandler) List(c *gin.Context) {
 		}
 		rootID = parsed
 	}
+	hideCDN, ok := httpdto.OptionalQueryBool(c, "hideCdn")
+	if !ok {
+		return
+	}
 	result, err := h.reader.List(c.Request.Context(), assetapp.ListInput{
-		UserID: userID, AssetType: c.Query("assetType"), AssetCategory: c.Query("assetCategory"), Query: c.Query("q"),
+		HideCDN: hideCDN, UserID: userID, AssetType: c.Query("assetType"), AssetCategory: c.Query("assetCategory"), Query: c.Query("q"),
 		PageSize: pageSize, PageToken: c.Query("pageToken"), Page: page, OrganizationID: organizationID, RootDomainID: rootID,
 	})
 	if err != nil {

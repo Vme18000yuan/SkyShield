@@ -56,6 +56,7 @@ class LocalDeployTests(unittest.TestCase):
         order = []
         with mock.patch.object(deploy, "check_existing_runtime", side_effect=lambda _: order.append("check")), \
              mock.patch.object(deploy, "read_state", return_value={}), \
+             mock.patch.object(deploy, "free_port"), \
              mock.patch.object(deploy, "stop", side_effect=lambda _: order.append("stop")), \
              mock.patch.object(deploy, "start", side_effect=lambda _: order.append("start")):
             deploy.restart_existing(args)
@@ -233,6 +234,7 @@ class LocalDeployTests(unittest.TestCase):
                 patch("frontend_needs_build", return_value=False)
                 patch("go_binary", return_value="go")
                 patch("build_binary", side_effect=compile_fixture)
+                stack.enter_context(mock.patch.dict(os.environ, {"SKYSHIELD_UPDATER_CHILD": "1"}))
                 patch("alive", side_effect=lambda item: bool(item))
                 patch("local_agent_busy", side_effect=[False, True])
                 stop = patch("stop_managed")
@@ -397,6 +399,18 @@ class LocalDeployTests(unittest.TestCase):
             self.assertEqual(env["SERVER_HOST"], "0.0.0.0")
             self.assertEqual(env["SERVER_GRPC_HOST"], "0.0.0.0")
             self.assertEqual(env["DB_HOST"], "127.0.0.1")
+
+    def test_frontend_port_collision_is_detected_before_restart_and_saved_port_is_reusable(self):
+        with tempfile.TemporaryDirectory() as directory, socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+            listener.listen()
+            marker = pathlib.Path(directory) / "frontend-port"
+            marker.write_text("3300\n")
+            with mock.patch.object(deploy, "FRONTEND_PORT_FILE", marker), mock.patch.object(deploy, "FRONTEND_PORT", port):
+                self.assertEqual(deploy.saved_frontend_port(), 3300)
+                with self.assertRaisesRegex(RuntimeError, "SKYSHIELD_LOCAL_FRONTEND_PORT"):
+                    deploy.check_frontend_binding({}, restarting=True)
 
 
 if __name__ == "__main__":

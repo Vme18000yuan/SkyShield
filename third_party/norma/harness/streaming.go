@@ -15,6 +15,7 @@ import (
 // blocks every tool queued behind it until it finishes. Results are yielded in
 // arrival order; progress is yielded as soon as it arrives.
 type streamExec struct {
+	batch  int
 	ctx    context.Context // immutable phase deadline, including during settlement
 	l      *loop
 	mu     sync.Mutex
@@ -32,6 +33,9 @@ const (
 )
 
 type tracked struct {
+	clock         *toolClock
+	startReported bool
+
 	block  llm.ContentBlock
 	safe   bool
 	status toolStatus
@@ -41,6 +45,9 @@ type tracked struct {
 }
 
 func newStreamExec(l *loop) *streamExec {
+	if l.in.ObserveToolTiming {
+		l.observedRounds++
+	}
 	return &streamExec{l: l, ctx: l.toolCtx, notify: make(chan struct{}, 1)}
 }
 
@@ -52,13 +59,13 @@ func (e *streamExec) ping() {
 }
 
 // add registers a completed tool_use block and tries to start it.
-func (e *streamExec) add(block llm.ContentBlock) {
+func (e *streamExec) add(block llm.ContentBlock, clock *toolClock) {
 	e.mu.Lock()
 	safe := false
 	if t, ok := e.l.in.Tools.Get(block.Name); ok {
 		safe = t.IsConcurrencySafe(block.Input)
 	}
-	e.tools = append(e.tools, &tracked{block: block, safe: safe})
+	e.tools = append(e.tools, &tracked{block: block, safe: safe, clock: clock})
 	e.mu.Unlock()
 	e.processQueue()
 }
@@ -102,7 +109,7 @@ func (e *streamExec) run(t *tracked) {
 		return
 	}
 	defer func() { <-e.l.sem }()
-	res, extra := e.l.execOneContext(e.ctx, t.block, func(p tool.ProgressInfo) {
+	res, extra := e.l.execOneContext(e.ctx, t.block, t.clock, func(p tool.ProgressInfo) {
 		e.mu.Lock()
 		t.prog = append(t.prog, p.Message)
 		e.mu.Unlock()
@@ -134,10 +141,15 @@ func (e *streamExec) drain() bool {
 		if t.status == stYielded {
 			continue
 		}
+		timing := t.clock.snapshot()
+		if timing != nil && !timing.StartedAt.IsZero() && !t.startReported && t.status != stCompleted {
+			t.startReported = true
+			evs = append(evs, Event{Kind: KindToolStarted, ToolTiming: timing})
+		}
 		if t.status == stCompleted {
 			t.status = stYielded
 			r := t.result
-			evs = append(evs, Event{Kind: KindToolResult, ToolResult: &r})
+			evs = append(evs, Event{Kind: KindToolResult, ToolResult: &r, ToolTiming: timing})
 			continue
 		}
 		// status is queued/executing: a non-safe one preserves FIFO ordering.
@@ -205,13 +217,17 @@ func (e *streamExec) drainSynthetic(msg string) bool {
 		if t.status == stCompleted {
 			t.status = stYielded
 			r := t.result
-			evs = append(evs, Event{Kind: KindToolResult, ToolResult: &r})
+			evs = append(evs, Event{Kind: KindToolResult, ToolResult: &r, ToolTiming: t.clock.snapshot()})
 			continue
 		}
 		t.status = stYielded
 		t.result = llm.ToolResultText(t.block.ID, msg, true)
 		r := t.result
-		evs = append(evs, Event{Kind: KindToolResult, ToolResult: &r})
+		timing := t.clock.snapshot()
+		if timing != nil {
+			timing.Interrupted = true
+		}
+		evs = append(evs, Event{Kind: KindToolResult, ToolResult: &r, ToolTiming: timing})
 	}
 	e.mu.Unlock()
 	for _, ev := range evs {

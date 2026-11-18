@@ -19,7 +19,16 @@ export interface AssetEntity {
   organizations?: AssetOrganization[]
 }
 
+export interface OrganizationAssetOverview {
+  id: number
+  name: string
+  rootDomains: number
+  subdomains: number
+  ips: number
+}
+
 export interface AssetEntityListParams {
+  hideCdn?: boolean
   assetType?: AssetEntityType
   assetCategory?: AssetCategory
   q?: string

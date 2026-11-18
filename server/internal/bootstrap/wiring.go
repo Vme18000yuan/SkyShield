@@ -52,6 +52,7 @@ import (
 	"github.com/yyhuni/lunafox/server/internal/infogather"
 	"github.com/yyhuni/lunafox/server/internal/job"
 	mcpadapters "github.com/yyhuni/lunafox/server/internal/mcp/adapters"
+	mcpexternal "github.com/yyhuni/lunafox/server/internal/mcp/external"
 	mcptools "github.com/yyhuni/lunafox/server/internal/mcp/tools"
 	mcptransport "github.com/yyhuni/lunafox/server/internal/mcp/transport"
 	agentservice "github.com/yyhuni/lunafox/server/internal/modules/agent/application"
@@ -178,6 +179,7 @@ type deps struct {
 	tokenVersionReader             auth.TokenVersionReader
 	mcpKeyService                  *identityservice.MCPKeyLifecycleService
 	mcpHandler                     *mcptransport.Handler
+	mcpClients                     *mcpexternal.Service
 	healthHandler                  *assethandler.HealthHandler
 	authHandler                    *identityhandler.AuthHandler
 	userHandler                    *identityhandler.UserHandler
@@ -205,30 +207,28 @@ type deps struct {
 	fingerprintArtifacts           *fingerprintapp.FingerprintArtifactService
 	nucleiPocRepo                  *nucleipocRepo.NucleiPOCRepository
 
-	agentHandler                   *agenthandler.AgentHandler
-	agentLogHandler                *agenthandler.AgentLogHandler
-	agentClusterSummaryHandler     *agenthandler.AgentClusterSummaryHandler
-	agentLicenseHandler            *agenthandler.AgentLicenseHandler
-	agentLocationMapHandler        *agenthandler.AgentLocationMapHandler
-	serverLogHandler               *systemhandler.ServerLogHandler
-	runtimeMetricsHandler          *systemhandler.RuntimeMetricsHandler
-	httpProxySettingsHandler       *systemhandler.HTTPProxySettingsHandler
-	runtimeMetricsJob              runtimeMetricsJob
-	scanHistoryRetentionJob        runtimeMetricsJob
-	registrationTokenCleanupJob    runtimeMetricsJob
-	scheduledScanController        managedBackgroundJob
-	occurrenceRetentionJob         managedBackgroundJob
-	targetCleanupRunner            managedBackgroundJob
-	notificationOutboxWorker       managedBackgroundJob
-	notificationDeliveryWorker     managedBackgroundJob
-	notificationRetentionJob       managedBackgroundJob
-	notificationInboxHandler       *notificationhandler.NotificationInboxHandler
-	notificationDestinationHandler *notificationhandler.NotificationDestinationHandler
-	notificationSSEHandler         *notificationhandler.NotificationSSEHandler
-	loginVisualHandler             *loginvisualhandler.LoginVisualHandler
-	nucleiPocHandler               *nucleipocHandler.NucleiPOCHandler
-	nucleiPocRunner                *nucleipocapp.SyncRunner
-	nucleiPocRetentionJob          *nucleipocapp.RetentionJob
+	agentHandler                *agenthandler.AgentHandler
+	agentLogHandler             *agenthandler.AgentLogHandler
+	agentClusterSummaryHandler  *agenthandler.AgentClusterSummaryHandler
+	agentLicenseHandler         *agenthandler.AgentLicenseHandler
+	agentLocationMapHandler     *agenthandler.AgentLocationMapHandler
+	serverLogHandler            *systemhandler.ServerLogHandler
+	runtimeMetricsHandler       *systemhandler.RuntimeMetricsHandler
+	httpProxySettingsHandler    *systemhandler.HTTPProxySettingsHandler
+	runtimeMetricsJob           runtimeMetricsJob
+	scanHistoryRetentionJob     runtimeMetricsJob
+	registrationTokenCleanupJob runtimeMetricsJob
+	scheduledScanController     managedBackgroundJob
+	occurrenceRetentionJob      managedBackgroundJob
+	targetCleanupRunner         managedBackgroundJob
+	notificationOutboxWorker    managedBackgroundJob
+	notificationRetentionJob    managedBackgroundJob
+	notificationInboxHandler    *notificationhandler.NotificationInboxHandler
+	notificationSSEHandler      *notificationhandler.NotificationSSEHandler
+	loginVisualHandler          *loginvisualhandler.LoginVisualHandler
+	nucleiPocHandler            *nucleipocHandler.NucleiPOCHandler
+	nucleiPocRunner             *nucleipocapp.SyncRunner
+	nucleiPocRetentionJob       *nucleipocapp.RetentionJob
 
 	websiteSnapshotHandler       *snapshothandler.WebsiteSnapshotHandler
 	subdomainSnapshotHandler     *snapshothandler.SubdomainSnapshotHandler
@@ -1071,6 +1071,7 @@ func buildDependencies(infra *infra, cfg *config.Config) (*deps, error) {
 		tokenVersionReader:             identity.tokenVersionReader,
 		mcpKeyService:                  identity.mcpKeyService,
 		mcpHandler:                     mcpHandler,
+		mcpClients:                     mcpexternal.New(infra.db, assetRegistryFacade, aiVulnerabilityService, security.vulnerabilitySvc),
 		healthHandler:                  assethandler.NewHealthHandler(infra.db, infra.redisClient),
 		authHandler:                    identity.authHandler,
 		userHandler:                    identity.userHandler,
@@ -1098,30 +1099,28 @@ func buildDependencies(infra *infra, cfg *config.Config) (*deps, error) {
 		fingerprintArtifacts:           fingerprint.artifacts,
 		nucleiPocRepo:                  repos.nucleiPocRepo,
 
-		agentHandler:                   agent.agentHandler,
-		agentLogHandler:                agent.agentLogHandler,
-		agentClusterSummaryHandler:     agent.agentClusterSummaryHandler,
-		agentLicenseHandler:            agent.agentLicenseHandler,
-		agentLocationMapHandler:        agent.agentLocationMapHandler,
-		serverLogHandler:               system.serverLogHandler,
-		runtimeMetricsHandler:          system.runtimeMetricsHandler,
-		httpProxySettingsHandler:       system.httpProxySettingsHandler,
-		runtimeMetricsJob:              system.runtimeMetricsJob,
-		scanHistoryRetentionJob:        scanHistoryRetentionJob,
-		scheduledScanController:        scan.scheduledScanController,
-		occurrenceRetentionJob:         scan.occurrenceRetentionJob,
-		targetCleanupRunner:            targetCleanupRunner,
-		registrationTokenCleanupJob:    agent.registrationTokenCleanupJob,
-		notificationOutboxWorker:       notification.OutboxWorker,
-		notificationDeliveryWorker:     notification.DeliveryWorker,
-		notificationRetentionJob:       notification.RetentionJob,
-		notificationInboxHandler:       notification.InboxHandler,
-		notificationDestinationHandler: notification.DestinationHandler,
-		notificationSSEHandler:         notification.SSEHandler,
-		loginVisualHandler:             loginVisual.Handler,
-		nucleiPocHandler:               nucleipocHandler.NewNucleiPOCHandler(nucleiPocService),
-		nucleiPocRunner:                nucleiPocRunner,
-		nucleiPocRetentionJob:          nucleiPocRetention,
+		agentHandler:                agent.agentHandler,
+		agentLogHandler:             agent.agentLogHandler,
+		agentClusterSummaryHandler:  agent.agentClusterSummaryHandler,
+		agentLicenseHandler:         agent.agentLicenseHandler,
+		agentLocationMapHandler:     agent.agentLocationMapHandler,
+		serverLogHandler:            system.serverLogHandler,
+		runtimeMetricsHandler:       system.runtimeMetricsHandler,
+		httpProxySettingsHandler:    system.httpProxySettingsHandler,
+		runtimeMetricsJob:           system.runtimeMetricsJob,
+		scanHistoryRetentionJob:     scanHistoryRetentionJob,
+		scheduledScanController:     scan.scheduledScanController,
+		occurrenceRetentionJob:      scan.occurrenceRetentionJob,
+		targetCleanupRunner:         targetCleanupRunner,
+		registrationTokenCleanupJob: agent.registrationTokenCleanupJob,
+		notificationOutboxWorker:    notification.OutboxWorker,
+		notificationRetentionJob:    notification.RetentionJob,
+		notificationInboxHandler:    notification.InboxHandler,
+		notificationSSEHandler:      notification.SSEHandler,
+		loginVisualHandler:          loginVisual.Handler,
+		nucleiPocHandler:            nucleipocHandler.NewNucleiPOCHandler(nucleiPocService),
+		nucleiPocRunner:             nucleiPocRunner,
+		nucleiPocRetentionJob:       nucleiPocRetention,
 
 		websiteSnapshotHandler:       snapshot.websiteSnapshotHandler,
 		subdomainSnapshotHandler:     snapshot.subdomainSnapshotHandler,

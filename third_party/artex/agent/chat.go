@@ -23,6 +23,8 @@ import (
 // LS/Glob/Grep) plus whatever skills/MCP the key is made visible; NO pentest
 // graph/task context is injected (that stays exclusive to MainAgent).
 type ChatAgent struct {
+	observeToolTiming bool
+
 	prov           llm.Provider
 	model          string
 	workDir        string
@@ -47,6 +49,8 @@ func NewChatAgent(prov llm.Provider, model, workDir string, tx *transcript.Store
 }
 
 func (c *ChatAgent) SetBaseTools(tools []actool.CoreTool) { c.baseTools = tools }
+
+func (c *ChatAgent) ObserveToolTiming() { c.observeToolTiming = true }
 
 func (c *ChatAgent) SetWebFetchEnabled(enabled bool) { c.webFetchEnabled = &enabled }
 
@@ -156,6 +160,8 @@ func (c *ChatAgent) Chat(ctx context.Context, agentKey, sessionID, message strin
 		webFetchEnabled = *c.webFetchEnabled
 	}
 	opts := agentcore.Options{
+		ObserveToolTiming: c.observeToolTiming,
+
 		Provider:        c.prov,
 		SystemPrompt:    system,
 		DynamicBoundary: boundary,

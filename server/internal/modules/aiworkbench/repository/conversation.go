@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yyhuni/lunafox/server/internal/airuntime"
 	aiapp "github.com/yyhuni/lunafox/server/internal/modules/aiworkbench/application"
@@ -253,11 +254,48 @@ func (s *ConversationStore) AppendActivity(ctx context.Context, user int, conver
 		if event.Kind == "stream" {
 			return nil
 		}
+		if timing := event.ToolTiming; timing != nil && (event.Kind == "tool_use" || event.Kind == "tool_result") {
+			var evidenceRef *string
+			if event.Kind == "tool_use" && event.Tool == "traffic_get" {
+				if id := stringField(objectInput(event.Detail), "id"); id != "" && len(id) <= 128 {
+					evidenceRef = &id
+				}
+			}
+			return tx.Exec(`INSERT INTO ai_conversation_activity
+			    (tenant_id,conversation_id,owner_user_id,run_id,kind,tool,tool_use_id,is_error,summary,detail,
+			     trace_call_id,model_round,tool_batch,tool_started_at,tool_finished_at,tool_interrupted,evidence_ref,source_activity_id)
+			    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,(SELECT id FROM ai_conversation_activity WHERE ?='tool_result'
+			      AND tenant_id=? AND conversation_id=? AND owner_user_id=? AND run_id=? AND trace_call_id=? AND kind='tool_use'))
+			    ON CONFLICT (run_id,trace_call_id,kind) WHERE trace_call_id IS NOT NULL AND kind IN ('tool_use','tool_result') DO NOTHING`,
+				assetapp.DefaultTenantID, conversation, user, run, event.Kind, event.Tool, event.ToolUseID, event.IsError, event.Summary, event.Detail,
+				timing.Occurrence, timing.Round, timing.Batch, optionalStepTime(timing.StartedAt), optionalStepTime(timing.FinishedAt), timing.Interrupted, evidenceRef,
+				event.Kind, assetapp.DefaultTenantID, conversation, user, run, timing.Occurrence).Error
+		}
 		return tx.Exec(`INSERT INTO ai_conversation_activity
 			(tenant_id,conversation_id,owner_user_id,run_id,kind,tool,tool_use_id,is_error,summary,detail,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens)
 			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, assetapp.DefaultTenantID, conversation, user, run, event.Kind, event.Tool, event.ToolUseID, event.IsError, event.Summary, event.Detail,
 			event.InputTokens, event.OutputTokens, event.CacheReadTokens, event.CacheWriteTokens).Error
 	})
+}
+
+func optionalStepTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
+func (s *ConversationStore) MarkConversationToolStarted(ctx context.Context, user int, conversation, run, instance, occurrence string, started time.Time) error {
+	if started.IsZero() || occurrence == "" {
+		return nil
+	}
+	return s.db.WithContext(ctx).Exec(`UPDATE ai_conversation_activity a SET tool_started_at=?
+	  FROM ai_run r JOIN tenant_membership m ON m.tenant_id=r.tenant_id AND m.user_id=r.owner_user_id
+	  JOIN auth_user u ON u.id=m.user_id AND u.is_active JOIN tenant tn ON tn.id=m.tenant_id AND tn.status='active'
+	  WHERE a.run_id=r.id AND a.tenant_id=r.tenant_id AND a.owner_user_id=r.owner_user_id AND a.conversation_id=r.conversation_id
+	    AND r.tenant_id=? AND r.owner_user_id=? AND r.conversation_id=? AND r.id=? AND r.lease_owner=?
+	    AND r.status='running' AND r.lease_until>clock_timestamp() AND a.kind='tool_use' AND a.trace_call_id=?
+	    AND a.tool_started_at IS NULL`, started, assetapp.DefaultTenantID, user, conversation, run, instance, occurrence).Error
 }
 
 func (s *ConversationStore) Heartbeat(ctx context.Context, user int, conversation, run, instance string) (bool, error) {

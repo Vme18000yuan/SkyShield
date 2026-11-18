@@ -1,5 +1,5 @@
 import { api } from "@/lib/api-client"
-import type { ApplicationOverview, AssetEntityListParams, AssetEntityListResponse, AssetInventoryResponse, AssetRegistrationInput, AssetRegistrationResponse, PortAssetListResponse, RootDomainOverview } from "@/types/asset-entity.types"
+import type { OrganizationAssetOverview, ApplicationOverview, AssetEntityListParams, AssetEntityListResponse, AssetInventoryResponse, AssetRegistrationInput, AssetRegistrationResponse, PortAssetListResponse, RootDomainOverview } from "@/types/asset-entity.types"
 
 export class AssetEntityService {
   static async list(params: AssetEntityListParams): Promise<AssetEntityListResponse> {
@@ -10,14 +10,17 @@ export class AssetEntityService {
     const response = await api.post<AssetRegistrationResponse>("/assetEntities:batchCreate", { assets, requestId })
     return response.data
   }
-  static async listPorts(params: Pick<AssetEntityListParams, "q" | "page" | "pageSize" | "organizationId" | "rootDomainId">): Promise<PortAssetListResponse> {
+  static async listPorts(params: Pick<AssetEntityListParams, "q" | "page" | "pageSize" | "organizationId" | "rootDomainId" | "hideCdn">): Promise<PortAssetListResponse> {
     return (await api.get<PortAssetListResponse>("/assetPorts", { params })).data
   }
-  static async listInventory(params: Pick<AssetEntityListParams, "q" | "page" | "pageSize" | "organizationId" | "rootDomainId">): Promise<AssetInventoryResponse> {
+  static async listInventory(params: Pick<AssetEntityListParams, "q" | "page" | "pageSize" | "organizationId" | "rootDomainId" | "hideCdn">): Promise<AssetInventoryResponse> {
     return (await api.get<AssetInventoryResponse>("/assetInventory", { params })).data
   }
-  static async rootOverview(id: string, organizationId?: number): Promise<RootDomainOverview> {
-    return (await api.get<RootDomainOverview>(`/assetEntities/${encodeURIComponent(id)}/rootDomainOverview`, { params: { organizationId } })).data
+  static async organizationOverview(id: number, hideCdn: boolean, signal?: AbortSignal): Promise<OrganizationAssetOverview> {
+    return (await api.get<OrganizationAssetOverview>(`/organizations/${id}/assetOverview`, { params: { hideCdn }, signal })).data
+  }
+  static async rootOverview(id: string, organizationId?: number, hideCdn?: boolean): Promise<RootDomainOverview> {
+    return (await api.get<RootDomainOverview>(`/assetEntities/${encodeURIComponent(id)}/rootDomainOverview`, { params: { organizationId, hideCdn } })).data
   }
   static async applicationOverview(id: string, params: { organizationId?: number; page: number; pageSize: number }): Promise<ApplicationOverview> {
     return (await api.get<ApplicationOverview>(`/assetEntities/${encodeURIComponent(id)}/applicationOverview`, { params })).data

@@ -113,7 +113,6 @@ func Run(ctx context.Context, cfg *config.Config, migrationsFS embed.FS) {
 	d.targetCleanupRunner.Start(jobCtx)
 	d.serverLocationScheduler.Start(jobCtx)
 	d.notificationOutboxWorker.Start(jobCtx)
-	d.notificationDeliveryWorker.Start(jobCtx)
 	if d.aiNotificationWorker != nil {
 		d.aiNotificationWorker.Start(jobCtx)
 	}
@@ -205,7 +204,6 @@ func Run(ctx context.Context, cfg *config.Config, migrationsFS embed.FS) {
 	waitForManagedBackgroundJob(shutdownCtx, "scheduled scan occurrence retention", d.occurrenceRetentionJob)
 	waitForManagedBackgroundJob(shutdownCtx, "Target cleanup runner", d.targetCleanupRunner)
 	waitForManagedBackgroundJob(shutdownCtx, "notification outbox worker", d.notificationOutboxWorker)
-	waitForManagedBackgroundJob(shutdownCtx, "notification delivery worker", d.notificationDeliveryWorker)
 	waitForManagedBackgroundJob(shutdownCtx, "AI notification worker", d.aiNotificationWorker)
 	waitForManagedBackgroundJob(shutdownCtx, "notification retention job", d.notificationRetentionJob)
 	waitForManagedBackgroundJob(shutdownCtx, "nuclei POC retention job", d.nucleiPocRetentionJob)

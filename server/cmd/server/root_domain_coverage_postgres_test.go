@@ -180,6 +180,59 @@ func verifyRootDomainCoveragePostgres(t *testing.T, ctx context.Context, db *sql
 	if _, err = assets.RootDomainCoverage(ctx, owner, asset, orgA); !errors.Is(err, assetapp.ErrRootDomainNotFound) {
 		t.Fatalf("non-root accepted: %v", err)
 	}
+	// An edge-only port must disappear from the list, graph and overview under
+	// the same switch. The named business domain and the other organization stay intact.
+	if _, err = db.ExecContext(ctx, `INSERT INTO host_port_mapping(target_id,host,ip,port) VALUES($1,'cdn.coverage-root.example','104.16.0.9',19001)`, target); err != nil {
+		t.Fatal(err)
+	}
+	for _, include := range []bool{false, true} {
+		hide := !include
+		overview, err := assets.OrganizationOverview(ctx, owner, orgA, hide)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for kind, count := range map[string]int64{"root_domain": overview.RootDomains, "subdomain": overview.Subdomains, "ip": overview.IPs} {
+			page, err := assets.List(ctx, assetapp.ListInput{UserID: owner, OrganizationID: orgA, AssetType: kind, HideCDN: hide, Page: 1, PageSize: 1})
+			if err != nil || page.TotalSize != count {
+				t.Fatalf("%s count mismatch: overview=%d page=%+v err=%v", kind, count, page, err)
+			}
+		}
+		graph, err := assets.RootDomainCoverageView(ctx, owner, rootID, orgA, hide)
+		if err != nil {
+			t.Fatal(err)
+		}
+		foundIP, foundPort := false, false
+		for _, n := range graph.Nodes {
+			foundIP = foundIP || n.Kind == "ip" && n.Label == "104.16.0.9"
+			foundPort = foundPort || n.Port == 19001
+		}
+		if foundIP != include || foundPort != include {
+			t.Fatalf("CDN graph include=%t got IP=%t port=%t", include, foundIP, foundPort)
+		}
+		ports, err := assets.ListPorts(ctx, assetapp.PortListInput{UserID: owner, OrganizationID: orgA, RootDomainID: rootID, HideCDN: hide, Query: "19001"})
+		if err != nil || (ports.TotalSize > 0) != include {
+			t.Fatalf("CDN ports include=%t got %+v err=%v", include, ports, err)
+		}
+	}
+	// Imported CDN evidence also covers IPs outside the public prefix snapshot,
+	// but it cannot suppress the same IP for an unrelated organization.
+	if _, err = db.ExecContext(ctx, `WITH g AS (
+ INSERT INTO ai_info_gather_run(id,tenant_id,owner_user_id,execution_id,tool_use_id,target,target_kind,mode,status)
+ VALUES($1,$2,$3,$4,'asset-cdn','coverage-root.example','HOST','fast','completed') RETURNING id)
+ INSERT INTO ai_info_gather_record(run_id,kind,record_id,payload,status,target_id)
+ SELECT id,'asset',repeat('b',64),'{"type":"ip","value":"2001:db8::21","cdn":true}','imported',$5 FROM g`, uuid.NewString(), assetapp.DefaultTenantID, owner, uuid.NewString(), target); err != nil {
+		t.Fatal(err)
+	}
+	for org, want := range map[int]bool{orgA: true, orgB: false} {
+		var marked bool
+		err = db.QueryRowContext(ctx, `SELECT public.tq_inventory_cdn_asset('service','[2001:db8::21]:443',$1,$2,0)`, assetapp.DefaultTenantID, org).Scan(&marked)
+		if err != nil || marked != want {
+			t.Fatalf("organization %d CDN evidence: %t %v", org, marked, err)
+		}
+	}
+	if _, err = assets.OrganizationOverview(ctx, owner, 2147483647, true); !errors.Is(err, assetapp.ErrOrganizationNotFound) {
+		t.Fatalf("unknown organization: %v", err)
+	}
 	if _, err = db.ExecContext(ctx, `UPDATE ai_task SET deleted_at=clock_timestamp() WHERE id=$1`, task.ID); err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { coverageNodeLabel, coveragePositions, coverageVisible } from "@/components/shared/asset-coverage/coverage-graph-layout"
+import { coverageNodeLabel, coveragePositions, coverageVisible, TOPOLOGY_NODE_LIMIT, TOPOLOGY_EDGE_LIMIT } from "@/components/shared/asset-coverage/coverage-graph-layout"
 import type { CoverageGraph, CoverageNode } from "@/types/asset-coverage.types"
 
 const node = (key: string, kind: CoverageNode["kind"], tested = false): CoverageNode => ({ key, kind, label: key, tested, in_scope: true })
@@ -42,6 +42,27 @@ describe("ARTEX task coverage graph", () => {
     const positions = coveragePositions(view.nodes.map(item => item.key), view.edges, new Map([["a", 1], ["b", 2], ["alone", 3]]))
     expect(positions.size).toBe(3)
     expect([...positions.values()].every(position => Number.isFinite(position.y))).toBe(true)
+  })
+
+  it("bounds the force input on disconnected IPs, fully expanded branches and dense shared edges", () => {
+    const ips = Array.from({ length: 3000 }, (_, i) => node(`ip-${i}`, "ip"))
+    const domains = Array.from({ length: 60 }, (_, i) => node(`domain-${i}`, "subdomain", i === 59))
+    const services = Array.from({ length: 70 }, (_, i) => node(`svc-${i}`, "service"))
+    const root = node("root", "root_domain")
+    const graph = { nodes: [...ips, ...services, ...domains, root], truncated: false, edges: [
+      ...domains.map(d => ({ src: d.key, dst: root.key })),
+      ...domains.flatMap(d => services.map(s => ({ src: s.key, dst: d.key }))),
+    ] }
+    const expanded = new Map(domains.map(d => [JSON.stringify([d.key, "service"]), 100]))
+    expanded.set(JSON.stringify([root.key, "subdomain"]), 100)
+    const view = coverageVisible(graph, expanded)
+    const keys = new Set([...view.nodes, ...view.folds].map(item => item.key))
+    expect(view.limited).toBe(true)
+    expect(keys.size).toBeLessThanOrEqual(TOPOLOGY_NODE_LIMIT)
+    expect(view.edges.length).toBeLessThanOrEqual(TOPOLOGY_EDGE_LIMIT)
+    expect(view.edges.every(e => keys.has(e.src) && keys.has(e.dst))).toBe(true)
+    expect(keys.has(root.key)).toBe(true)
+    expect(keys.has("domain-59")).toBe(true)
   })
 
   it("uses ARTEX labels for services and endpoint paths", () => {

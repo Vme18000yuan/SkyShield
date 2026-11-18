@@ -372,7 +372,6 @@ The current audited examples include:
 
 - `app/scan/config/data-sources/page.tsx`
 - `app/settings/database-health/page.tsx`
-- `app/settings/notifications/page.tsx`
 - `app/settings/support/page.tsx`
 - `app/settings/system-logs/page.tsx`
 - `app/scan/scheduled/page.tsx`

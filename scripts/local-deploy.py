@@ -40,7 +40,17 @@ PG_PORT = int(os.environ.get("SKYSHIELD_LOCAL_PG_PORT", "41303"))
 REDIS_PORT = int(os.environ.get("SKYSHIELD_LOCAL_REDIS_PORT", "51563"))
 HTTP_PORT = int(os.environ.get("SKYSHIELD_LOCAL_HTTP_PORT", "8080"))
 GRPC_PORT = int(os.environ.get("SKYSHIELD_LOCAL_GRPC_PORT", "9090"))
-FRONTEND_PORT = int(os.environ.get("SKYSHIELD_LOCAL_FRONTEND_PORT", "3000"))
+FRONTEND_PORT_FILE = DATA / "frontend-port"
+
+
+def saved_frontend_port():
+    try:
+        return int(FRONTEND_PORT_FILE.read_text().strip())
+    except FileNotFoundError:
+        return 3000
+
+
+FRONTEND_PORT = int(os.environ.get("SKYSHIELD_LOCAL_FRONTEND_PORT") or saved_frontend_port())
 LISTEN_HOST = "0.0.0.0"
 VERSION = "0.0.1-alpha.229"
 ENGINE_NAMES = ("subdomain_discovery", "port_scan", "website_discovery", "url_collection", "fingerprint_detection", "directory_scan", "screenshot", "nuclei_vulnerability")
@@ -125,7 +135,7 @@ def environment():
         "TIANQIONG_INFO_GATHER_TOOLS_DIR": str(TOOLS),
         "TIANQIONG_LOCAL_PROXY_SOCKET": str(DATA / "agent/proxy.sock"),
         "SKYSHIELD_DEPLOYMENT_MODE": "local",
-        "SKYSHIELD_UPDATE_SOCKET": str(ROOT / ".local/updater/socket/control.sock"),
+        "SKYSHIELD_UPDATE_SOCKET": str(ROOT / ".local/updater-local/socket/control.sock"),
         "SKYSHIELD_SYSTEM_DNS": os.environ.get("SKYSHIELD_SYSTEM_DNS", "1"),
         "ENGINE_INSTALL_INVENTORY_PATH": str(ROOT / "engine-inventory.yaml"), "ENGINE_INSTALL_REGISTRY": os.environ.get("SKYSHIELD_ENGINE_REGISTRY", "docker.io"),
         "MIGRATION_POLICY_PATH": str(ROOT / "server/cmd/server/migrations/policy.json"), "RELEASE_MANIFEST_PATH": str(ROOT / "release.manifest.yaml"),
@@ -176,6 +186,8 @@ def free_port(port, host="127.0.0.1"):
         try:
             sock.bind((host, port))
         except OSError:
+            if port == FRONTEND_PORT and host == LISTEN_HOST:
+                fail(f"前端端口 {port} 已被占用。请用 SKYSHIELD_LOCAL_FRONTEND_PORT 指定空闲端口，例如 3300。")
             fail(f"本地端口 {port} 已被占用；请先停止旧进程或设置对应的 SKYSHIELD_LOCAL_*_PORT")
 
 
@@ -236,6 +248,30 @@ def frontend_environment(env, stage=None):
     result.pop("SKYSHIELD_NEXT_STAGE_DIR", None)
     if stage:
         result["SKYSHIELD_NEXT_STAGE_DIR"] = stage
+    return result
+
+
+def frontend_build_environment(env, stage):
+    result = frontend_environment(env, stage)
+    # Next's default V8 heap can be too small for the production bundle. Only
+    # raise it when the host (and, where present, its cgroup) has headroom.
+    if result.get("NODE_OPTIONS"):
+        return result
+    try:
+        lines = pathlib.Path("/proc/meminfo").read_text().splitlines()
+        available = next(int(line.split()[1]) * 1024 for line in lines if line.startswith("MemAvailable:"))
+        maximum = pathlib.Path("/sys/fs/cgroup/memory.max")
+        used = pathlib.Path("/sys/fs/cgroup/memory.current")
+        if maximum.is_file() and used.is_file():
+            limit = maximum.read_text().strip()
+            if limit != "max":
+                available = min(available, max(0, int(limit) - int(used.read_text().strip())))
+        if available >= 6 * 1024**3:
+            result["NODE_OPTIONS"] = "--max-old-space-size=4096"
+        elif available >= 4 * 1024**3:
+            result["NODE_OPTIONS"] = "--max-old-space-size=3072"
+    except (OSError, ValueError, StopIteration):
+        pass
     return result
 
 
@@ -407,7 +443,7 @@ def build_frontend(env):
     stage_tsconfig.write_bytes((frontend / "tsconfig.json").read_bytes())
     generated = frontend / "next-env.d.ts"
     previous = generated.read_bytes() if generated.is_file() else None
-    stage_env = frontend_environment(env, stage)
+    stage_env = frontend_build_environment(env, stage)
     port_marker = stage_dir / "skyshield-local-api-origin"
     api_origin = f"127.0.0.1:{HTTP_PORT}"
     print("在独立目录构建本地前端……", flush=True)
@@ -566,18 +602,40 @@ def restart_existing(args):
     for name in ("agent", "frontend", "server", "redis"):
         if alive(state.get(name)) and not state[name].get("owned"):
             fail(f"{name} 由其他方式启动，请先由原启动方式停止")
+    check_frontend_binding(state, restarting=True)
     stop(args)
     args.no_build = True
     args.no_tools_install = True
     start(args)
 
 
+def check_frontend_binding(state, *, restarting=False):
+    if not 1 <= FRONTEND_PORT <= 65535 or FRONTEND_PORT in {HTTP_PORT, GRPC_PORT, PG_PORT, REDIS_PORT}:
+        fail("SKYSHIELD_LOCAL_FRONTEND_PORT 必须是 1 到 65535 内的独立端口")
+    running = alive(state.get("frontend"))
+    if not running:
+        free_port(FRONTEND_PORT, LISTEN_HOST)
+    elif FRONTEND_PORT != saved_frontend_port():
+        # Older installations may already use the requested port without a
+        # saved marker. Read the managed process's public URL to identify it.
+        try:
+            entries = pathlib.Path(f"/proc/{state['frontend']['pid']}/environ").read_bytes().split(b"\x00")
+            if f"PUBLIC_URL=http://127.0.0.1:{FRONTEND_PORT}".encode() in entries:
+                return
+        except OSError:
+            pass
+        free_port(FRONTEND_PORT, LISTEN_HOST)
+        if not restarting:
+            fail("切换运行中实例的前端端口，请用相同的 SKYSHIELD_LOCAL_FRONTEND_PORT 执行 ./local-restart.sh")
+
+
 def start(args):
     prepare_directories()
+    state = read_state()
+    check_frontend_binding(state)
     if os.environ.get("SKYSHIELD_UPDATER_CHILD") != "1":
         call([sys.executable, ROOT / "scripts/system-update.py", "start", "--mode", "local"])
     env = environment()
-    state = read_state()
     previous_frontend_stage = active_frontend_stage()
     staged_frontend = None
     frontend_was_running = alive(state.get("frontend"))
@@ -647,6 +705,9 @@ def start(args):
             raise
     else:
         wait_for(lambda: http_ready(FRONTEND_PORT, "/"), "前端", process=state.get("frontend"))
+    port_marker = FRONTEND_PORT_FILE.with_suffix(".tmp")
+    port_marker.write_text(str(FRONTEND_PORT) + "\n")
+    port_marker.replace(FRONTEND_PORT_FILE)
     if args.ui_only:
         print(f"本地界面已启动：监听 {LISTEN_HOST}:{FRONTEND_PORT}，本机访问 http://127.0.0.1:{FRONTEND_PORT}，其他设备访问 http://<服务器IP>:{FRONTEND_PORT}（本次不启动扫描 Agent）")
         return

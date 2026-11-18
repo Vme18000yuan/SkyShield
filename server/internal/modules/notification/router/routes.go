@@ -10,7 +10,7 @@ import (
 // RegisterNotificationRoutes registers only the current-user Inbox, settings,
 // and fetch-SSE contracts. Delivery history/redrive remains intentionally absent.
 func RegisterNotificationRoutes(protected *gin.RouterGroup, inbox *handler.NotificationInboxHandler, destinations *handler.NotificationDestinationHandler, stream *handler.NotificationSSEHandler) {
-	if protected == nil || inbox == nil || destinations == nil || stream == nil {
+	if protected == nil || inbox == nil || stream == nil {
 		panic("notification route dependencies are required")
 	}
 	protected.GET("/users/current/notifications", inbox.List)
@@ -34,6 +34,9 @@ func RegisterNotificationRoutes(protected *gin.RouterGroup, inbox *handler.Notif
 	protected.GET("/users/current/notificationLocale", inbox.GetLocale)
 	protected.PATCH("/users/current/notificationLocale", inbox.UpdateLocale)
 
+	if destinations == nil {
+		return // Inbox-only deployment. External channels are owned by AI notifications.
+	}
 	protected.GET("/settings/notificationDestinations", destinations.List)
 	// Gin permits only one wildcard in this segment. The handler deliberately
 	// parses `discord:testDelivery` so the public AIP custom-method URL remains

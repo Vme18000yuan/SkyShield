@@ -16,24 +16,30 @@ import (
 // assets and the numeric IDs used by ARTEX's original graph.
 func decodeSnapshot(raw []byte) (notify.Snapshot, error) {
 	var value struct {
-		Kind       string            `json:"kind"`
-		FindingID  int64             `json:"finding_id"`
-		TaskID     int64             `json:"task_id"`
-		VulnClass  string            `json:"vulnclass"`
-		Name       string            `json:"name"`
-		Severity   string            `json:"severity"`
-		Summary    string            `json:"summary"`
-		AssetIDs   []json.RawMessage `json:"asset_ids"`
-		FromStatus string            `json:"from_status"`
-		ToStatus   string            `json:"to_status"`
+		Kind            string            `json:"kind"`
+		VulnerabilityID int64             `json:"vulnerability_id"`
+		FindingID       int64             `json:"finding_id"`
+		TaskID          int64             `json:"task_id"`
+		VulnClass       string            `json:"vulnclass"`
+		Name            string            `json:"name"`
+		Severity        string            `json:"severity"`
+		Summary         string            `json:"summary"`
+		AssetIDs        []json.RawMessage `json:"asset_ids"`
+		FromStatus      string            `json:"from_status"`
+		ToStatus        string            `json:"to_status"`
 	}
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return notify.Snapshot{}, err
 	}
-	if value.TaskID <= 0 || value.FindingID <= 0 || (value.Kind != notify.EventFindingCreated && value.Kind != notify.EventFindingStatusChanged) {
+	inventory := value.VulnerabilityID > 0 && value.TaskID == 0 && value.FindingID == 0 && value.Kind == notify.EventFindingCreated
+	task := value.VulnerabilityID == 0 && value.TaskID > 0 && value.FindingID > 0 && (value.Kind == notify.EventFindingCreated || value.Kind == notify.EventFindingStatusChanged)
+	if !inventory && !task {
 		return notify.Snapshot{}, ErrInvalid
 	}
 	out := notify.Snapshot{Kind: value.Kind, FindingID: value.FindingID, TaskID: value.TaskID, VulnClass: value.VulnClass, Name: value.Name, Severity: value.Severity, Summary: value.Summary, FromStatus: value.FromStatus, ToStatus: value.ToStatus}
+	if inventory {
+		out.FindingID = value.VulnerabilityID
+	}
 	for _, rawID := range value.AssetIDs {
 		var number json.Number
 		if err := json.Unmarshal(rawID, &number); err != nil {

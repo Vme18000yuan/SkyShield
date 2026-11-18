@@ -15,6 +15,7 @@ var (
 )
 
 type ListInput struct {
+	HideCDN        bool
 	UserID         int
 	TargetID       int
 	OrganizationID int
@@ -36,6 +37,7 @@ type ListResult struct {
 }
 
 type assetCursor struct {
+	HideCDN      bool   `json:"hideCdn,omitempty"`
 	Tenant       string `json:"tenant"`
 	User         int    `json:"user"`
 	Type         string `json:"type"`
@@ -81,7 +83,7 @@ func (f *Facade) List(ctx context.Context, input ListInput) (*ListResult, error)
 	if !member {
 		return nil, ErrForbidden
 	}
-	cursor := assetCursor{Tenant: DefaultTenantID, User: input.UserID, Type: input.AssetType, Category: input.AssetCategory, Query: input.Query, Size: input.PageSize, Target: input.TargetID, Organization: input.OrganizationID, Root: input.RootDomainID, Asset: input.AssetID}
+	cursor := assetCursor{HideCDN: input.HideCDN, Tenant: DefaultTenantID, User: input.UserID, Type: input.AssetType, Category: input.AssetCategory, Query: input.Query, Size: input.PageSize, Target: input.TargetID, Organization: input.OrganizationID, Root: input.RootDomainID, Asset: input.AssetID}
 	cursor.Before = input.BeforeID
 	if input.PageToken != "" {
 		if len(input.PageToken) > 2048 {
@@ -90,14 +92,14 @@ func (f *Facade) List(ctx context.Context, input ListInput) (*ListResult, error)
 		decoded, decodeErr := base64.RawURLEncoding.DecodeString(input.PageToken)
 		var previous assetCursor
 		if decodeErr != nil || json.Unmarshal(decoded, &previous) != nil || previous.Before <= 0 ||
-			previous.Tenant != cursor.Tenant || previous.User != cursor.User || previous.Type != cursor.Type || previous.Category != cursor.Category ||
+			previous.HideCDN != cursor.HideCDN || previous.Tenant != cursor.Tenant || previous.User != cursor.User || previous.Type != cursor.Type || previous.Category != cursor.Category ||
 			previous.Query != cursor.Query || previous.Size != cursor.Size || previous.Target != cursor.Target || previous.Organization != cursor.Organization || previous.Root != cursor.Root || previous.Asset != cursor.Asset {
 			return nil, ErrInvalidQuery
 		}
 		cursor.Before = previous.Before
 	}
 	query := AssetQuery{
-		TenantID: cursor.Tenant, AssetType: cursor.Type, AssetCategory: cursor.Category, Query: cursor.Query,
+		HideCDN: cursor.HideCDN, TenantID: cursor.Tenant, AssetType: cursor.Type, AssetCategory: cursor.Category, Query: cursor.Query,
 		BeforeID: cursor.Before, Limit: cursor.Size + 1, TargetID: cursor.Target, OrganizationID: cursor.Organization, RootDomainID: cursor.Root, AssetID: cursor.Asset,
 	}
 	if input.Page > 0 {

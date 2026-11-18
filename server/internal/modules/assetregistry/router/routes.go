@@ -8,6 +8,7 @@ import (
 func RegisterAssetRegistryRoutes(protected *gin.RouterGroup, h *handler.AssetEntityHandler, writers ...*handler.AssetRegistrationHandler) {
 	protected.GET("/assetEntities", h.List)
 	protected.GET("/assetInventory", h.ListInventory)
+	protected.GET("/organizations/:organization/assetOverview", h.OrganizationOverview)
 	protected.GET("/assetEntities/:id/rootDomainOverview", h.RootDomainOverview)
 	protected.GET("/assetEntities/:id/coverageGraph", h.RootDomainCoverage)
 	protected.GET("/assetEntities/:id/coverageRefs", h.RootDomainCoverageRefs)
