@@ -70,7 +70,75 @@ Docker 镜像使用 `linux/amd64` 平台，四个应用镜像位于 Docker Hub �
 
 ### 外部 MCP 客户端
 
-MCP 与网页共用地址。本地默认入口为 `http://127.0.0.1:3000/mcp`，Docker 默认为 `https://服务器IP:8443/mcp`。在右上角 **MCP → 客户端授权与连接诊断** 创建客户端，选择可读组织、可用工具和复核写权限，复制一次性显示的密钥，点击 **测试连接** 核对协议和工具数量。AI 设置中的 MCP 页面用于管理天穹连接的外部服务。[MCP 权限与工具说明](server/internal/mcp/README.md)
+MCP 与网页共用地址。默认本机入口为 `http://127.0.0.1:3000/mcp`，局域网可使用 `http://服务器IP:3000/mcp`；Docker 使用 `https://服务器域名或IP:8443/mcp`。如果部署时修改了端口或 `PUBLIC_HOST`，客户端地址须使用浏览器实际访问的地址再加 `/mcp`。
+
+登录天穹后，打开右上角 **MCP → 客户端授权与连接诊断**，按下面步骤配置。
+
+1. 新建一个客户端并填写便于识别的名称。
+2. 勾选该客户端可以读取的组织。“全部组织”会额外包含本人创建的无组织对话。
+3. 勾选需要开放的工具。漏洞复核会修改漏洞状态，只有额外勾选复核工具时才会开放。
+4. 点击创建并生成密钥。密钥只显示这一次，请复制保存。
+5. 把 MCP 地址和密钥填入外部客户端，然后回到同一窗口点击“测试连接”。提示握手和工具发现成功后，该客户端即可调用获准的工具。
+
+下面的示例使用 Docker HTTPS 地址。请把 `https://skyshield.example.com/mcp` 换成你的实际 MCP 地址，并把 `<MCP密钥>` 换成界面刚生成的密钥。JSON 配置需确保占位符保持为字符串内容，不要保留尖括号。
+
+**VS Code**
+
+```json
+{
+  "servers": {
+    "skyshield": {
+      "type": "http",
+      "url": "https://skyshield.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <MCP密钥>"
+      }
+    }
+  }
+}
+```
+
+**Cursor**
+
+```json
+{
+  "mcpServers": {
+    "skyshield": {
+      "type": "streamable-http",
+      "url": "https://skyshield.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <MCP密钥>"
+      }
+    }
+  }
+}
+```
+
+**Claude Code**
+
+```json
+{
+  "mcpServers": {
+    "skyshield": {
+      "type": "http",
+      "url": "https://skyshield.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <MCP密钥>"
+      }
+    }
+  }
+}
+```
+
+**Codex**
+
+```toml
+[mcp_servers.skyshield]
+url = "https://skyshield.example.com/mcp"
+http_headers = { Authorization = "Bearer <MCP密钥>" }
+```
+
+轮换密钥会立即使旧密钥失效；撤销客户端也会立即关闭它的访问权限。AI 设置中的 MCP 页面用于管理“天穹连接外部 MCP 服务”，与这里的“外部客户端连接天穹”方向不同。[MCP 工具与权限说明](server/internal/mcp/README.md)
 
 ## 开发与测试
 
