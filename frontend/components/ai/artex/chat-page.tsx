@@ -32,6 +32,7 @@ import { ApprovalExecutionFocus, useApprovalFocus, useApprovalHistory } from "@/
 import { Transcript } from "@/components/ai/artex/transcript";
 import { ConversationTraffic } from "@/components/ai/artex/task-traffic";
 import { ConversationExploration } from "@/components/ai/conversation-exploration";
+import { OASTPanel } from "@/components/ai/oast-panel";
 import {
   AlertDialog,
   AlertDialogClose as AlertDialogAction,
@@ -517,6 +518,8 @@ function ChatView({
   const [sending, setSending] = React.useState(false);
   const [stopping, setStopping] = React.useState(false);
   const [trafficOpen, setTrafficOpen] = React.useState(false);
+  const [oastOpen, setOASTOpen] = React.useState(false);
+  const oastText = useTranslations("oast");
   const [explorationOpen, setExplorationOpen] = React.useState(false);
   // 方式1 文件上传:已上传的附件(落到 sessions/conv-<id>/uploads/),随下条消息一起发。
   const [attachments, setAttachments] = React.useState<ChatAttachment[]>(initial?.attachments ?? []);
@@ -844,6 +847,7 @@ function ChatView({
         {running && <LiveBadge />}
         <SideQuestionButton side={side} />
         <Button variant="outline" size="sm" onClick={() => setTrafficOpen(true)}>流量记录</Button>
+        <Button variant="outline" size="sm" onClick={() => setOASTOpen(true)}>{oastText("title")}</Button>
         <Button variant="outline" size="sm" onClick={() => setExplorationOpen(true)}><Network className="size-3.5" />{explorationText("title")}</Button>
         <div className="text-muted-foreground ml-auto flex min-w-0 max-w-full items-center justify-end gap-x-3 gap-y-1 text-xs max-sm:w-full max-sm:flex-wrap">
           {tokenTotal.turns > 0 && (
@@ -910,6 +914,12 @@ function ChatView({
         disabled={running || sending || !!conv.review_read_only}
         rightSlot={<TodoPopover seq={latestTodoSeq} fetchDetail={fetchDetail} />}
       />
+      <Dialog open={oastOpen} onOpenChange={setOASTOpen}>
+        <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-4xl">
+          <DialogHeader><DialogTitle>{oastText("title")}</DialogTitle><DialogDescription>{oastText("scopeDescription")}</DialogDescription></DialogHeader>
+          {oastOpen && <OASTPanel key={conv.id} scope={{ kind: "conversation", id: conv.id }} readOnly={!!conv.review_read_only} />}
+        </DialogContent>
+      </Dialog>
       <Dialog open={trafficOpen} onOpenChange={setTrafficOpen}>
         <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-5xl">
           <DialogHeader><DialogTitle>流量记录</DialogTitle><DialogDescription>当前对话录制的请求与响应；任务触发的流量可在对应任务中查看。</DialogDescription></DialogHeader>

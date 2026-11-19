@@ -590,6 +590,13 @@
       "up": "000084_conversation_step_timing.up.sql",
       "down": "000084_conversation_step_timing.down.sql",
       "checksum": "sha256:ba2d6ebb9d412f1e78b2ac031d1a9c605e7f8f7533e2d2269751b449a1e2b116"
+    },
+    {
+      "id": "000085",
+      "slug": "oast_monitor",
+      "up": "000085_oast_monitor.up.sql",
+      "down": "000085_oast_monitor.down.sql",
+      "checksum": "sha256:de33c38e887779a0db96d1cfa9b3c69864c711a5bb691c43d3d637b308caa872"
     }
   ]
 }

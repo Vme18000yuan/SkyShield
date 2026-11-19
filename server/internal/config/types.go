@@ -19,6 +19,16 @@ type Config struct {
 	Notification         NotificationConfig
 	Upgrade              UpgradeConfig
 	PublicURL            string
+	OAST                 OASTConfig
+}
+
+// OASTConfig describes the deployment's callback origin and optional listeners.
+type OASTConfig struct {
+	PublicURL   string
+	HTTPListen  string
+	DNSListen   string
+	DNSZone     string
+	DNSAnswerIP string
 }
 
 // ServerConfig holds server-related configuration.

@@ -1,0 +1,16 @@
+# Optional overlay for a dedicated HTTP collector and authoritative DNS.
+# Bridge networking only; merge with the existing compose files.
+# Supply the three required variables;
+# DNS requires parent-zone NS delegation and public UDP/TCP 53 reachability.
+services:
+  server:
+    environment:
+      OAST_PUBLIC_URL: ${OAST_PUBLIC_URL:?Set the callback origin, e.g. http://callback.example.com:8081}
+      OAST_HTTP_LISTEN: 0.0.0.0:8081
+      OAST_DNS_LISTEN: 0.0.0.0:5353
+      OAST_DNS_ZONE: ${OAST_DNS_ZONE:?Set the delegated DNS zone}
+      OAST_DNS_ANSWER_IP: ${OAST_DNS_ANSWER_IP:?Set the public A or AAAA answer IP}
+    ports:
+      - "${OAST_HTTP_PORT:-8081}:8081/tcp"
+      - "${OAST_DNS_PORT:-53}:5353/udp"
+      - "${OAST_DNS_PORT:-53}:5353/tcp"

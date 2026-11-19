@@ -1,4 +1,44 @@
 {
+  "oast": {
+    "title": "Callback monitor",
+    "scopeDescription": "Inspect callback addresses and evidence for this conversation.",
+    "description": "Create a separate address for each test point. AI can also use oast_create / oast_poll. Do not open callback addresses yourself. Correlate callbacks with the triggering request; no callback does not rule out a vulnerability.",
+    "disabled": "Configure OAST_PUBLIC_URL with an address reachable by the test target.",
+    "httpOnly": "HTTP/HTTPS callbacks are available. DNS callbacks require a listener and DNS delegation.",
+    "label": "Test point",
+    "labelPlaceholder": "For example: avatar import · url parameter",
+    "ttl": "Lifetime",
+    "hours": "{hours} hours",
+    "create": "Create probe",
+    "creating": "Creating…",
+    "probes": "Probes",
+    "empty": "No probes yet. Create one here or ask AI to use the callback tools.",
+    "count": "{count} callbacks",
+    "inspect": "Inspect",
+    "evidence": "Callback evidence",
+    "refresh": "Refresh",
+    "revoke": "Stop receiving",
+    "revoked": "Probe stopped. Existing evidence is retained.",
+    "expires": "Expires: {time}",
+    "saturated": "This probe reached its 200-event limit. Create a new probe for further tests.",
+    "peerNote": "Source is the direct peer IP; proxy headers may contain the original source. DNS peers are usually recursive resolvers. Common credential headers are redacted; body bytes are preserved.",
+    "truncated": "The request exceeded a capture limit. This evidence is truncated.",
+    "bodyBase64": "Copy original body (Base64)",
+    "waiting": "No callbacks yet. Refreshes automatically while active; delayed callbacks can arrive after the AI run finishes.",
+    "moreEvents": "Loading remaining callbacks…",
+    "previous": "Previous",
+    "next": "Next",
+    "copy": "Copy",
+    "copied": "Copied",
+    "createError": "Could not create probe. Check configuration, quota and input.",
+    "revokeError": "Could not stop the probe. Try again.",
+    "state": {
+      "active": "Listening",
+      "expired": "Expired",
+      "revoked": "Stopped",
+      "saturated": "Full"
+    }
+  },
   "infoGather": {
     "title": "Information collection",
     "description": "Review collection runs and assign assets and risk candidates that could not be synchronized automatically.",
@@ -5911,6 +5951,7 @@
     "page": "Page {number}"
   },
   "aiTasks": {
+    "oast": "Callback monitor",
     "findings": "Findings",
     "goals": {"title": "Goals", "description": "{count} verifiable goals; adding or editing wakes the planner", "text": "Goal text", "vulnClass": "Finding class (optional)", "editText": "Edit goal text", "editVulnClass": "Edit finding class", "placeholder": "For example: verify administrator authorization", "add": "Add goal", "save": "Save goal", "cancel": "Cancel editing", "edit": "Edit goal", "delete": "Delete goal", "empty": "No goals yet. Add one for the planner to investigate.", "saveFailed": "Could not save goal", "deleteFailed": "Could not delete goal", "loadFailed": "Could not load goals", "state": {"open": "Open", "met": "Met", "abandoned": "Abandoned"}},
     "approvals": "Approvals",

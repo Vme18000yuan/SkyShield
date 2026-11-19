@@ -138,6 +138,7 @@ import (
 	upgradehandler "github.com/yyhuni/lunafox/server/internal/modules/upgrade/handler"
 	upgradeinfra "github.com/yyhuni/lunafox/server/internal/modules/upgrade/infrastructure"
 	upgraderepo "github.com/yyhuni/lunafox/server/internal/modules/upgrade/repository"
+	"github.com/yyhuni/lunafox/server/internal/oast"
 	"gorm.io/gorm"
 )
 
@@ -145,6 +146,8 @@ type deps struct {
 	httpRepeaterHandler            *repeaterhandler.Handler
 	infoGatherHandler              *infogather.Handler
 	aiVulnerabilityService         *aivuln.Service
+	oastService                    *oast.Service
+	oastCollector                  *oast.Collector
 	assetMonitorHandler            *assetmonitorhandler.Handler
 	assetMonitor                   *assetmonitorapp.Facade
 	spaceSearchHandler             *spacesearchhandler.FofaHandler
@@ -937,10 +940,27 @@ func buildDependencies(infra *infra, cfg *config.Config) (*deps, error) {
 	aiTaskFacade.SetFindingEvidence(aiFindingEvidence)
 	aiTaskFacade.SetTaskModelResolver(taskModels)
 	aiVulnerabilityService := aivuln.New(infra.db, aiRoot, security.vulnerabilitySvc)
+	oastConversations, ok := aiConversationStore.(oast.ConversationAccess)
+	if !ok {
+		return nil, fmt.Errorf("OAST conversation authorization is unavailable")
+	}
+	oastTasks, ok := aiTaskStore.(oast.TaskAccess)
+	if !ok {
+		return nil, fmt.Errorf("OAST task authorization is unavailable")
+	}
+	oastPublicURL := cfg.OAST.PublicURL
+	if oastPublicURL == "" {
+		oastPublicURL = cfg.PublicURL
+	}
+	oastService, err := oast.New(oast.NewPostgresStore(infra.db), oast.Config{PublicURL: oastPublicURL, HTTPListen: cfg.OAST.HTTPListen, DNSListen: cfg.OAST.DNSListen, DNSZone: cfg.OAST.DNSZone, DNSAnswerIP: cfg.OAST.DNSAnswerIP}, oastConversations, oastTasks)
+	if err != nil {
+		return nil, fmt.Errorf("configure OAST: %w", err)
+	}
 	var aiToolCatalog *aisettingsapp.ToolCatalogFacade
 	platformMutation := aisettingswiring.NewAISettingsPlatformMutationStoreAdapter(infra.db)
 	nativeTools := func(user int) []tool.CoreTool {
 		tools := append([]tool.CoreTool{}, platformTools(user)...)
+		tools = append(tools, oastService.Tools(user)...)
 		tools = append(tools, infoGatherService.Tool(user), aiVulnerabilityService.Tool(user))
 		tools = append(tools, infoGatherService.PhaseTools(user)...)
 		tools = append(tools, airuntime.GlobalAssetDSLTools(aiSQLDB, user)...)
@@ -1036,6 +1056,8 @@ func buildDependencies(infra *infra, cfg *config.Config) (*deps, error) {
 	return &deps{
 		infoGatherHandler:              infogather.NewHandler(infoGatherStore),
 		aiVulnerabilityService:         aiVulnerabilityService,
+		oastService:                    oastService,
+		oastCollector:                  oast.NewCollector(oastService),
 		assetMonitorHandler:            assetmonitorhandler.NewHandler(assetMonitor),
 		assetMonitor:                   assetMonitor,
 		spaceSearchHandler:             spacesearchhandler.NewFofaHandler(fofaFacade),

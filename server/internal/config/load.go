@@ -257,5 +257,12 @@ func configFromViper(v *viper.Viper) *Config {
 			SocketPath:          v.GetString("LUNAFOX_UPGRADE_SOCKET_PATH"),
 		},
 		PublicURL: v.GetString("PUBLIC_URL"),
+		OAST: OASTConfig{
+			PublicURL:   v.GetString("OAST_PUBLIC_URL"),
+			HTTPListen:  v.GetString("OAST_HTTP_LISTEN"),
+			DNSListen:   v.GetString("OAST_DNS_LISTEN"),
+			DNSZone:     v.GetString("OAST_DNS_ZONE"),
+			DNSAnswerIP: v.GetString("OAST_DNS_ANSWER_IP"),
+		},
 	}
 }

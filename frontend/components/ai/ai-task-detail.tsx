@@ -27,6 +27,7 @@ import { FindingTrafficPanel, TaskTraffic } from "@/components/ai/artex/task-tra
 import { TaskMainSessions } from "@/components/ai/artex/task-main-sessions"
 import { TaskIntelligence } from "@/components/ai/artex/task-intelligence"
 import { TaskLLMUsage } from "@/components/ai/artex/task-llm-usage"
+import { OASTPanel } from "@/components/ai/oast-panel"
 import { TaskFindings } from "@/components/ai/artex/task-findings"
 import { TaskCoverageGraph } from "@/components/ai/artex/task-coverage-graph"
 import { useAITask, useAITaskActivities, useAITaskAssets, useAITaskMutations } from "@/hooks/use-ai-tasks"
@@ -224,7 +225,7 @@ export function AITaskDetail({ id }: { id: string }) {
             {item.errorMessage && <div className="break-words text-destructive md:col-span-3">{item.errorMessage}</div>}
             {!!item.sourceTaskIds?.length && <div className="flex flex-wrap gap-2 md:col-span-3"><span className="text-muted-foreground">关联来源任务:</span>{item.sourceTaskIds.map(source => <Link className="text-primary hover:underline" key={source} href={`/ai/tasks/${source}/`}>{sourceNames[source] ?? "来源任务"}</Link>)}</div>}
           </div>
-          <Tabs value={activeTab} onValueChange={setActiveTab}><div className="max-w-full overflow-x-auto"><TabsList variant="content" className="w-max"><TabsTrigger value="graph">{t("graph")}</TabsTrigger><TabsTrigger value="assets">{t("assets")}</TabsTrigger><TabsTrigger value="findings">{t("findings")}</TabsTrigger><TabsTrigger value="coverageGraph">{t("coverageGraph.title")}</TabsTrigger><TabsTrigger value="intelligence">{t("intelligence.title")}</TabsTrigger><TabsTrigger value="traffic">{t("traffic.title")}</TabsTrigger><TabsTrigger value="mainagent">{t("mainAgent")}</TabsTrigger><TabsTrigger value="activity">{t("activity")}</TabsTrigger><TabsTrigger value="approvals">{t("approvals")}</TabsTrigger></TabsList></div>
+          <Tabs value={activeTab} onValueChange={setActiveTab}><div className="max-w-full overflow-x-auto"><TabsList variant="content" className="w-max"><TabsTrigger value="graph">{t("graph")}</TabsTrigger><TabsTrigger value="assets">{t("assets")}</TabsTrigger><TabsTrigger value="findings">{t("findings")}</TabsTrigger><TabsTrigger value="coverageGraph">{t("coverageGraph.title")}</TabsTrigger><TabsTrigger value="intelligence">{t("intelligence.title")}</TabsTrigger><TabsTrigger value="traffic">{t("traffic.title")}</TabsTrigger><TabsTrigger value="oast">{t("oast")}</TabsTrigger><TabsTrigger value="mainagent">{t("mainAgent")}</TabsTrigger><TabsTrigger value="activity">{t("activity")}</TabsTrigger><TabsTrigger value="approvals">{t("approvals")}</TabsTrigger></TabsList></div>
             <TabsContent value="graph">{graph.error ? <AppErrorState error={normalizeError(graph.error)} onRetry={graph.refetch} /> : graph.isPending ? <Skeleton className="h-48 w-full" /> : graph.data && <TaskGraph graph={graph.data} taskId={id} taskRunning={item.status === "running"} sourceNames={sourceNames} refresh={() => Promise.all([graph.refetch(), task.refetch()])} />}<TaskLLMUsage taskId={id} running={item.status === "running"} /><TaskScopeCard taskId={id} sourceNames={sourceNames} running={item.status === "running"} /><TaskGoals taskId={id} /><TaskConstraints taskId={id} /><TaskInterceptRulesCard taskId={id} /></TabsContent>
             <TabsContent value="assets">
               <div className="flex flex-col gap-3">
@@ -252,6 +253,7 @@ export function AITaskDetail({ id }: { id: string }) {
             <TabsContent value="findings">{activeTab === "findings" && <TaskFindings key={id} taskId={id} />}</TabsContent>
             <TabsContent value="intelligence">{activeTab === "intelligence" && <TaskIntelligence key={id} taskId={id} sourceNames={sourceNames} running={item.status === "running"} />}</TabsContent>
             <TabsContent value="traffic">{activeTab === "traffic" && <TaskTraffic key={id} taskId={id} findings={(graph.data?.nodes ?? []).filter(node=>node.findingId && !node.inherited).map(node=>({id:node.findingId!,title:nodeTitle(node.payload)}))} />}</TabsContent>
+            <TabsContent value="oast">{activeTab === "oast" && <OASTPanel key={id} scope={{ kind: "task", id }} />}</TabsContent>
             <TabsContent value="mainagent">{activeTab === "mainagent" && <TaskMainSessions key={id} taskId={id} status={item.status} />}</TabsContent>
             <TabsContent value="approvals">{activeTab === "approvals" ? <ApprovalRecords taskId={id} /> : null}</TabsContent>
             <TabsContent value="activity"><div className="flex flex-col gap-2">

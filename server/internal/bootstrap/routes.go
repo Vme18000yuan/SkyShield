@@ -27,6 +27,9 @@ import (
 )
 
 func registerRoutes(engine *gin.Engine, d *deps, jwtMiddleware gin.HandlerFunc) {
+	if d.oastCollector != nil {
+		engine.Any("/oast/*callback", gin.WrapH(d.oastCollector))
+	}
 	// MCP shares the Server lifecycle and public edge with REST, but uses its
 	// own static-key admission and protocol handler instead of JWT routing.
 	if d.mcpClients != nil {
@@ -43,6 +46,9 @@ func registerRoutes(engine *gin.Engine, d *deps, jwtMiddleware gin.HandlerFunc) 
 	protected.Use(jwtMiddleware)
 	if d.updateMaintenanceFile != "" {
 		protected.Use(productupdate.Maintenance(d.updateMaintenanceFile))
+	}
+	if d.oastService != nil {
+		d.oastService.RegisterRoutes(protected)
 	}
 	if d.mcpClients != nil {
 		d.mcpClients.RegisterManagement(protected)

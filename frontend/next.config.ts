@@ -94,6 +94,7 @@ const nextConfig: NextConfig = {
       if (!vercelBackendOrigin) return [];
       return [
         { source: '/mcp', destination: `${vercelBackendOrigin}/mcp/clients` },
+        { source: '/oast/:path*', destination: `${vercelBackendOrigin}/oast/:path*` },
         {
           source: '/v1/:path*',
           destination: `${vercelBackendOrigin}/v1/:path*`,
@@ -108,6 +109,7 @@ const nextConfig: NextConfig = {
     }
     return [
       { source: '/mcp', destination: `http://${apiHost}:${apiPort}/mcp/clients` },
+      { source: '/oast/:path*', destination: `http://${apiHost}:${apiPort}/oast/:path*` },
       // Proxy the versioned backend API during local Next.js development.
       {
         source: '/v1/:path*',

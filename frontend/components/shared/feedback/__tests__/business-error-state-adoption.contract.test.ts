@@ -3,6 +3,7 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 
 const businessErrorOwners = [
+  "components/ai/oast-panel.tsx",
   "components/settings/blacklist/blacklist-settings-workspace.tsx",
   "app/targets/[id]/layout.tsx",
   "components/directories/directories-view.tsx",
@@ -60,6 +61,7 @@ const fingerprintViews = [
 ] as const
 
 const compactSectionOwners = [
+  "components/ai/oast-panel.tsx",
   "components/directories/directories-view.tsx",
   "components/endpoints/endpoints-detail-view.tsx",
   "components/ip-addresses/ip-addresses-view.tsx",

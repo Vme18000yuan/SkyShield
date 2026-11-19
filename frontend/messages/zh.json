@@ -1,4 +1,44 @@
 {
+  "oast": {
+    "title": "反连监控",
+    "scopeDescription": "查看当前对话的独立测试地址和回连证据。",
+    "description": "为每个测试点创建独立地址，AI 也可通过 oast_create / oast_poll 自动申请和查询。不要自行打开测试地址。回连属于测试证据，需结合触发请求判断；没有回连不能排除漏洞。",
+    "disabled": "反连服务尚未配置，请设置目标可访问的 OAST_PUBLIC_URL。",
+    "httpOnly": "当前支持 HTTP/HTTPS 回连；配置 DNS 监听与域名委派后可使用 DNS 回连。",
+    "label": "测试点",
+    "labelPlaceholder": "例如：头像导入接口 · url 参数",
+    "ttl": "有效期",
+    "hours": "{hours} 小时",
+    "create": "创建探针",
+    "creating": "正在创建…",
+    "probes": "当前探针",
+    "empty": "暂无探针。可手动创建，或让 AI 在测试时调用反连工具。",
+    "count": "{count} 条回连",
+    "inspect": "查看证据",
+    "evidence": "回连证据",
+    "refresh": "刷新",
+    "revoke": "停止接收",
+    "revoked": "探针已停止，已有证据保留。",
+    "expires": "到期时间：{time}",
+    "saturated": "已达到单个探针 200 条记录上限，请为后续测试创建新探针。",
+    "peerNote": "来源为接收端的直连 IP；经过代理时原始来源见转发头。DNS 来源通常是递归解析器。请求头中的常见凭据已隐藏，正文按原始字节保留。",
+    "truncated": "请求超出采集上限，当前仅展示截断后的证据。",
+    "bodyBase64": "复制原始正文（Base64）",
+    "waiting": "尚未收到回连。有效期内自动刷新，任务结束后仍可接收延迟回连。",
+    "moreEvents": "正在读取后续回连…",
+    "previous": "上一页",
+    "next": "下一页",
+    "copy": "复制",
+    "copied": "已复制",
+    "createError": "创建失败，请检查配置、配额和参数后重试。",
+    "revokeError": "停止失败，请重试。",
+    "state": {
+      "active": "接收中",
+      "expired": "已过期",
+      "revoked": "已停止",
+      "saturated": "记录已满"
+    }
+  },
   "infoGather": {
     "title": "信息收集",
     "description": "查看信息收集 Agent 的运行结果，确认无法自动归集的资产与风险。",
@@ -5941,6 +5981,7 @@
     "page": "第 {number} 页"
   },
   "aiTasks": {
+    "oast": "反连监控",
     "findings": "漏洞发现",
     "goals": {"title": "目标管理", "description": "最终可核验目标，共 {count} 条；新增或修改会唤醒规划者", "text": "目标内容", "vulnClass": "漏洞类（可选）", "editText": "编辑目标内容", "editVulnClass": "编辑漏洞类", "placeholder": "新增目标，如“验证管理员账号的越权访问”", "add": "添加目标", "save": "保存目标", "cancel": "取消编辑", "edit": "编辑目标", "delete": "删除目标", "empty": "暂无目标，添加后规划者会据此派发探索意图并判定达成。", "saveFailed": "保存目标失败", "deleteFailed": "删除目标失败", "loadFailed": "加载目标失败", "state": {"open": "待达成", "met": "已达成", "abandoned": "已放弃"}},
     "approvals": "审批记录",

@@ -89,6 +89,6 @@ upgrade:
   databaseMigration:
     hasDatabaseMigration: true
     migrationType: "compatible"
-    migrationId: "000078_ai_conversation_vulnerability_reports"
-    checksum: "sha256:012af97fefa461f47aa3a59c7d8b88429099f6111f11a8e186180dcfd543eecc"
+    migrationId: "000085_oast_monitor"
+    checksum: "sha256:de33c38e887779a0db96d1cfa9b3c69864c711a5bb691c43d3d637b308caa872"
     policyVersion: 1

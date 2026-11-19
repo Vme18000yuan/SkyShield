@@ -67,6 +67,13 @@ func Run(ctx context.Context, cfg *config.Config, migrationsFS embed.FS) {
 
 	jobCtx, jobCancel := context.WithCancel(ctx)
 	defer jobCancel()
+	if d.oastService != nil {
+		closeOAST, err := d.oastService.Start(jobCtx, d.oastCollector)
+		if err != nil {
+			pkg.Fatal("Failed to start OAST listeners", zap.Error(err))
+		}
+		defer closeOAST()
+	}
 	if d.assetMonitor != nil {
 		d.assetMonitor.Start(jobCtx)
 	}

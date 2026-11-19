@@ -99,6 +99,12 @@ func NativeToolSeeds(extra []tool.CoreTool) []ToolRecord {
 		if item.Name() == "report_vulnerability" {
 			agents = []string{"mainagent", "auto", "pentest"}
 		}
+		if strings.HasPrefix(item.Name(), "oast_") {
+			agents = []string{"mainagent", "auto", "pentest", "planner", "worker", "retester"}
+			if item.Name() == "oast_list" || item.Name() == "oast_poll" {
+				agents = append(agents, "reporter")
+			}
+		}
 		if item.Name() == "run_info_gather" || item.Name() == "prepare_info_gather" || item.Name() == "run_info_gather_phase" || item.Name() == "finish_info_gather" {
 			agents = []string{"info_gatherer"}
 		}

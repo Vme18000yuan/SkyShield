@@ -43,6 +43,9 @@ func Logger() gin.HandlerFunc {
 		start := time.Now()
 		path := c.Request.URL.Path
 		query := sanitizeQueryForLogging(c.Request.URL.RawQuery)
+		if strings.HasPrefix(path, "/oast/") {
+			path, query = "/oast/[REDACTED]", ""
+		}
 
 		c.Next()
 

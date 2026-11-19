@@ -10,7 +10,7 @@ import (
 func NormalizeTrailingSlash(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if len(path) > 1 && strings.HasSuffix(path, "/") {
+		if len(path) > 1 && strings.HasSuffix(path, "/") && !strings.HasPrefix(path, "/oast/") {
 			r.URL.Path = strings.TrimSuffix(path, "/")
 		}
 		handler.ServeHTTP(w, r)
