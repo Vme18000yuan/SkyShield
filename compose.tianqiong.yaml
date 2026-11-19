@@ -2,7 +2,7 @@ name: tianqiong
 
 x-server-env: &server-env
   SKYSHIELD_DEPLOYMENT_MODE: docker
-  SKYSHIELD_UPDATE_SOCKET: /run/skyshield-updater/control.sock
+  SKYSHIELD_UPDATE_MAINTENANCE_FILE: /run/skyshield-updater/maintenance
   DB_HOST: postgres
   DB_PORT: 5432
   DB_USER: tianqiong

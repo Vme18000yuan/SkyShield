@@ -135,7 +135,7 @@ def environment():
         "TIANQIONG_INFO_GATHER_TOOLS_DIR": str(TOOLS),
         "TIANQIONG_LOCAL_PROXY_SOCKET": str(DATA / "agent/proxy.sock"),
         "SKYSHIELD_DEPLOYMENT_MODE": "local",
-        "SKYSHIELD_UPDATE_SOCKET": str(ROOT / ".local/updater-local/socket/control.sock"),
+        "SKYSHIELD_UPDATE_MAINTENANCE_FILE": str(ROOT / ".local/updater-local/socket/maintenance"),
         "SKYSHIELD_SYSTEM_DNS": os.environ.get("SKYSHIELD_SYSTEM_DNS", "1"),
         "ENGINE_INSTALL_INVENTORY_PATH": str(ROOT / "engine-inventory.yaml"), "ENGINE_INSTALL_REGISTRY": os.environ.get("SKYSHIELD_ENGINE_REGISTRY", "docker.io"),
         "MIGRATION_POLICY_PATH": str(ROOT / "server/cmd/server/migrations/policy.json"), "RELEASE_MANIFEST_PATH": str(ROOT / "release.manifest.yaml"),
@@ -349,13 +349,9 @@ def build(env, validate=None):
         revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, capture_output=True)
         if revision.returncode == 0:
             revision_value = revision.stdout.strip()
-            channel_path = ROOT / "updates/stable.json"
-            if channel_path.is_file():
-                channel_revision = json.loads(channel_path.read_text()).get("revision", "")
-                if re.fullmatch(r"[0-9a-f]{40}", channel_revision):
-                    equivalent = subprocess.run(["git", "diff", "--quiet", channel_revision, revision_value, "--", ".", ":(exclude)updates"], cwd=ROOT)
-                    if equivalent.returncode == 0:
-                        revision_value = channel_revision
+            release_revision = env.get("SKYSHIELD_UPDATE_REVISION", "")
+            if env.get("SKYSHIELD_UPDATER_CHILD") == "1" and re.fullmatch(r"[0-9a-f]{40}", release_revision):
+                revision_value = release_revision
             marker = DATA / "build-revision.json"
             temporary_marker = marker.with_suffix(".tmp")
             temporary_marker.write_text(json.dumps({"revision": revision_value}) + "\n")
@@ -633,8 +629,6 @@ def start(args):
     prepare_directories()
     state = read_state()
     check_frontend_binding(state)
-    if os.environ.get("SKYSHIELD_UPDATER_CHILD") != "1":
-        call([sys.executable, ROOT / "scripts/system-update.py", "start", "--mode", "local"])
     env = environment()
     previous_frontend_stage = active_frontend_stage()
     staged_frontend = None

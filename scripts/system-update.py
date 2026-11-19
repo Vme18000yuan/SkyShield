@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
-"""SkyShield host updater: fixed release source, private socket, durable operation.
+"""Upgrade an existing SkyShield deployment from the host terminal."""
 
-This process runs on the deployment host, independently of Server/Frontend.
-Only a published stable descriptor can supply a target. Never accept commands,
-paths, repository URLs or image references from the HTTP client.
-"""
 import argparse
 import contextlib
 import datetime
 import fcntl
-import hashlib
-import http.client
-import http.server
 import importlib.util
 import json
 import os
@@ -19,52 +12,19 @@ from pathlib import Path
 import re
 import shutil
 import signal
-import socket
-import socketserver
-import stat
 import subprocess
 import sys
 import tempfile
-import threading
 import time
-import urllib.error
-import urllib.request
 import uuid
 
+from release_source import COMPONENTS, REPOSITORY, latest_release_tag, published_images
+
 ROOT = Path(__file__).resolve().parent.parent
-STATE = ROOT / '.local/updater'
-SOCKET_DIR = STATE / 'socket'
-SOCKET = SOCKET_DIR / 'control.sock'
-REPOSITORY = 'https://github.com/Vme18000yuan/SkyShield.git'
-CHANNEL = 'https://raw.githubusercontent.com/Vme18000yuan/SkyShield/main/updates/stable.json'
-COMPONENTS = ('server', 'frontend', 'bootstrap', 'nginx')
-ACTIVE = {'queued', 'preparing', 'backing_up', 'updating', 'restarting', 'verifying'}
 MODE = None
-mutex = threading.RLock()
-check_mutex = threading.Lock()
-
-
-def select_state(mode):
-    global STATE, SOCKET_DIR, SOCKET
-    STATE = ROOT / ('.local/updater-local' if mode == 'local' else '.local/updater')
-    SOCKET_DIR = STATE / 'socket'
-    SOCKET = SOCKET_DIR / 'control.sock'
-
-
-def select_cli_mode(explicit):
-    if explicit:
-        return explicit
-    available = []
-    for mode, relative in (('local', '.local/updater-local/socket/control.sock'), ('docker', '.local/updater/socket/control.sock')):
-        path = ROOT / relative
-        try:
-            if path.is_socket() and os.access(path, os.R_OK | os.W_OK):
-                available.append(mode)
-        except PermissionError:
-            continue
-    if len(available) > 1:
-        raise RuntimeError('同时存在本地和 Docker 更新进程，请用 --mode local 或 --mode docker 指定。')
-    return available[0] if available else 'docker'
+STATE = None
+ACTIVE = {"queued", "preparing", "backing_up", "updating", "restarting", "verifying"}
+SECRET_NAMES = ("db_password", "jwt_secret", "ai_encryption_key")
 
 
 def now():
@@ -73,603 +33,623 @@ def now():
 
 def private_json(path, value):
     if path.is_symlink():
-        raise RuntimeError('状态文件不能是符号链接。')
-    fd, temporary = tempfile.mkstemp(prefix='.' + path.name, dir=path.parent)
+        raise RuntimeError(f"状态文件不能是符号链接：{path}")
+    fd, name = tempfile.mkstemp(prefix="." + path.name, dir=path.parent)
+    temporary = Path(name)
     try:
-        with os.fdopen(fd, 'w') as out:
-            json.dump(value, out, ensure_ascii=False, indent=2)
-            out.write('\n'); out.flush(); os.fsync(out.fileno())
-        os.replace(temporary, path)
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            json.dump(value, output, ensure_ascii=False, indent=2)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.replace(path)
     finally:
-        Path(temporary).unlink(missing_ok=True)
+        temporary.unlink(missing_ok=True)
 
 
 def read_json(path, default=None):
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return default
 
 
-def prepare_state():
-    for path in (ROOT / '.local', STATE, SOCKET_DIR):
-        if path.is_symlink():
-            raise RuntimeError('更新目录不能是符号链接。')
-        path.mkdir(exist_ok=True, mode=0o700)
-    STATE.chmod(0o700); SOCKET_DIR.chmod(0o700)
+def directory(path):
+    if path.is_symlink():
+        raise RuntimeError(f"更新目录不能是符号链接：{path}")
+    path.mkdir(exist_ok=True, mode=0o700)
 
 
-def command(args, *, cwd=ROOT, env=None, output=None, timeout=1800):
-    # No shell interpolation. Output is private and never returned through HTTP.
-    if args[0] == 'git':args = ['git', '-c', 'safe.directory=' + str(ROOT), *args[1:]]
-    process = subprocess.Popen([str(value) for value in args], cwd=cwd, env=env,
-                               stdout=output if output else subprocess.PIPE,
-                               stderr=subprocess.STDOUT if output else subprocess.PIPE,
-                               text=output is None, start_new_session=True)
-    try:
-        stdout, _ = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        with contextlib.suppress(ProcessLookupError):os.killpg(process.pid, signal.SIGTERM)
-        try:process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError):os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
-        raise RuntimeError('更新步骤超时，已停止该步骤，请查看宿主机更新日志。') from None
-    if process.returncode:
-        raise RuntimeError('步骤失败：' + Path(str(args[0])).name + '（退出码 ' + str(process.returncode) + '），请查看宿主机更新日志。')
-    return stdout.strip() if output is None else ''
+def state_path(mode):
+    return ROOT / ".local" / ("updater-local" if mode == "local" else "updater")
 
 
-def native():
-    spec = importlib.util.spec_from_file_location('skyshield_native_deploy', ROOT / 'scripts/local-deploy.py')
-    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+def import_deployment(name):
+    path = ROOT / "scripts" / (name + ".py")
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
     return module
 
 
-def deployment_environment():
-    spec = importlib.util.spec_from_file_location('skyshield_network_settings', ROOT / 'scripts/deployment-network.py')
-    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-    configured = module.settings(ROOT)
-    environment = os.environ.copy()
-    for key in module.PROXY_KEYS:
-        if key in configured:environment[key] = configured[key]
-    return environment
+def native():
+    return import_deployment("local-deploy")
 
 
-def compose():
-    args = ['docker', 'compose', '-f', str(ROOT / 'compose.tianqiong.yaml'), '-f', str(ROOT / 'compose.hub.yaml')]
-    # Apply image pins after the generated network profile (which also has an image).
-    for path in (ROOT / '.local/network/compose.network.yaml', STATE / 'compose.release.json'):
-        if path.is_file():
-            args += ['-f', str(path)]
+def command(args, *, cwd=None, env=None, output=None, log=None, timeout=1800):
+    args = [str(value) for value in args]
+    if args[0] == "git":
+        args[1:1] = ["-c", "safe.directory=" + str(ROOT)]
+    with subprocess.Popen(
+        args, cwd=cwd or ROOT, env=env, text=True, start_new_session=True,
+        stdout=output or log or subprocess.PIPE,
+        stderr=log or subprocess.PIPE,
+    ) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt) as error:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGTERM)
+            try:
+                process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
+            if isinstance(error, KeyboardInterrupt):
+                raise
+            raise RuntimeError(f"{args[0]} 执行超时，已停止该步骤。") from error
+        if process.returncode:
+            detail = f" {stderr.strip()}" if stderr and args[0] == "git" else ""
+            raise RuntimeError(f"{args[0]} 执行失败（退出码 {process.returncode}）。{detail}")
+        return stdout.strip() if stdout else ""
+
+
+def compose(*, base_only=False):
+    args = ["docker", "compose", "-f", ROOT / "compose.tianqiong.yaml"]
+    if not base_only:
+        args += ["-f", ROOT / "compose.hub.yaml"]
+        for path in (ROOT / ".local/network/compose.network.yaml", state_path("docker") / "compose.release.json"):
+            if path.is_file() and not path.is_symlink():
+                args += ["-f", path]
     return args
 
 
-def service_id(service):
-    ids = command(compose() + ['ps', '--all', '--quiet', service]).splitlines()
+def container(service, *, base_only=False):
+    ids = command(compose(base_only=base_only) + ["ps", "--all", "--quiet", service], timeout=15).splitlines()
     if len(ids) != 1:
-        raise RuntimeError('没有找到当前部署的唯一容器：' + service)
-    info = json.loads(command(['docker', 'inspect', ids[0]]))[0]
-    directory = info['Config'].get('Labels', {}).get('com.docker.compose.project.working_dir')
-    if not directory or Path(directory).resolve() != ROOT:
-        raise RuntimeError('Docker 容器属于其他部署目录，已停止操作。')
-    return ids[0]
+        raise RuntimeError(f"当前目录没有唯一的 Docker 服务容器：{service}。")
+    info = json.loads(command(["docker", "inspect", ids[0]], timeout=15))[0]
+    labels = info["Config"].get("Labels") or {}
+    directory_label = labels.get("com.docker.compose.project.working_dir")
+    if not directory_label or Path(directory_label).resolve() != ROOT:
+        raise RuntimeError("Docker 容器属于其他部署目录。请在原部署目录运行脚本。")
+    return info
+
+
+def select_mode(explicit):
+    if explicit:
+        return explicit
+    modes = []
+    if (native().PGDATA / "PG_VERSION").is_file():
+        modes.append("local")
+    if shutil.which("docker") and (ROOT / "compose.tianqiong.yaml").is_file():
+        try:
+            container("postgres", base_only=True)
+        except (RuntimeError, OSError):
+            pass
+        else:
+            modes.append("docker")
+    if len(modes) == 1:
+        return modes[0]
+    message = "同时发现本地和 Docker 部署" if modes else "无法确定现有部署方式"
+    raise RuntimeError(message + "，请指定 --mode local 或 --mode docker。")
+
+
+def local_revision():
+    deployment = native()
+    process = deployment.read_state().get("server")
+    if deployment.alive(process):
+        try:
+            entries = Path("/proc", str(process["pid"]), "environ").read_bytes().split(b"\0")
+        except OSError:
+            return ""
+        for entry in entries:
+            if entry.startswith(b"SKYSHIELD_BUILD_REVISION="):
+                return entry.partition(b"=")[2].decode("ascii", errors="replace")
+        return ""
+    return read_json(deployment.DATA / "build-revision.json", {}).get("revision", "")
 
 
 def current_revision():
-    if MODE == 'local':
-        deployment = native()
-        process = deployment.read_state().get('server')
-        if deployment.alive(process):
-            try:
-                for item in Path('/proc', str(process['pid']), 'environ').read_bytes().split(b'\0'):
-                    if item.startswith(b'SKYSHIELD_BUILD_REVISION='):
-                        return item.split(b'=', 1)[1].decode()
-            except OSError:
-                pass
-        return ''
-    try:
-        revisions = []
-        for name in COMPONENTS:
-            info = json.loads(command(['docker', 'inspect', service_id(name)]))[0]
-            revisions.append(info['Config'].get('Labels', {}).get('org.opencontainers.image.revision', ''))
-        return revisions[0] if len(set(revisions)) == 1 else ''
-    except (RuntimeError, OSError):
-        return ''
+    if MODE == "local":
+        revision = local_revision()
+    else:
+        revisions = {
+            (container(name)["Config"].get("Labels") or {}).get("org.opencontainers.image.revision", "")
+            for name in COMPONENTS
+        }
+        revision = revisions.pop() if len(revisions) == 1 else ""
+    return revision if isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40}", revision) else ""
 
 
-def validate_manifest(value):
-    allowed = {'schemaVersion', 'version', 'revision', 'publishedAt', 'notes', 'images', 'minimumUpdaterVersion'}
-    if not isinstance(value, dict) or set(value) != allowed or value['schemaVersion'] != 1 or value['minimumUpdaterVersion'] != 1:
-        raise RuntimeError('发布清单版本不兼容，请更新部署脚本。')
-    if not re.fullmatch(r'[0-9a-f]{40}', str(value['revision'])):
-        raise RuntimeError('发布清单的源码提交无效。')
-    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.+-]{0,63}', str(value['version'])):
-        raise RuntimeError('发布版本标识无效。')
-    if not isinstance(value['notes'], str) or len(value['notes']) > 16000:
-        raise RuntimeError('发布说明无效。')
-    datetime.datetime.fromisoformat(value['publishedAt'].replace('Z', '+00:00'))
-    if not isinstance(value['images'], dict) or set(value['images']) != set(COMPONENTS):
-        raise RuntimeError('发布清单缺少镜像。')
-    for name, image in value['images'].items():
-        if not isinstance(image, str) or not re.fullmatch(r'docker\.io/solder110/skyshield-' + name + r'@sha256:[0-9a-f]{64}', image):
-            raise RuntimeError('发布镜像必须绑定 SkyShield 仓库的不可变摘要。')
-    return value
-
-
-class ReleaseRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        # The fixed raw GitHub channel does not require cross-origin redirects.
-        if not newurl.startswith('https://raw.githubusercontent.com/Vme18000yuan/SkyShield/'):
-            raise RuntimeError('发布源发生了不受支持的重定向。')
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-def check_release():
-    with check_mutex:
+@contextlib.contextmanager
+def locked_deployment():
+    for path in (ROOT / ".local", STATE, STATE / "socket"):
+        directory(path)
+    lock_path = ROOT / ".local/deployment.lock"
+    with os.fdopen(os.open(lock_path, os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600), "a") as lock:
         try:
-            request = urllib.request.Request(CHANNEL, headers={'Accept': 'application/json', 'User-Agent': 'SkyShield-Updater/1', 'Cache-Control': 'no-cache'})
-            with urllib.request.build_opener(ReleaseRedirect()).open(request, timeout=20) as response:
-                raw = response.read(65537)
-            if len(raw) > 65536:
-                raise RuntimeError('发布清单过大。')
-            manifest = validate_manifest(json.loads(raw))
-            result = {'checkState': 'checked', 'message': '', 'checkedAt': now(), 'checkedEpoch': time.time(),
-                      'candidate': manifest, 'manifestDigest': 'sha256:' + hashlib.sha256(raw).hexdigest()}
-        except urllib.error.HTTPError as error:
-            if error.code == 404:
-                result = {'checkState': 'no_release', 'message': '尚未发布支持自动更新的稳定版本。', 'checkedAt': now()}
-            else:
-                result = {'checkState': 'check_failed', 'message': '发布源返回 HTTP ' + str(error.code) + '，请稍后重试。', 'checkedAt': now()}
-        except (OSError, ValueError, RuntimeError) as error:
-            result = {'checkState': 'check_failed', 'message': str(error) if isinstance(error, RuntimeError) else '无法连接或解析 SkyShield 发布源，请检查部署机网络和代理。', 'checkedAt': now()}
-        with mutex:
-            private_json(STATE / 'check.json', result)
-        return status()
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise RuntimeError("部署或升级正在进行，请等待完成后再试。") from error
+        yield
 
 
-def eligibility():
-    if not (ROOT / '.git').is_dir():
-        return False, '自动更新需要 Git 克隆部署；ZIP 部署请先按更新文档迁移为 Git 工作目录。'
-    if not shutil.which('git'):
-        return False, '部署机需要安装 Git。'
-    if MODE == 'docker':
-        info = json.loads(command(['docker', 'info', '--format', '{{json .}}'], timeout=15))
-        if info.get('OSType') != 'linux' or info.get('Architecture') not in ('x86_64', 'amd64'):
-            return False, '当前自动更新渠道只发布 Linux amd64 镜像。'
-    if command(['git', 'status', '--porcelain', '--untracked-files=normal']):
-        return False, '源码存在未提交修改，请先提交或备份修改后再更新。'
-    if read_json(STATE / 'operation.json', {}).get('status') == 'needs_recovery':
-        return False, '上一次更新需要恢复，请先按更新记录处理并执行 ./update.sh acknowledge-recovery。'
-    return True, ''
+def previous_local_state():
+    # The first local updater stored its record and maintenance marker in
+    # the Docker state directory. Keep those backups and their paths intact.
+    legacy = state_path("docker")
+    if MODE == "local" and legacy.is_dir() and not legacy.is_symlink():
+        try:
+            if read_json(legacy / "daemon.json", {}).get("mode") == "local":
+                return legacy
+        except PermissionError:
+            pass
+    return None
 
 
-def status():
-    with mutex:
-        checked = read_json(STATE / 'check.json', {'checkState': 'not_checked', 'message': ''})
-        operation = read_json(STATE / 'operation.json')
-        revision = current_revision()
-        installed = read_json(STATE / 'installed.json', {})
-        candidate = checked.get('candidate')
-        eligible, reason = eligibility()
-        active = bool(operation and operation['status'] in ACTIVE)
-        return {**{key: value for key, value in checked.items() if key != 'checkedEpoch'},
-                'currentVersion': installed['version'] if revision and installed.get('revision') == revision else (revision[:12] if revision else 'unknown'), 'currentRevision': revision,
-                'mode': MODE, 'updaterReady': True, 'hasUpdate': bool(candidate and candidate['revision'] != revision),
-                'eligible': eligible and not active, 'eligibilityReason': reason, 'operation': operation}
+def operation_records():
+    candidates = [STATE, previous_local_state()]
+    for path in candidates:
+        if path is None:
+            continue
+        record_path = path / "operation.json"
+        record = read_json(record_path)
+        if not record:
+            continue
+        recorded_mode = record.get("mode") or read_json(path / "daemon.json", {}).get("mode", MODE)
+        if recorded_mode == MODE:
+            yield record_path, record
 
 
-def set_stage(operation, stage, message):
-    with mutex:
-        operation.update(status=stage, message=message, updatedAt=now())
-        private_json(STATE / 'operation.json', operation)
-        directory = STATE / ('operation-' + operation['id'])
-        if directory.is_dir():private_json(directory / 'operation.json', operation)
+def retire_legacy_daemon(path):
+    lock_path = path / "daemon.lock"
+    if not lock_path.is_file():
+        return
+    with os.fdopen(os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW), "r") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            record = read_json(path / "daemon.json", {})
+            pid = record.get("pid")
+            if type(pid) is not int or pid <= 1 or record.get("root") != str(ROOT) or record.get("mode") != MODE:
+                raise RuntimeError("有旧更新进程占用状态目录，请先由原部署用户停止它。") from None
+            proc = Path("/proc", str(pid))
+            tick = (proc / "stat").read_text().rsplit(")", 1)[1].split()[19]
+            args = (proc / "cmdline").read_bytes().split(b"\0")
+            old_command = os.fsencode(ROOT / "scripts/system-update.py")
+            if proc.stat().st_uid != os.geteuid() or tick != record.get("startTicks") or args[1:5] != [old_command, b"serve", b"--mode", MODE.encode()]:
+                raise RuntimeError("旧更新进程身份不匹配，请先由原部署用户停止它。") from None
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(50):
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    return
+                except BlockingIOError:
+                    time.sleep(0.1)
+    raise RuntimeError("旧更新进程未退出，请停止后重试。")
 
 
-def query(sql):
-    if MODE == 'local':
-        deployment = native()
-        return deployment.query(deployment.environment(), sql)
-    return command(['docker', 'exec', service_id('postgres'), 'psql', '-X', '-U', 'tianqiong', '-d', 'tianqiong', '-Atc', sql])
+def retire_previous_updaters():
+    for path in (STATE, previous_local_state()):
+        if path is not None:
+            retire_legacy_daemon(path)
 
 
-def ensure_idle():
+def require_recovery_acknowledgement():
+    for path, record in operation_records():
+        if record["status"] in ACTIVE:
+            # We hold the deployment lock, so a foreground operation cannot
+            # still be applying migrations. Its last stage survives a kill.
+            status = "failed" if record["status"] in {"queued", "preparing"} else "needs_recovery"
+            record.update(status=status, message="上一次升级被中断，请检查日志和备份。", updatedAt=now())
+            private_json(path, record)
+        if record["status"] == "needs_recovery":
+            raise RuntimeError("上一次升级需要恢复。请查看 ./update.sh status，确认恢复后再解除锁定。")
+
+
+def git_is_ancestor(first, second):
+    result = subprocess.run(
+        ["git", "-c", "safe.directory=" + str(ROOT), "merge-base", "--is-ancestor", first, second],
+        cwd=ROOT, capture_output=True, timeout=30,
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError("无法确认版本的 Git 提交关系，请检查源码历史和分支。")
+    return result.returncode == 0
+
+
+def same_release_source(first, second):
+    return not command(["git", "diff", "--name-only", first, second, "--", ".", ":(exclude)updates"])
+
+
+def may_upgrade_from(previous, target):
+    return git_is_ancestor(previous, target) or (
+        git_is_ancestor(target, previous) and same_release_source(target, previous)
+    )
+
+
+def clean_checkout():
+    if not (ROOT / ".git").exists():
+        raise RuntimeError("升级需要项目的 Git 克隆目录。")
+    if command(["git", "rev-parse", "--show-toplevel"], timeout=10) != str(ROOT):
+        raise RuntimeError("请在 SkyShield 的原 Git 克隆目录执行升级。")
+    if command(["git", "status", "--porcelain", "--untracked-files=normal"], timeout=30):
+        raise RuntimeError("源码存在未提交修改。请先提交或保存修改。")
+    return command(["git", "rev-parse", "HEAD"], timeout=10)
+
+
+def latest_release():
+    tag = latest_release_tag()
+    ref = "refs/tags/" + tag
+    command(["git", "check-ref-format", ref], timeout=10)
+    command(["git", "fetch", "--no-tags", REPOSITORY, ref], timeout=180)
+    revision = command(["git", "rev-parse", "FETCH_HEAD^{commit}"], timeout=10)
+    return {"tag": tag, "version": tag.removeprefix("v"), "revision": revision, "images": {}}
+
+
+def database_command(program, *args):
+    if MODE == "docker":
+        return ["docker", "exec", container("postgres")["Id"], program, "-U", "tianqiong", "-d", "tianqiong", *args], None
+    deployment = native()
+    return [
+        deployment.pg_binary(program), "-h", "127.0.0.1", "-p", str(deployment.PG_PORT),
+        "-U", "postgres", "-d", deployment.DB_NAME, *args,
+    ], deployment.environment()
+
+
+def query(sql, log=None):
+    args, env = database_command("psql", "-X", "-v", "ON_ERROR_STOP=1", "-Atc", sql)
+    if log is None:
+        return command(args, env=env, timeout=30)
+    # Keep the result separate from PostgreSQL diagnostics.
+    with tempfile.TemporaryFile(mode="w+") as result:
+        command(args, env=env, output=result, log=log, timeout=30)
+        result.seek(0)
+        return result.read().strip()
+
+
+def ensure_idle(log):
     sql = """SELECT
       (SELECT count(*) FROM scan_task WHERE status IN ('pending','running')) +
       (SELECT count(*) FROM ai_run WHERE status IN ('running','stopping') AND lease_until > clock_timestamp()) +
       (SELECT count(*) FROM ai_task WHERE (queued OR status='running') AND deleted_at IS NULL)
     """
-    if query(sql).strip() != '0':
-        raise RuntimeError('存在扫描或 AI 任务，请等待任务结束或在界面停止任务后再更新。')
+    if query(sql, log) != "0":
+        raise RuntimeError("存在待处理或运行中的任务，请结束任务后重试。")
+
+
+def preflight(log):
+    secret_dir = ROOT / ".local/secrets"
+    if MODE == "local":
+        deployment = native()
+        if not (deployment.PGDATA / "PG_VERSION").is_file() or not deployment.BIN.is_dir():
+            raise RuntimeError("未找到现有本地部署，请在原部署目录运行。")
+        secret_dir = deployment.SECRETS
+        deployment.go_binary()
+        for program in ("node", "pnpm"):
+            deployment.executable(program)
+        state = deployment.read_state()
+        for name in ("agent", "frontend", "server"):
+            if deployment.alive(state.get(name)) and not state[name].get("owned"):
+                raise RuntimeError(f"{name} 由其他方式启动，请先由原启动方式停止。")
+    else:
+        info = json.loads(command(["docker", "info", "--format", "{{json .}}"], timeout=15))
+        if info.get("OSType") != "linux" or info.get("Architecture") not in ("x86_64", "amd64"):
+            raise RuntimeError("SkyShield 发布镜像目前仅支持 Linux amd64。")
+        for service in ("postgres", "redis", "loki", "agent"):
+            command(["docker", "image", "inspect", container(service)["Image"]], log=log, timeout=30)
+    for name in SECRET_NAMES:
+        path = secret_dir / name
+        if path.is_symlink() or not path.is_file() or not path.stat().st_size:
+            raise RuntimeError(f"部署密钥缺失或无效：{path}")
+    try:
+        if MODE == "local" and Path(query("SHOW data_directory", log)).resolve() != deployment.PGDATA.resolve():
+            raise RuntimeError("当前 PostgreSQL 数据目录与本地部署不匹配。")
+        database_bytes = int(query("SELECT pg_database_size(current_database())", log))
+    except (RuntimeError, ValueError) as error:
+        raise RuntimeError("无法验证现有数据库。请使用原部署配置启动 PostgreSQL 后重试。") from error
+    if shutil.disk_usage(ROOT).free < database_bytes + 10 * 1024**3:
+        raise RuntimeError("磁盘可用空间不足以保存数据库备份并预留 10 GiB。")
+    ensure_idle(log)
 
 
 def stop_applications(log):
-    if MODE == 'docker':
-        # Keep database/cache/helper alive until backup and initialization finish.
-        for name in ('agent', 'nginx', 'frontend', 'server'):
-            command(['docker', 'stop', '--time', '60', service_id(name)], output=log)
-    else:
-        deployment = native()
-        with (deployment.DATA / 'local-deploy.lock').open('a') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            state = deployment.read_state()
-            for name in ('agent', 'frontend', 'server'):
-                deployment.stop_managed(state, name)
-
-
-def backup_database(directory, log):
-    target = directory / 'database.dump'
-    if MODE == 'local':
-        deployment = native();env = deployment.environment()
-        args = [deployment.pg_binary('pg_dump'), '-h', '127.0.0.1', '-p', str(deployment.PG_PORT), '-U', 'postgres', '-d', deployment.DB_NAME, '-Fc']
-    else:
-        env = None;args = ['docker', 'exec', service_id('postgres'), 'pg_dump', '-U', 'tianqiong', '-d', 'tianqiong', '-Fc']
-    with target.open('xb') as output:
-        target.chmod(0o600)
-        result = subprocess.run(args, env=env, stdout=output, stderr=log, timeout=1800)
-        output.flush();os.fsync(output.fileno())
-    if result.returncode or target.stat().st_size < 8:
-        raise RuntimeError('数据库备份失败，未执行数据库迁移。')
-    with target.open('rb') as source:
-        if source.read(5) != b'PGDMP':
-            raise RuntimeError('数据库备份格式无效。')
-    for name in ('.env',):
-        source = ROOT / name
-        if source.is_file():shutil.copy2(source, directory / name)
-    secrets = native().SECRETS if MODE == 'local' else ROOT / '.local/secrets'
-    shutil.copytree(secrets, directory / 'secrets')
-    if MODE == 'local':
-        deployment = native()
-        def retain_binary(source, target):
-            try:os.link(source, target)
-            except OSError:shutil.copy2(source, target)
-            return target
-        shutil.copytree(deployment.BIN, directory / 'bin', copy_function=retain_binary, symlinks=True)
-        for name in ('frontend-build.json', 'build-revision.json'):
-            source = deployment.DATA / name
-            if source.is_file():shutil.copy2(source, directory / name)
-    else:
-        images = {name: json.loads(command(['docker', 'inspect', service_id(name)]))[0]['Image'] for name in COMPONENTS}
-        private_json(directory / 'previous-images.json', images)
-        if (STATE / 'compose.release.json').is_file():shutil.copy2(STATE / 'compose.release.json', directory / 'compose.release.json')
-
-
-def image_overlay(manifest):
-    services = {name: {'image': manifest['images'][name]} for name in COMPONENTS}
-    for name in ('migrate', 'volume-preflight', 'cert-init'):
-        services[name] = {'image': manifest['images']['bootstrap']}
-    if (ROOT / '.local/network/compose.network.yaml').is_file():
-        services['network-helper'] = {'image': manifest['images']['bootstrap']}
-    return {'services': services}
-
-
-def verify_runtime(manifest, log):
-    if MODE == 'local':
-        deployment = native()
-        deployment.status(None)
-        if not deployment.http_ready(deployment.HTTP_PORT, '/healthChecks/readiness') or not deployment.http_ready(deployment.FRONTEND_PORT, '/'):
-            raise RuntimeError('本地服务健康检查未通过。')
+    if MODE == "docker":
+        for name in ("agent", "nginx", "frontend", "server"):
+            command(["docker", "stop", "--time", "60", container(name)["Id"]], log=log, timeout=90)
         return
+    deployment = native()
+    with (deployment.DATA / "local-deploy.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        state = deployment.read_state()
+        for name in ("agent", "frontend", "server"):
+            deployment.stop_managed(state, name)
+
+
+def backup_database(destination, log):
+    dump = destination / "database.dump"
+    args, env = database_command("pg_dump", "-Fc")
+    with dump.open("xb") as output:
+        dump.chmod(0o600)
+        command(args, env=env, output=output, log=log, timeout=1800)
+        output.flush()
+        os.fsync(output.fileno())
+    with dump.open("rb") as source:
+        if source.read(5) != b"PGDMP":
+            raise RuntimeError("数据库备份格式无效。")
+    env_file = ROOT / ".env"
+    if env_file.is_file():
+        shutil.copy2(env_file, destination / ".env")
+    secrets = native().SECRETS if MODE == "local" else ROOT / ".local/secrets"
+    shutil.copytree(secrets, destination / "secrets")
+    if MODE == "local":
+        deployment = native()
+
+        def retain_binary(source, target):
+            try:
+                os.link(source, target)
+            except OSError:
+                shutil.copy2(source, target)
+            return target
+
+        shutil.copytree(deployment.BIN, destination / "bin", copy_function=retain_binary, symlinks=True)
+        for name in ("frontend-build.json", "build-revision.json"):
+            source = deployment.DATA / name
+            if source.is_file():
+                shutil.copy2(source, destination / name)
+    else:
+        private_json(destination / "previous-images.json", {name: container(name)["Image"] for name in COMPONENTS})
+        override = STATE / "compose.release.json"
+        if override.is_file():
+            shutil.copy2(override, destination / override.name)
+
+
+def image_overlay(images, *, network_enabled):
+    services = {name: {"image": images[name]} for name in COMPONENTS}
+    bootstrap_services = ("migrate", "volume-preflight", "cert-init")
+    if network_enabled:
+        bootstrap_services += ("network-helper",)
+    services.update({name: {"image": images["bootstrap"]} for name in bootstrap_services})
+    return {"services": services}
+
+
+def prepare_images(target, log):
+    target["images"] = published_images(target["revision"])
+    for image in target["images"].values():
+        command(["docker", "pull", "--platform", "linux/amd64", image], log=log)
+        info = json.loads(command(["docker", "image", "inspect", image], timeout=15))[0]
+        if (info["Os"], info["Architecture"]) != ("linux", "amd64") or (info["Config"].get("Labels") or {}).get("org.opencontainers.image.revision") != target["revision"]:
+            raise RuntimeError("拉取的 Docker 镜像与发布源码不匹配。")
+
+
+def verify_runtime(target, log):
+    if MODE == "local":
+        deployment = native()
+        if (current_revision() != target["revision"]
+                or not deployment.http_ready(deployment.HTTP_PORT, "/healthChecks/readiness")
+                or not deployment.http_ready(deployment.FRONTEND_PORT, "/")):
+            raise RuntimeError("本地服务健康检查或源码版本检查未通过。")
+        return
+    expected = {name: json.loads(command(["docker", "image", "inspect", image], timeout=15))[0]["Id"]
+                for name, image in target["images"].items()}
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         healthy = True
         for name in COMPONENTS:
-            info = json.loads(command(['docker', 'inspect', service_id(name)]))[0]
-            state = info['State']
-            if name == 'bootstrap':
-                healthy &= state['Status'] == 'exited' and state['ExitCode'] == 0
+            info = container(name)
+            state = info["State"]
+            if name == "bootstrap":
+                healthy &= state["Status"] == "exited" and state["ExitCode"] == 0
             else:
-                healthy &= state['Running'] and state.get('Health', {}).get('Status', 'healthy') == 'healthy'
-            expected = json.loads(command(['docker', 'image', 'inspect', manifest['images'][name]]))[0]['Id']
-            healthy &= info['Image'] == expected
-        for name in ('migrate', 'volume-preflight', 'cert-init'):
-            state = json.loads(command(['docker', 'inspect', service_id(name)]))[0]['State']
-            healthy &= state['Status'] == 'exited' and state['ExitCode'] == 0
-        agent = json.loads(command(['docker', 'inspect', service_id('agent')]))[0]
-        healthy &= agent['State']['Running']
-        if healthy:
-            count = query("SELECT count(*) FROM agent a JOIN agent_runtime_status s ON s.agent_id=a.id JOIN deployment_agent_bootstrap b ON b.instance_id=a.instance_id WHERE a.status='online' AND s.last_heartbeat>now()-interval '1 minute'")
-            if count != '0':return
-        time.sleep(3)
-    raise RuntimeError('新版本服务、镜像或 Agent 健康检查未通过，请查看更新日志。')
-
-
-def prune_frontend_builds(rollback):
-    if MODE != 'local':return
-    deployment = native();current = deployment.active_frontend_stage()
-    previous = read_json(rollback / 'frontend-build.json', {}).get('stage')
-    keep = {current, previous}
-    for process in Path('/proc').glob('[0-9]*/environ'):
-        try:
-            if Path(os.readlink(process.parent/'cwd')).resolve() != ROOT/'frontend':continue
-            for value in process.read_bytes().split(b'\0'):
-                if value.startswith(b'SKYSHIELD_NEXT_STAGE_DIR='):keep.add(value.split(b'=',1)[1].decode())
-        except OSError:pass
-    # Only known generated stages; dependencies, runtime data and build pointers survive.
-    for path in (ROOT / 'frontend').glob('.next-skyshield-stage-*'):
-        if path.name in keep or path.is_symlink() or not path.is_dir():continue
-        if not re.fullmatch(r'\.next-skyshield-stage-[A-Za-z0-9-]+', path.name):continue
-        shutil.rmtree(path)
-        (path.parent / ('tsconfig.' + path.name + '.json')).unlink(missing_ok=True)
-
-
-def execute_update(operation, manifest):
-    directory = STATE / ('operation-' + operation['id']);directory.mkdir(mode=0o700)
-    maintenance = SOCKET_DIR / 'maintenance'
-    stopped = switched = False
-    try:
-        with (STATE / 'update.lock').open('a') as update_lock, (ROOT / '.local/deployment.lock').open('a') as deployment_lock, (directory / 'update.log').open('ab') as log:
-            fcntl.flock(update_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            fcntl.flock(deployment_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            set_stage(operation, 'preparing', '检查工作目录、空间和发布内容')
-            eligible, reason = eligibility()
-            if not eligible:raise RuntimeError(reason)
-            database_bytes = int(query('SELECT pg_database_size(current_database())'))
-            if shutil.disk_usage(ROOT).free < database_bytes + 10 * 1024**3:
-                raise RuntimeError('磁盘可用空间不足以保存数据库备份并预留 10 GiB 构建空间，请先清理或扩容。')
-            ensure_idle()
-            previous = command(['git', 'rev-parse', 'HEAD'])
-            command(['git', 'fetch', '--no-tags', REPOSITORY, manifest['revision']], output=log, timeout=300)
-            if command(['git', 'rev-parse', 'FETCH_HEAD']) != manifest['revision']:
-                raise RuntimeError('获取的源码提交与发布清单不一致。')
-            source_is_current = previous == manifest['revision']
-            if not source_is_current:
-                forward = subprocess.run(['git', '-c', 'safe.directory='+str(ROOT), 'merge-base', '--is-ancestor', previous, manifest['revision']], cwd=ROOT, stdout=log, stderr=log).returncode
-                if forward:
-                    # The stable descriptor is committed AFTER its source/images.
-                    # A checkout differing only in channel metadata is the same source.
-                    command(['git', 'merge-base', '--is-ancestor', manifest['revision'], previous], output=log)
-                    difference = command(['git', 'diff', '--name-only', manifest['revision'], previous, '--', '.', ':(exclude)updates'])
-                    if difference:raise RuntimeError('当前源码不是目标版本的祖先；请先处理分支或本地提交，避免自动降级。')
-                    source_is_current = True
-            if previous == manifest['revision'] and current_revision() == manifest['revision']:
-                raise RuntimeError('当前已运行目标版本。')
-            private_json(directory / 'target.json', manifest)
-            private_json(directory / 'previous.json', {'revision': previous, 'mode': MODE})
-            if MODE == 'docker':
-                for image in manifest['images'].values():
-                    command(['docker', 'pull', image], output=log)
-                    info = json.loads(command(['docker', 'image', 'inspect', image]))[0]
-                    if info['Config'].get('Labels', {}).get('org.opencontainers.image.revision') != manifest['revision']:
-                        raise RuntimeError('镜像源码版本与发布清单不一致。')
-                # Preserve access to the currently installed infrastructure images.
-                for service in ('postgres', 'redis', 'loki', 'agent'):
-                    info = json.loads(command(['docker', 'inspect', service_id(service)]))[0]
-                    command(['docker', 'image', 'inspect', info['Image']])
-            # Do not proceed if an operator edited the checkout while downloads ran.
-            if command(['git', 'status', '--porcelain', '--untracked-files=normal']) or command(['git', 'rev-parse', 'HEAD']) != previous:
-                raise RuntimeError('下载期间源码发生变更，已停止更新。')
-            private_json(maintenance, {'operationId': operation['id']})
-            ensure_idle()
-            set_stage(operation, 'backing_up', '停止应用并备份数据库、密钥和回滚信息')
-            stopped = True;stop_applications(log)
-            backup_database(directory, log)
-            command(['git', 'update-ref', 'refs/skyshield/rollback', previous], output=log)
-            set_stage(operation, 'updating', '安装已发布版本')
-            if not source_is_current:
-                command(['git', '-c', 'core.hooksPath=/dev/null', 'merge', '--ff-only', manifest['revision']], output=log)
-            switched = True
-            env = os.environ.copy();env['SKYSHIELD_UPDATER_CHILD'] = '1'
-            if MODE == 'docker':
-                private_json(STATE / 'compose.release.json', image_overlay(manifest))
-                env['SKYSHIELD_IMAGE_TAG'] = 'sha-' + manifest['revision'][:12]
-                command(['bash', ROOT / 'docker.sh', 'pull'], env=env, output=log, timeout=3600)
-            else:
-                command(['pnpm', 'install', '--frozen-lockfile'], cwd=ROOT / 'frontend', env=env, output=log)
-                command(['bash', ROOT / 'local.sh', 'start', '--no-tools-install'], env=env, output=log, timeout=7200)
-            set_stage(operation, 'verifying', '检查应用、迁移和 Agent 运行状态')
-            verify_runtime(manifest, log)
-            installed = {'revision': manifest['revision'], 'version': manifest['version'], 'installedAt': now(), 'mode': MODE}
-            private_json(STATE / 'installed.json', installed)
-            if MODE == 'local':private_json(native().DATA / 'build-revision.json', {'revision': manifest['revision']})
-            prune_frontend_builds(directory)
-            for previous_backup in STATE.glob('operation-*'):
-                if previous_backup == directory or previous_backup.is_symlink() or not previous_backup.is_dir():continue
-                if read_json(previous_backup / 'operation.json', {}).get('status') == 'succeeded':
-                    shutil.rmtree(previous_backup)
-            operation.update(status='succeeded', message='更新完成，已保留更新前的数据库和版本备份', updatedAt=now())
-    except Exception as error:
-        message = str(error) if isinstance(error, RuntimeError) else '更新步骤失败，请查看宿主机操作日志。'
-        # Once stopped, schema/runtime may be partially changed. Never pretend a
-        # binary rollback also rolls back data. Keep artifacts for explicit recovery.
-        operation.update(status='needs_recovery' if stopped else 'failed', message=message, updatedAt=now())
-    finally:
-        maintenance.unlink(missing_ok=True)
-        with mutex:
-            operation['recoveryRequired'] = stopped and operation['status'] != 'succeeded'
-            operation['completedAt'] = now();operation['sourceChanged'] = switched
-            operation['logFile'] = str(directory / 'update.log')
-            private_json(STATE / 'operation.json', operation)
-            private_json(directory / 'operation.json', operation)
-        if operation['status'] == 'succeeded':
-            # Load the newly installed updater code after the operation is durable.
-            def reload_when_idle():
-                with mutex:
-                    latest = read_json(STATE / 'operation.json', {})
-                    if latest.get('id') == operation['id'] and latest.get('status') == 'succeeded':
-                        os.execv(sys.executable, [sys.executable, str(ROOT / 'scripts/system-update.py'), 'serve', '--mode', MODE])
-            threading.Timer(2, reload_when_idle).start()
-
-
-def apply(request):
-    if not isinstance(request, dict) or set(request) != {'requestId', 'manifestDigest', 'confirmed'} or request['confirmed'] is not True:
-        raise RuntimeError('需要明确确认更新，并提供检查时的发布摘要。')
-    if str(uuid.UUID(request['requestId'])) != request['requestId']:
-        raise RuntimeError('请求编号无效。')
-    with mutex:
-        existing = read_json(STATE / 'operation.json', {})
-        if existing.get('requestId') == request['requestId']:
-            if existing.get('manifestDigest') != request['manifestDigest']:raise RuntimeError('重复请求的目标发生变化。')
-            return status()
-        if existing.get('status') in ACTIVE:raise RuntimeError('已有更新正在执行。')
-        checked = read_json(STATE / 'check.json', {})
-        if checked.get('checkState') != 'checked' or checked.get('manifestDigest') != request['manifestDigest'] or time.time()-checked.get('checkedEpoch',0) > 300:
-            raise RuntimeError('版本检查已过期，请重新检查后确认更新。')
-        eligible, reason = eligibility()
-        if not eligible:raise RuntimeError(reason)
-        if checked['candidate']['revision'] == current_revision():raise RuntimeError('当前已是发布版本。')
-        operation = {'id': str(uuid.uuid4()), 'requestId': request['requestId'], 'manifestDigest': checked['manifestDigest'],
-                     'version': checked['candidate']['version'], 'revision': checked['candidate']['revision'],
-                     'status': 'queued', 'message': '更新已排队', 'createdAt': now(), 'updatedAt': now()}
-        private_json(STATE / 'operation.json', operation)
-        threading.Thread(target=execute_update, args=(operation, checked['candidate']), daemon=False).start()
-        return status()
-
-
-class ControlHandler(http.server.BaseHTTPRequestHandler):
-    def log_message(self, *args):pass
-    def do_GET(self):self.handle_request()
-    def do_POST(self):self.handle_request()
-    def handle_request(self):
-        try:
-            size = int(self.headers.get('Content-Length', '0'))
-            if not 0 <= size <= 4096 or self.headers.get('Transfer-Encoding'):raise RuntimeError('请求格式无效。')
-            payload = json.loads(self.rfile.read(size)) if size else {}
-            if self.command == 'GET' and self.path == '/status':result = status()
-            elif self.command == 'POST' and self.path == '/check' and payload == {}:result = check_release()
-            elif self.command == 'POST' and self.path == '/apply':result = apply(payload)
-            else:raise RuntimeError('不支持的更新操作。')
-            code = 200
-        except (RuntimeError, ValueError, KeyError, TypeError) as error:
-            code = 409;result = {'error': {'code': 409, 'status': 'FAILED_PRECONDITION', 'message': str(error), 'details': []}}
-        except Exception:
-            code = 503;result = {'error': {'code': 503, 'status': 'UNAVAILABLE', 'message': '更新服务暂时不可用，请检查宿主机进程日志。', 'details': []}}
-        raw = json.dumps(result, ensure_ascii=False).encode()
-        self.send_response(code);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(raw)));self.end_headers()
-        with contextlib.suppress(BrokenPipeError):self.wfile.write(raw)
-
-
-class ControlServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads = True
-
-
-def rpc(path, payload=None):
-    connection = http.client.HTTPConnection('localhost', timeout=45)
-    connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM);connection.sock.settimeout(45);connection.sock.connect(str(SOCKET))
-    try:
-        connection.request('POST' if payload is not None else 'GET', path, json.dumps(payload) if payload is not None else None, {'Content-Type':'application/json'})
-        response=connection.getresponse();result=json.loads(response.read(256*1024));return response.status,result
-    finally:connection.close()
-
-
-def serve(mode):
-    global MODE
-    MODE = mode;prepare_state();os.environ.update(deployment_environment())
-    with (STATE / 'daemon.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        if SOCKET.exists() and not stat.S_ISSOCK(SOCKET.lstat().st_mode):
-            raise RuntimeError('更新 socket 路径已被普通文件占用。')
-        SOCKET.unlink(missing_ok=True)
-        operation=read_json(STATE/'operation.json',{})
-        if operation.get('status') in ACTIVE:
-            operation.update(status='needs_recovery', message='宿主机更新进程曾中断，请检查备份与操作日志后恢复。',updatedAt=now())
-            private_json(STATE/'operation.json',operation)
-        (SOCKET_DIR/'maintenance').unlink(missing_ok=True)
-        private_json(STATE/'daemon.json',{'pid':os.getpid(),'mode':mode,'root':str(ROOT),'startedAt':now(), 'startTicks':Path('/proc/self/stat').read_text().split(') ',1)[1].split()[19]})
-        with ControlServer(str(SOCKET),ControlHandler) as server:
-            SOCKET.chmod(0o600)
-            def periodic():
-                while True:
-                    with contextlib.suppress(Exception):
-                        if read_json(STATE/'operation.json',{}).get('status') not in ACTIVE:check_release()
-                    time.sleep(3600)
-            threading.Thread(target=periodic,daemon=True).start()
-            server.serve_forever()
-
-
-def start(mode):
-    prepare_state()
-    try:
-        code,result=rpc('/status')
-        if code==200:
-            if result.get('mode')!=mode:raise RuntimeError('更新进程属于另一部署模式，请先停止该进程再启动。')
+                healthy &= state["Running"] and state.get("Health", {}).get("Status", "healthy") == "healthy"
+            healthy &= info["Image"] == expected[name]
+        for name in ("migrate", "volume-preflight", "cert-init"):
+            info = container(name)
+            state = info["State"]
+            healthy &= state["Status"] == "exited" and state["ExitCode"] == 0 and info["Image"] == expected["bootstrap"]
+        healthy &= container("agent")["State"]["Running"]
+        if healthy and query(
+            "SELECT count(*) FROM agent a JOIN agent_runtime_status s ON s.agent_id=a.id "
+            "JOIN deployment_agent_bootstrap b ON b.instance_id=a.instance_id "
+            "WHERE a.status='online' AND s.last_heartbeat>now()-interval '1 minute'", log,
+        ) != "0":
             return
-    except (ConnectionError,OSError):pass
-    with (STATE/'daemon.log').open('ab') as log:
-        subprocess.Popen([sys.executable,str(Path(__file__).resolve()),'serve','--mode',mode],cwd=ROOT,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True,close_fds=True)
-    for _ in range(40):
+        time.sleep(3)
+    raise RuntimeError("新版本服务、镜像或 Agent 健康检查未通过。")
+
+
+def prune_frontend_builds(backup):
+    frontend = ROOT / "frontend"
+    if MODE != "local" or not frontend.is_dir():
+        return
+    current = native().active_frontend_stage()
+    previous = read_json(backup / "frontend-build.json", {}).get("stage")
+    keep = {current, previous}
+    for process in Path("/proc").glob("[0-9]*"):
         try:
-            if rpc('/status')[0]==200:return
-        except (ConnectionError,OSError):pass
-        time.sleep(.25)
-    raise RuntimeError('更新进程启动失败，请查看 .local/updater/daemon.log。')
+            if (process / "cwd").resolve() != frontend:
+                continue
+            for item in (process / "environ").read_bytes().split(b"\0"):
+                if item.startswith(b"SKYSHIELD_NEXT_STAGE_DIR="):
+                    keep.add(os.fsdecode(item.partition(b"=")[2]))
+        except OSError:
+            pass
+    for path in frontend.glob(".next-skyshield-stage-*"):
+        if path.name not in keep and not path.is_symlink() and path.is_dir() and re.fullmatch(r"\.next-skyshield-stage-[A-Za-z0-9-]+", path.name):
+            shutil.rmtree(path)
+            (frontend / ("tsconfig." + path.name + ".json")).unlink(missing_ok=True)
 
 
-def stop_daemon():
-    code, result = rpc('/status')
-    if code != 200 or result.get('operation', {}) and result['operation'].get('status') in ACTIVE:
-        raise RuntimeError('更新正在执行或状态未知，不能停止更新进程。')
-    record = read_json(STATE / 'daemon.json', {})
-    process = Path('/proc', str(record.get('pid', 0)))
-    if record.get('root') != str(ROOT) or record.get('startTicks') != (process/'stat').read_text().split(') ',1)[1].split()[19]:
-        raise RuntimeError('更新进程身份不匹配，未发送停止信号。')
-    os.kill(record['pid'], signal.SIGTERM)
-    for _ in range(40):
-        if not process.exists():return
-        time.sleep(.1)
-    raise RuntimeError('更新进程尚未退出。')
+def prune_successful_backups(current):
+    for path in STATE.glob("operation-*"):
+        if path == current or path.is_symlink() or not path.is_dir():
+            continue
+        record = read_json(path / "operation.json", {})
+        previous = read_json(path / "previous.json", {})
+        if record.get("status") == "succeeded" and (record.get("mode") or previous.get("mode")) == MODE:
+            shutil.rmtree(path)
 
 
-def install_service(mode):
-    prepare_state()
-    if not shutil.which('systemctl'):raise RuntimeError('此主机没有 systemd，请使用 ./update.sh start 或配置自己的进程管理器。')
-    service_identity = str(ROOT) if mode == 'docker' else str(ROOT) + ':local'
-    name = 'skyshield-updater-' + hashlib.sha256(service_identity.encode()).hexdigest()[:12] + '.service'
-    user = [] if os.geteuid() == 0 else ['--user']
-    directory = Path('/etc/systemd/system') if not user else Path.home()/'.config/systemd/user'
-    directory.mkdir(parents=True, exist_ok=True)
-    def quote(value):
-        if '\n' in value or '\r' in value:raise RuntimeError('systemd 配置不能包含换行。')
-        return '"' + value.replace('\\','\\\\').replace('"','\\"').replace('%','%%').replace('$','$$') + '"'
-    environment = STATE/'service.env'
-    keys = {'PATH','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy','SKYSHIELD_GO','SSL_CERT_FILE','SSL_CERT_DIR'}
-    values = {key:value for key,value in deployment_environment().items() if key in keys or key.startswith('SKYSHIELD_LOCAL_')}
-    fd = os.open(environment, os.O_WRONLY|os.O_CREAT|os.O_TRUNC|os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd,'w') as output:
-        # EnvironmentFile has quoting but no systemd specifier/variable expansion.
-        for key,value in values.items():
-            if '\n' in value or '\r' in value:raise RuntimeError('环境变量不能包含换行。')
-            escaped=value.replace('\\','\\\\').replace('"','\\"');output.write(key+'="'+escaped+'"\n')
-    unit='[Unit]\nDescription=SkyShield deployment updater\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nWorkingDirectory='+quote(str(ROOT))+'\nEnvironmentFile='+quote(str(environment))+'\nExecStart='+quote(sys.executable)+' '+quote(str(ROOT/'scripts/system-update.py'))+' serve --mode '+mode+'\nRestart=on-failure\nRestartSec=5\nUMask=0077\nTimeoutStopSec=7200\n\n[Install]\nWantedBy='+('default.target' if user else 'multi-user.target')+'\n'
-    target = directory/name
-    if target.is_symlink():raise RuntimeError('已有 systemd unit 不能是符号链接。')
-    target.write_text(unit);target.chmod(0o644)
-    try:stop_daemon()
-    except (ConnectionError, FileNotFoundError):pass
-    command(['systemctl',*user,'daemon-reload'])
-    command(['systemctl',*user,'enable','--now',name])
-    print('已安装 systemd 服务：'+name)
-    if user:print('若需退出登录后和开机时运行，请由管理员为该用户启用 loginctl enable-linger。')
+def set_stage(operation, folder, status, message):
+    operation.update(status=status, message=message, updatedAt=now())
+    private_json(STATE / "operation.json", operation)
+    private_json(folder / "operation.json", operation)
+    print(message, flush=True)
+
+
+def install(target, previous, running, network_enabled):
+    operation = {"id": str(uuid.uuid4()), "mode": MODE, "version": target["version"], "revision": target["revision"], "createdAt": now()}
+    folder = STATE / ("operation-" + operation["id"])
+    directory(folder)
+    operation["logFile"] = str(folder / "update.log")
+    stopped = False
+    try:
+        with (folder / "update.log").open("xb") as log, contextlib.ExitStack() as cleanup:
+            set_stage(operation, folder, "preparing", "检查现有部署、任务和备份空间。")
+            preflight(log)
+            if MODE == "docker":
+                print("校验并拉取新版本的 Docker 镜像。", flush=True)
+                prepare_images(target, log)
+            if clean_checkout() != previous:
+                raise RuntimeError("准备期间源码发生变更，请重新运行升级。")
+            private_json(folder / "target.json", target)
+            private_json(folder / "previous.json", {"revision": previous, "runtimeRevision": running, "mode": MODE})
+            for location in (STATE, previous_local_state()):
+                if location is None:
+                    continue
+                directory(location / "socket")
+                marker = location / "socket/maintenance"
+                private_json(marker, {"operationId": operation["id"]})
+                cleanup.callback(marker.unlink, missing_ok=True)
+            ensure_idle(log)
+            set_stage(operation, folder, "backing_up", "停止应用并备份数据库、密钥和配置。")
+            stopped = True
+            stop_applications(log)
+            backup_database(folder, log)
+            command(["git", "update-ref", "refs/skyshield/rollback", previous], log=log, timeout=15)
+            set_stage(operation, folder, "updating", f"安装 SkyShield {target['tag']}。")
+            if git_is_ancestor(previous, target["revision"]) and previous != target["revision"]:
+                command(["git", "-c", "core.hooksPath=/dev/null", "merge", "--ff-only", target["revision"]], log=log, timeout=120)
+            env = dict(os.environ, SKYSHIELD_UPDATER_CHILD="1")
+            if MODE == "docker":
+                private_json(STATE / "compose.release.json", image_overlay(target["images"], network_enabled=network_enabled))
+                env["SKYSHIELD_IMAGE_TAG"] = "sha-" + target["revision"][:12]
+                command(["bash", ROOT / "docker.sh", "pull"], env=env, log=log, timeout=3600)
+            else:
+                env["SKYSHIELD_UPDATE_REVISION"] = target["revision"]
+                command(["pnpm", "install", "--frozen-lockfile"], cwd=ROOT / "frontend", env=env, log=log)
+                command(["bash", ROOT / "local.sh", "start", "--no-tools-install"], env=env, log=log, timeout=7200)
+            set_stage(operation, folder, "verifying", "验证新版本服务。")
+            verify_runtime(target, log)
+            private_json(STATE / "installed.json", {"revision": target["revision"], "version": target["version"], "installedAt": now(), "mode": MODE})
+            set_stage(operation, folder, "succeeded", f"升级完成：SkyShield {target['tag']}。备份位于 {folder}")
+            try:
+                prune_frontend_builds(folder)
+                prune_successful_backups(folder)
+            except (OSError, RuntimeError, ValueError) as error:
+                print(f"未能清理部分历史构建或备份：{error}", file=sys.stderr)
+    except (Exception, KeyboardInterrupt) as error:
+        message = "升级已中断。" if isinstance(error, KeyboardInterrupt) else str(error)
+        set_stage(operation, folder, "needs_recovery" if stopped else "failed", message)
+        hint = "应用已进入停机或安装阶段，请按文档恢复。" if stopped else "升级未进入停机阶段。"
+        raise RuntimeError(f"{hint} 日志：{operation['logFile']}") from error
+
+
+def upgrade(confirmed):
+    with locked_deployment():
+        require_recovery_acknowledgement()
+        previous = clean_checkout()
+        module = import_deployment("deployment-network")
+        settings = module.settings(ROOT)
+        os.environ.update({key: settings[key] for key in module.PROXY_KEYS if key in settings})
+        target = latest_release()
+        running = current_revision()
+        revision = target["revision"]
+        if not may_upgrade_from(previous, revision) or (running and not may_upgrade_from(running, revision)):
+            raise RuntimeError("当前源码或部署版本与发布版本分叉，或已领先发布版本，无法快进升级。")
+        if running == revision:
+            retire_previous_updaters()
+            print(f"当前已安装最新正式版本 SkyShield {target['tag']}。")
+            return
+        inherit = settings.get("SKYSHIELD_INHERIT_HOST_NETWORK", "1")
+        if MODE == "docker" and inherit not in ("0", "1"):
+            raise RuntimeError("SKYSHIELD_INHERIT_HOST_NETWORK 只能是 0 或 1。")
+        print(f"部署方式 {MODE}，目标 SkyShield {target['tag']} ({revision[:12]})。升级会暂时中断服务。", flush=True)
+        if not confirmed:
+            if not sys.stdin.isatty():
+                raise RuntimeError("请在终端确认升级，或显式传入 --confirm。")
+            if input("确认升级？[y/N] ").strip().lower() not in {"y", "yes"}:
+                print("已取消升级。")
+                return
+        retire_previous_updaters()
+        require_recovery_acknowledgement()
+        install(target, previous, running, network_enabled=inherit == "1")
+
+
+def acknowledge_recovery():
+    with locked_deployment():
+        records = [(path, record) for path, record in operation_records() if record["status"] == "needs_recovery" or record["status"] in ACTIVE]
+        if not records:
+            raise RuntimeError("没有需要确认的恢复操作。")
+        for path, record in records:
+            retire_legacy_daemon(path.parent)
+            record.update(status="failed", message="管理员已确认恢复，可以重新升级。", updatedAt=now(), recoveryAcknowledgedAt=now())
+            private_json(path, record)
+            (path.parent / "socket/maintenance").unlink(missing_ok=True)
+        print("已解除恢复锁定。")
+
+
+def interrupt(_signal, _frame):
+    raise KeyboardInterrupt
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['start','serve','stop','install-service','status','check','apply','acknowledge-recovery'])
-    parser.add_argument('--mode',choices=['local','docker']);parser.add_argument('--confirm',action='store_true')
-    args=parser.parse_args()
+    global MODE, STATE
+    parser = argparse.ArgumentParser(prog="update.sh", description="在部署主机上安装 SkyShield 最新正式版本。")
+    parser.add_argument("action", nargs="?", default="upgrade", metavar="{upgrade,status,acknowledge-recovery}",
+                        choices=("upgrade", "apply", "status", "acknowledge-recovery", "serve"))
+    parser.add_argument("--mode", choices=("local", "docker"), help="本地或 Docker 部署；省略时自动识别")
+    parser.add_argument("--confirm", action="store_true", help="明确确认升级或恢复，无需交互")
+    args = parser.parse_args()
+    if args.action == "serve":
+        # A unit created by a previous release can still have this ExecStart.
+        # Exit successfully so Restart=on-failure does not schedule more checks.
+        return 0
+    signal.signal(signal.SIGTERM, interrupt)
+    signal.signal(signal.SIGHUP, interrupt)
     try:
-        select_state(select_cli_mode(args.mode))
-        if args.action in ('serve','start','install-service'):
-            if not args.mode:raise RuntimeError('请用 --mode local 或 --mode docker 指定部署方式。')
-            {'serve':serve,'start':start,'install-service':install_service}[args.action](args.mode);return 0
-        if args.action=='stop':stop_daemon();return 0
-        if args.action=='acknowledge-recovery':
-            if not args.confirm:raise RuntimeError('确认已完成手工恢复后，使用 --confirm 解除恢复状态。')
-            with (STATE/'update.lock').open('a') as lock:
-                fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-                operation=read_json(STATE/'operation.json',{})
-                if operation.get('status')!='needs_recovery':raise RuntimeError('没有需要确认的恢复操作。')
-                operation.update(status='failed',message='管理员已确认手工恢复，可重新检查更新。',recoveryAcknowledgedAt=now());private_json(STATE/'operation.json',operation)
-            return 0
-        if args.action=='apply':
-            if not args.confirm:raise RuntimeError('请先检查版本；使用 ./update.sh apply --confirm 确认更新。')
-            code,checked=rpc('/check',{})
-            if code!=200 or not checked.get('candidate'):raise RuntimeError('没有可安装的发布版本。')
-            code,result=rpc('/apply',{'requestId':str(uuid.uuid4()),'manifestDigest':checked['manifestDigest'],'confirmed':True})
-        else:code,result=rpc('/check',{}) if args.action=='check' else rpc('/status')
-        print(json.dumps(result,ensure_ascii=False,indent=2));return 0 if code==200 else 1
-    except (OSError,RuntimeError,ValueError) as error:
-        print('系统更新：'+str(error),file=sys.stderr);return 1
+        MODE = select_mode(args.mode)
+        STATE = state_path(MODE)
+        if args.action == "status":
+            records = [record for _, record in operation_records()]
+            record = max(records, key=lambda item: (item["status"] == "needs_recovery", item.get("updatedAt", "")), default=None)
+            print(json.dumps({"mode": MODE, "installed": read_json(STATE / "installed.json"), "operation": record}, ensure_ascii=False, indent=2))
+        elif args.action == "acknowledge-recovery":
+            if not args.confirm:
+                raise RuntimeError("确认服务已恢复后，请附加 --confirm。")
+            acknowledge_recovery()
+        else:
+            upgrade(args.confirm)
+    except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
+        print(f"系统更新：{error}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("已中断升级。", file=sys.stderr)
+        return 130
+    return 0
 
 
-if __name__=='__main__':raise SystemExit(main())
+if __name__ == "__main__":
+    raise SystemExit(main())

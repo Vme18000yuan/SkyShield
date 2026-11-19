@@ -33,11 +33,11 @@ The Docker stack uses a separately distributed closed-source LunaFox Agent image
 
 ## System updates
 
-For native and Docker updates, see the [system update guide](docs/16-系统更新.md).
-The host updater checks the SkyShield stable channel and installs a pinned
-release after administrator confirmation, with database/configuration backup
-and persistent progress. Older deployments require a one-time manual upgrade
-to install the new updater.
+Run `./update.sh` from the project directory on the deployment host to install
+the latest official GitHub release. The script confirms the upgrade, backs up
+the database and configuration, and verifies the new services. For deployment
+modes, first use on older deployments, and recovery, see the
+[system update guide](docs/16-系统更新.md).
 
 ## Source and licenses
 

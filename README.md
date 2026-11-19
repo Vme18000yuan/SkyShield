@@ -62,7 +62,7 @@ Linux 部署机需安装 Docker Engine、Docker Compose 插件、Python 3 和 Op
 
 首次启动使用自签名 HTTPS 证书。如需调整访问地址和证书名称，在 `.env` 配置 `PUBLIC_HOST` 和 `PUBLIC_PORT`。重启会中断运行中的任务。[配置示例](.env.example)
 
-Docker 镜像使用 `linux/amd64` 平台，四个应用镜像位于 Docker Hub 的 `solder110/skyshield-server`、`solder110/skyshield-frontend`、`solder110/skyshield-bootstrap` 和 `solder110/skyshield-nginx`。默认标签为 `latest`。固定版本时，选择四个镜像均已发布的 `sha-<12 位提交号>`，通过 `.env` 中的 `SKYSHIELD_IMAGE_TAG` 指定。稳定渠道记录了配套源码及镜像摘要。[稳定版本清单](updates/stable.json)
+Docker 镜像使用 `linux/amd64` 平台，四个应用镜像位于 Docker Hub 的 `solder110/skyshield-server`、`solder110/skyshield-frontend`、`solder110/skyshield-bootstrap` 和 `solder110/skyshield-nginx`。首次部署默认使用 `latest`。如需固定镜像标签，请通过 `.env` 的 `SKYSHIELD_IMAGE_TAG` 指定四个镜像均已发布的 `sha-<12 位提交号>`。
 
 默认配置继承 Linux 部署机的路由、VPN、DNS、hosts 和代理。宿主网络模式还会使用 3000、8080、9090 端口，PostgreSQL、Redis 和 Loki 通过项目网桥通信。遇到内网域名解析差异时，可运行 `./docker.sh network-check 内网域名或IP` 对比部署机与 Server 的结果。需要网桥隔离时可在 `.env` 设置 `SKYSHIELD_NETWORK_MODE=bridge`。[Docker 网络与部署说明](docs/15-Docker一键部署.md)
 
@@ -154,9 +154,9 @@ python3 scripts/test_server_image_tools.py solder110/skyshield-server:latest
 
 ## 系统更新
 
-系统更新入口位于“关于天穹”。本地与 Docker 部署均可通过宿主机独立更新进程检查稳定版本，
-由管理员确认后备份数据库与配置、安装版本并显示进度。首次接入、发布流程和失败恢复见
-[系统更新说明](docs/16-系统更新.md)。
+在部署主机的项目目录运行 `./update.sh` 安装 GitHub 最新正式发布。脚本会识别本地或 Docker 部署，
+确认后备份数据库与配置、安装版本并验证服务。同一目录存在两种部署时，附加 `--mode local` 或
+`--mode docker`。[系统更新说明](docs/16-系统更新.md)
 
 ## 来源与许可
 

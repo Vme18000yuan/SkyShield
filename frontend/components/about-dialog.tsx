@@ -3,7 +3,6 @@
 import { useState, type ReactElement } from "react"
 import { useTranslations } from "next-intl"
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog"
-import { SystemUpdatePanel } from "@/components/system-update-panel"
 import { AboutDialogBranding, AboutDialogFooter, AboutDialogHeader, AboutDialogLinks, Separator } from "@/components/about-dialog-sections"
 
 export function AboutDialog({ children }: { children: ReactElement }) {
@@ -16,7 +15,7 @@ export function AboutDialog({ children }: { children: ReactElement }) {
         <AboutDialogHeader t={t} />
         <div className="space-y-4">
           <AboutDialogBranding t={t} />
-          <SystemUpdatePanel enabled={open} />
+          <p className="text-center text-xs text-muted-foreground">{t("manualUpdate")}</p>
           <Separator />
           <AboutDialogLinks t={t} />
           <AboutDialogFooter t={t} />

@@ -29,7 +29,7 @@ SkyShield 的 Docker 入口为项目根目录的 `./docker.sh`，它使用
 日常启动和重启分别等价于 `./docker.sh run` 和 `./docker.sh restart`。
 它们复用当前部署的容器、镜像与数据卷，不重新构建、拉取镜像或执行初始化容器；
 需要先通过 `./docker.sh` 或 `./docker.sh pull` 完成部署。重启会中断正在执行的任务。
-更新镜像仍需执行 `./docker.sh pull`，更新本地构建仍需执行 `./docker.sh`。
+正式版本通过 `./update.sh --mode docker` 升级，[系统更新说明](16-系统更新.md)包含备份位置和恢复步骤。
 
 默认在 `0.0.0.0:8443` 监听，本机可访问 `https://127.0.0.1:8443`，
 其他设备可访问 `https://服务器IP:8443`；首次证书为自签名证书。
@@ -56,8 +56,8 @@ SkyShield 的 Docker 入口为项目根目录的 `./docker.sh`，它使用
 
 ## 部署机网络继承
 
-系统自动检查与管理员确认安装更新见[系统更新说明](16-系统更新.md)。更新成功后将镜像
-摘要固定在 `.local/updater/compose.release.json`，日常部署继续使用已确认的版本。
+`./update.sh --mode docker` 将安装的镜像摘要保存至 `.local/updater/compose.release.json`，
+日常部署继续使用已安装版本。
 
 验证范围：已完成脚本回归、生成配置和隔离容器的 DNS/hosts、TCP、动态 Engine 创建验证；
 官方 Agent 领取真实扫描任务、结果回传及完整一键部署仍待独立环境验证。

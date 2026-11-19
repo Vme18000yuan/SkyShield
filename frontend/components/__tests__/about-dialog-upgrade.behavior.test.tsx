@@ -329,7 +329,7 @@ describe("about dialog upgrade behavior", () => {
     )
 
     expect(screen.getByTestId("release-notes-unavailable")).toHaveTextContent("releaseNotesUnavailable")
-    expect(screen.getByRole("link", { name: "viewRelease" })).toHaveAttribute("href", "https://github.com/yyhuni/lunafox/releases/tag/v0.0.0-dev")
+    expect(screen.getByRole("link", { name: "viewRelease" })).toHaveAttribute("href", "https://github.com/Vme18000yuan/SkyShield/releases/tag/v0.0.0-dev")
   })
 
   it("loads the installed version when the about entry is opened", async () => {
@@ -372,17 +372,7 @@ describe("about dialog upgrade behavior", () => {
     expect(result.current.confirmOpen).toBe(false)
   })
 
-  it("opens from the sidebar about trigger and keeps upgrade confirmation stacked above the about dialog", async () => {
-    apiMocks.post.mockImplementation((path: string) => {
-      if (path === "/system:checkForUpdates") return Promise.resolve({ data: updateResult })
-      throw new Error(`unexpected POST ${path}`)
-    })
-    apiMocks.get.mockRejectedValue({
-      isAxiosError: true,
-      response: { status: 404, data: { error: { code: "NOT_FOUND", message: "No active upgrade operation." } } },
-      message: "not found",
-    })
-
+  it("opens from the sidebar with host upgrade instructions and no update requests", async () => {
     renderWithProviders(
       <SidebarProvider>
         <AboutDialog>
@@ -392,12 +382,9 @@ describe("about dialog upgrade behavior", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: "about" }))
-    expect(await screen.findByText(updateResult.currentVersion)).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: "checkUpdate" }))
-    expect(await screen.findByRole("button", { name: "startUpgrade" })).toBeEnabled()
-
-    fireEvent.click(screen.getByRole("button", { name: "startUpgrade" }))
-    expect(await screen.findByRole("alertdialog", { name: "confirmUpgradeTitle" })).toBeInTheDocument()
+    expect(await screen.findByText("manualUpdate")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "checkUpdate" })).not.toBeInTheDocument()
+    expect(apiMocks.get).not.toHaveBeenCalled()
+    expect(apiMocks.post).not.toHaveBeenCalled()
   })
 })

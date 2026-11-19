@@ -200,10 +200,6 @@ const nonPairedLoadingGeometryOwnerReasons = Object.freeze({
 })
 
 const routeNonPairedLoadingGeometryOwnerReasons = Object.freeze({
-  route_system_upgrade: Object.freeze({
-    "system-upgrade-status":
-      "The upgrade status route is a standalone server-operation surface with no paired skeleton/content geometry; its stable owner is the first-screen handoff.",
-  }),
   route_login: Object.freeze({
     "login-page-content":
       "The public login route exposes a resolved-only ContentReveal while the boot layer owns its initial visual wait; it never mounts paired skeleton/content structure states.",
@@ -944,16 +940,17 @@ const routeLoadingContractsWithoutGeometry = [
   },
   {
     id: "route_system_upgrade",
-    classification: "direct-client-route",
-    expectedFirstScreenLayer: "route",
-    allowedLayers: ["boot", "route", "interaction"],
-    expectedOwners: [
-      {
-        owner: "system-upgrade-status",
-        layer: "route",
-        intent: "status",
-      },
-    ],
+    classification: "server-redirect",
+    expectedFirstScreenLayer: null,
+    allowedLayers: [],
+    expectedOwners: [],
+    redirectTarget: "/overview/",
+    geometry: {
+      disposition: "not-applicable",
+      reason: "System updates run on the deployment host. The old status route redirects to the overview.",
+      owners: [],
+      excludedOwners: [],
+    },
   },
   {
     id: "route_organizations",

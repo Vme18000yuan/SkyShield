@@ -16,13 +16,9 @@
 - `ProtectedAuthLayout` MUST NOT observe sidebar pending state to hide, replace, or overlay the committed content region. Any first-screen skeleton belongs to the destination page or workspace through its own query/loading state or `ContentHandoff`; a destination that is already ready may commit content directly.
 - If transport-level `401` handling runs while the browser is already on a public auth route such as `/login/`, it must redirect to the canonical `/login/` path without wrapping the current login URL into a new `returnTo`. Recursive `/login/?returnTo=/login?...` redirects are invalid.
 
-## Upgrade Route Gate
-
-- For a non-terminal `full` upgrade, `UpgradeRouteBoundary` owns protected-shell route locking. It keeps ordinary route content out of the tree and redirects to `/system-upgrade/`.
-- A host-confirmed non-terminal `frontend_only` Operation does not lock ordinary authenticated routes or redirect solely because the frontend container is being replaced. Until the FULL operation projection establishes that scope, the boundary retains the full-upgrade fail-closed behavior.
-- A normal entry without a persisted `operationId` still checks the server active-operation view, but the unresolved lookup is a background recovery check and MUST NOT render an upgrade-specific blocker by itself. If it discovers a non-terminal full or unclassified Operation, the boundary takes ownership immediately and applies the lock/redirect path.
-- `/system-upgrade/` is a standalone authenticated status surface, so the sidebar and header are not mounted while the upgrade page is active. Its route root owns a finite keyboard-focusable vertical viewport; do not depend on the global body or protected-shell scroll owner to reach status details and footer actions. Refresh and short network outages continue to use the persisted Operation ID and do not invent a failure state.
-- Terminal Operations (`succeeded`, `failed`, `needs_recovery`, and `needs_attention`) release the ordinary shell. The completion dialog is mounted only after leaving the status route and acknowledges a successful Operation once per Operation ID.
+System upgrades run on the deployment host. The old `/system-upgrade/` route
+redirects to the overview, and the protected shell renders without polling
+for an upgrade operation.
 
 ## Login Boot Handoff
 

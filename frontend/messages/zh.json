@@ -1,30 +1,4 @@
 {
-  "systemUpdate": {
-    "current": "当前版本",
-    "local": "本地部署",
-    "docker": "Docker 部署",
-    "available": "可用更新",
-    "latest": "已是发布版本",
-    "check": "检查更新",
-    "install": "安装更新",
-    "reload": "刷新界面",
-    "requestFailed": "更新服务暂时不可用，请稍后重试；旧版本需先按更新文档升级部署脚本和服务。",
-    "reconnecting": "服务正在重启，连接恢复后会继续显示进度。",
-    "automaticCheck": "每小时自动检查稳定版；安装需要管理员确认。",
-    "confirmTitle": "安装系统更新",
-    "confirmDescription": "更新会检查任务、备份数据库及配置，然后停止应用、安装并检查新版本。期间界面会暂时断开。本地部署还会编译源码；失败后的数据库恢复需根据备份手工处理。",
-    "acknowledge": "已确认维护时间，并了解更新会暂时中断服务。",
-    "cancel": "取消",
-    "queued": "已排队",
-    "preparing": "准备更新",
-    "backing_up": "备份数据",
-    "updating": "安装新版本",
-    "restarting": "重启服务",
-    "verifying": "检查新版本",
-    "succeeded": "更新完成",
-    "failed": "更新失败",
-    "needs_recovery": "需要恢复"
-  },
   "infoGather": {
     "title": "信息收集",
     "description": "查看信息收集 Agent 的运行结果，确认无法自动归集的资产与风险。",
@@ -5283,6 +5257,7 @@
   },
   "about": {
     "title": "关于天穹",
+    "manualUpdate": "请在部署主机的项目目录运行 ./update.sh 升级系统。",
     "productName": "天穹",
     "description": "攻击面管理平台",
     "currentVersion": "当前版本",

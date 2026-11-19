@@ -23,6 +23,7 @@ import (
 	spacesearchrouter "github.com/yyhuni/lunafox/server/internal/modules/spacesearch/router"
 	systemrouter "github.com/yyhuni/lunafox/server/internal/modules/system/router"
 	upgraderouter "github.com/yyhuni/lunafox/server/internal/modules/upgrade/router"
+	"github.com/yyhuni/lunafox/server/internal/productupdate"
 )
 
 func registerRoutes(engine *gin.Engine, d *deps, jwtMiddleware gin.HandlerFunc) {
@@ -40,9 +41,8 @@ func registerRoutes(engine *gin.Engine, d *deps, jwtMiddleware gin.HandlerFunc) 
 	api := engine.Group("/v1")
 	protected := api.Group("")
 	protected.Use(jwtMiddleware)
-	if d.productUpdateHandler != nil {
-		protected.Use(d.productUpdateHandler.Maintenance)
-		d.productUpdateHandler.Register(protected)
+	if d.updateMaintenanceFile != "" {
+		protected.Use(productupdate.Maintenance(d.updateMaintenanceFile))
 	}
 	if d.mcpClients != nil {
 		d.mcpClients.RegisterManagement(protected)

@@ -89,7 +89,7 @@ if "port" in args and "nginx" in args:
                 result = self.run_docker(action, owners={"lunafox_data": "lunafox"})
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("lunafox_data", result.stderr)
-                self.assertFalse((self.root / ".local").exists())
+                self.assertEqual([path.name for path in (self.root / ".local").iterdir()], ["deployment.lock"])
                 self.assertFalse(any("up" in call for call in self.calls()))
 
     def test_fresh_start_generates_private_keys_once_and_reuses_them(self):
@@ -149,7 +149,7 @@ if "port" in args and "nginx" in args:
         starts = [call[-1] for call in calls if call[0] == "start"]
         self.assertEqual(starts, ["fixture-" + service for service in ("postgres", "redis", "loki", "server", "frontend", "nginx", "agent")])
         self.assertFalse(any("up" in call or "pull" in call or "--build" in call or "down" in call for call in calls))
-        self.assertFalse((self.root / ".local").exists())
+        self.assertEqual([path.name for path in (self.root / ".local").iterdir()], ["deployment.lock"])
 
     def test_restart_stops_and_starts_existing_services_without_reinitializing(self):
         services = ("postgres", "redis", "loki", "server", "frontend", "nginx", "agent")

@@ -1,5 +1,5 @@
-import { SystemUpgradeStatus } from "@/components/system-upgrade-status"
+import { redirect } from "next/navigation"
 
 export default function SystemUpgradePage() {
-  return <SystemUpgradeStatus />
+  redirect("/overview/")
 }

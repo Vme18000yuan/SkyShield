@@ -96,7 +96,6 @@ print_access_address() {
 
 start_existing_runtime() {
   local service
-  python3 "$project_dir/scripts/system-update.py" start --mode docker
   if [[ "$network_adapter" == true ]]; then
     start_runtime_service network-helper
     wait_runtime_service network-helper
@@ -130,9 +129,7 @@ case "${1:-start}" in
     done
     bash "$project_dir/scripts/tianqiong-dev-init.sh"
     if ! command -v python3 >/dev/null; then printf '网络配置继承需要 Python 3，请先安装 python3。\n' >&2; exit 1; fi
-    if [[ "${SKYSHIELD_UPDATER_CHILD:-}" != 1 ]]; then
-      python3 "$project_dir/scripts/system-update.py" start --mode docker
-    fi
+    mkdir -p -m 700 "$project_dir/.local/updater/socket"
     network_args=(prepare --root "$project_dir")
     compose=(docker compose -f "$project_dir/compose.tianqiong.yaml")
     if [[ "$action" == "pull" ]]; then
@@ -148,8 +145,8 @@ case "${1:-start}" in
     if [[ "$action" == "pull" ]]; then
       "${compose[@]}" pull
       if [[ -n "$network_override" ]]; then
-        helper_image="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["services"]["network-helper"]["image"])' "${network_override%.yaml}.json")"
-        if ! docker run --rm --network none --entrypoint /usr/local/bin/skyshield-network-helper "$helper_image" --help >/dev/null 2>&1; then
+        helper_image="$("${compose[@]}" config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["network-helper"]["image"])')"
+        if ! docker run --rm --network none --pull never --entrypoint /usr/local/bin/skyshield-network-helper "$helper_image" --help >/dev/null 2>&1; then
           printf '当前 Bootstrap 镜像不包含网络适配器；请使用匹配本次源码的新版镜像标签，或显式关闭 SKYSHIELD_INHERIT_HOST_NETWORK。\n' >&2
           exit 1
         fi
