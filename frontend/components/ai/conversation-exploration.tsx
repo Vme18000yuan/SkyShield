@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getConversationTimeline } from "@/services/conversation-exploration.service"
-import type { TimelineText } from "@/types/conversation-exploration.types"
+import type { ConversationExploreRun, TimelineText } from "@/types/conversation-exploration.types"
 import { TimelineMap } from "./conversation-timeline-map"
 import { TimelineDetails, TimelineSteps, type TraceSelection } from "./conversation-timeline-steps"
 import { timelineTaskTitle } from "./conversation-timeline-labels"
@@ -57,17 +57,29 @@ function ConversationTimelineBody({ conversationId, user, running }: { conversat
   })
   const graph = query.data
   const active = graph?.run
+  const activeId = active?.id
   const select = (item: TraceSelection) => { if (active) setSelection({ run: active.id, item }) }
   const selectRun = (id: string, cursor = beforeRun) => {
     setRun(id); setBeforeRun(cursor); setFrom(1); setFindingCursors([""]); setSelection(null)
   }
-  const go = React.useCallback((step: number) => {
-    if (!active) return
-    setRun(active.id); setFrom(step); setSelection(null)
-    listRef.current?.scrollIntoView({ block: "nearest" })
-  }, [active?.id])
+  const go = React.useCallback((step: number, revealSteps = true) => {
+    if (!activeId) return
+    setRun(activeId); setFrom(step); setSelection(null)
+    if (revealSteps) listRef.current?.scrollIntoView({ block: "nearest" })
+  }, [activeId])
   const record = (title: string, item?: TimelineText) => select({ kind: "record", title, text: item?.text || t("noSummary"), id: item?.activityId })
   const stateLabel = (state: string) => t.has(`states.${state}`) ? t(`states.${state}`) : state
+  const runLabel = (entry: ConversationExploreRun) => `${new Date(entry.createdAt).toLocaleString(locale)} · ${stateLabel(entry.status)}`
+  const reason = active?.terminalReason && active.terminalReason !== active.status
+    ? (t.has(`terminalReasons.${active.terminalReason}`) ? t(`terminalReasons.${active.terminalReason}`) : active.terminalReason)
+    : undefined
+  const openRequest = () => record(t("request"), graph?.request)
+  const openOutcome = () => {
+    if (!active || !graph) return
+    record([t("runOutcome"), stateLabel(active.status), reason].filter(Boolean).join(" · "), {
+      ...graph.conclusion, text: graph.conclusion.text || t(active.running ? "inProgress" : "noConclusion"),
+    })
+  }
   const selectFindingPage = (forward: boolean) => {
     if (!active) return
     setRun(active.id); setSelection(null)
@@ -86,37 +98,30 @@ function ConversationTimelineBody({ conversationId, user, running }: { conversat
     const refreshed = graph?.findings.find(f => f.receiptId === selectedItem.finding.receiptId)
     if (refreshed) detail = { kind: "finding", finding: refreshed }
   }
-  return <div className="flex h-[76vh] min-h-0 flex-col gap-3">
+  return <div className="flex h-[76vh] min-h-0 min-w-0 flex-col gap-3">
     <div className="flex flex-wrap items-center gap-2">
       <Select value={active?.id ?? ""} onValueChange={id => selectRun(id)} disabled={!choices.length}>
-        <SelectTrigger aria-label={t("selectRun")} className="w-full sm:w-auto"><SelectValue placeholder={t("selectRun")} /></SelectTrigger>
-        <SelectContent>{choices.map(r => <SelectItem key={r.id} value={r.id}>{new Date(r.createdAt).toLocaleString(locale)} · {stateLabel(r.status)}</SelectItem>)}</SelectContent>
+        <SelectTrigger aria-label={t("selectRun")} className="w-full sm:w-auto"><SelectValue placeholder={t("selectRun")}>{active ? runLabel(active) : undefined}</SelectValue></SelectTrigger>
+        <SelectContent>{choices.map(r => <SelectItem key={r.id} value={r.id}>{runLabel(r)}</SelectItem>)}</SelectContent>
       </Select>
       <Button variant="outline" size="sm" onClick={() => { if (!run && !beforeRun && from === 1) void query.refetch(); selectRun("", "") }}>{t("latestRun")}</Button>
       {graph?.runsBefore && <Button variant="ghost" size="sm" onClick={() => selectRun("", graph.runsBefore)}>{t("olderRuns")}</Button>}
       <Button size="icon-sm" variant="ghost" aria-label={t("refresh")} onClick={() => void query.refetch()} disabled={query.isFetching}><RefreshCw className="size-4" /></Button>
+      {reason && <span className="text-xs text-muted-foreground">{reason}</span>}
+      {active && <div className="ms-auto flex items-center gap-1">
+        <Button size="sm" variant="ghost" aria-haspopup="dialog" onClick={openRequest}><Flag className="size-3.5" />{t("request")}</Button>
+        <Button size="sm" variant="ghost" aria-haspopup="dialog" onClick={openOutcome}><CheckCircle2 className="size-3.5" />{t("runOutcome")}</Button>
+      </div>}
     </div>
     {query.isError ? <div role="alert" className="p-4">{t("loadError")} <Button size="sm" variant="link" onClick={() => void query.refetch()}>{t("refresh")}</Button></div>
-      : !graph ? <p>{t("loading")}</p> : !active || !counts ? <p>{t("empty")}</p> : <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-        <div className="grid gap-2 md:grid-cols-2">
-          <button className="min-w-0 rounded-xl border bg-card p-3 text-left" onClick={() => record(t("request"), graph.request)}>
-            <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><Flag className="size-4" />{t("request")}</span>
-            <span className="mt-1.5 line-clamp-2 break-words text-sm">{graph.request.text || t("noSummary")}</span>
-          </button>
-          <button className="min-w-0 rounded-xl border bg-card p-3 text-left" onClick={() => record(t("runOutcome"), graph.conclusion)}>
-            <span className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground"><CheckCircle2 className="size-4" />{t("runOutcome")} · {stateLabel(active.status)}
-              {active.terminalReason && active.terminalReason !== active.status && <span title={active.terminalReason}>{t.has(`terminalReasons.${active.terminalReason}`) ? t(`terminalReasons.${active.terminalReason}`) : active.terminalReason}</span>}
-            </span>
-            <span className="mt-1.5 line-clamp-2 break-words text-sm">{graph.conclusion.text || t(active.running ? "inProgress" : "noConclusion")}</span>
-          </button>
-        </div>
+      : !graph ? <p>{t("loading")}</p> : !active || !counts ? <p>{t("empty")}</p> : <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto pr-1">
+        <TimelineMap key={active.id} graph={graph} from={from} choose={go} goal={openRequest} outcome={openOutcome} receipts={finding => select({ kind: "finding", finding })} />
         <div className="flex flex-wrap gap-x-4 gap-y-1 px-1 text-xs text-muted-foreground" aria-label={t("wholeRun")}>
           <strong className="text-foreground">{t("wholeRun")} · {t("stepCount", { count: counts.steps })}</strong>
           {[["returned", counts.returned], ["failed", counts.failed], ["interrupted", counts.interrupted], ["pending", counts.pending], ["missing", counts.missing], ["overlap", counts.overlap]].map(([label, value]) => Number(value) > 0 && <span key={label}>{t(`totals.${label}`)} {value}</span>)}
           <span>{t("registrations", { count: graph.findingCount })}</span>
           {counts.steps > 0 && <span>{counts.measured ? t("timedSteps", { count: counts.measured, total: counts.steps }) : t("eventOrderOnly")}</span>}
         </div>
-        <TimelineMap key={active.id} graph={graph} from={from} choose={go} goal={() => record(t("request"), graph.request)} outcome={() => record(t("runOutcome"), graph.conclusion)} receipts={finding => select({ kind: "finding", finding })} />
         <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,29%)]">
           <section ref={listRef} className="min-w-0 space-y-2 rounded-xl border bg-muted/20 p-3" aria-busy={query.isPlaceholderData}>
             {selectedSection && <header data-slot="section-task" className="space-y-2 border-b pb-3">

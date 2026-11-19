@@ -78,6 +78,7 @@ export function TimelineDetails({ selected, user, conversation, close, go }: { s
   const locale = useLocale()
   const step = selected.kind === "step" ? selected.step : null
   const finding = selected.kind === "finding" ? selected.finding : step?.finding
+  const sources = new Map(finding?.evidenceSources?.map(source => [source.activityId, source] as const))
   const format = (value: string) => new Date(value).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3 } as Intl.DateTimeFormatOptions)
   return <Sheet open onOpenChange={open => { if (!open) close() }}><SheetContent side="right" className="flex w-full flex-col sm:max-w-xl">
     <SheetHeader><SheetTitle>{step ? t("stepNumber", { number: step.number }) : finding ? t("evidenceBranch") : t("sourceRecord")}</SheetTitle>
@@ -96,7 +97,7 @@ export function TimelineDetails({ selected, user, conversation, close, go }: { s
         <p>{t("vulnerabilityId", { id: finding.vulnerabilityId })} · {t("currentReview")} · {t(finding.reviewed ? "states.reviewed" : "states.pending_review")}</p>
         {finding.step ? <Button size="sm" variant="outline" onClick={() => go(finding.step!)}>{t("goToStep", { number: finding.step })}</Button> : <p>{t("unlinked")}</p>}
         {finding.sourceActivityId && selected.kind === "finding" && <SavedRecord user={user} conversation={conversation} id={finding.sourceActivityId} label={t("callRecord")} />}
-        {(finding.evidenceSources ?? []).map(source => <div key={source.activityId} className="space-y-1">
+        {Array.from(sources.values(), source => <div key={source.activityId} className="space-y-1">
           <Button size="sm" variant="link" onClick={() => go(source.step)}>{t("sharedEvidence", { number: source.step })}</Button>
           <SavedRecord user={user} conversation={conversation} id={source.activityId} label={t("returnRecord")} />
         </div>)}

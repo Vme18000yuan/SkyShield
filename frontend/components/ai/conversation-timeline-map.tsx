@@ -1,104 +1,171 @@
 "use client"
 
 import * as React from "react"
-import { Background, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react"
+import {
+  Background, Controls, getViewportForBounds, Handle, MiniMap,
+  Position, ReactFlow, useReactFlow, useStore,
+} from "@xyflow/react"
+import type { NodeProps } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { BookOpenCheck, Flag, Layers3, Link2 } from "lucide-react"
+import { ArrowLeft, ArrowRight, Compass, FileCheck2, Flag, GitBranch, Target } from "lucide-react"
 import { useTranslations } from "next-intl"
-import type { ConversationTimeline, TimelineFinding } from "@/types/conversation-exploration.types"
-import { timelineTaskTitle } from "./conversation-timeline-labels"
+import { Button } from "@/components/ui/button"
+import { relations, sectionWindowSize, stages, timelineDiagram, type MapNode, type TimelineMapProps } from "./conversation-timeline-graph"
+import styles from "./conversation-timeline-map.module.css"
 
-type CardData = { kind: "goal" | "section" | "finding" | "end"; label: string; title: string; context?: string; meta?: string; selected?: boolean; open: () => void }
-type MapNode = Node<CardData, "stage">
-const icons = { goal: Flag, section: Layers3, finding: Link2, end: BookOpenCheck }
-const cardWidth = 228
-const spacing = 255
-const windowSize = 12
-const zoom = .96
+const icons = { goal: Target, section: Compass, finding: FileCheck2, end: Flag }
+const kindOrder = ["goal", "section", "finding", "end"] as const
+const relationOrder = ["order", "registration", "citation"] as const
+const fitPadding = { x: "22px", top: "46px", bottom: "32px" } as const
+const fitOptions = { padding: fitPadding, maxZoom: 1 }
 
-function Stage({ data }: NodeProps<MapNode>) {
-  const Icon = icons[data.kind]
-  return <div className="relative" style={{width: cardWidth}}>
-    <Handle type="target" position={Position.Left} className="opacity-0" />
-    <Handle type="target" position={Position.Top} id="evidence-in" className="opacity-0" />
-    <button type="button" onClick={data.open} aria-pressed={data.selected} className={`flex h-[100px] w-full flex-col gap-1 rounded-lg border bg-card px-3 py-2 text-left shadow-sm focus-visible:ring-2 focus-visible:ring-ring ${data.selected ? "border-primary ring-1 ring-primary/40" : data.kind === "finding" ? "border-amber-500/60" : "border-border"}`}>
-      <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><Icon className="size-3.5" />{data.label}</span>
-      <strong className="line-clamp-2 break-words text-[13px] font-semibold leading-4" title={data.title}>{data.title}</strong>
-      {data.context && <span className="block max-w-full truncate text-[11px] text-muted-foreground" title={data.context}>{data.context}</span>}
-      {data.meta && <span className="mt-auto block max-w-full truncate text-[10px] text-muted-foreground">{data.meta}</span>}
-    </button>
-    <Handle type="source" position={Position.Right} className="opacity-0" />
-    <Handle type="source" position={Position.Bottom} id="evidence-out" className="opacity-0" />
-  </div>
+function Stage({ data, targetPosition = Position.Top }: NodeProps<MapNode>) {
+  const t = useTranslations("aiChat.exploration")
+  const { kind, badge } = data
+  const Icon = icons[kind]
+  return (
+    <div className={styles.node} style={{ "--stage-color": stages[kind].color } as React.CSSProperties}>
+      {kind !== "goal" && kind !== "finding" && <Handle id="previous" type="target" position={Position.Left} className={styles.port} />}
+      {(kind === "goal" || kind === "section") && <Handle id="next" type="source" position={Position.Right} className={styles.port} />}
+      {kind === "section" && <>
+        <Handle id="branch-up" type="source" position={Position.Top} className={styles.branchPort} />
+        <Handle id="branch-down" type="source" position={Position.Bottom} className={styles.branchPort} />
+      </>}
+      {kind === "finding" && <>
+        <Handle id="receipt" type="target" position={targetPosition} className={styles.port} />
+        <Handle id="citation" type="target" position={targetPosition} className={styles.citationPort} style={{ opacity: data.cited ? 1 : 0 }} />
+      </>}
+      <button type="button" className={"nopan " + styles.card} aria-pressed={data.selected}
+        aria-haspopup={kind === "section" ? undefined : "dialog"} onClick={data.open}>
+        <span className="flex w-full items-center gap-2">
+          <span className={styles.glyph}><Icon size={15} strokeWidth={2} aria-hidden /></span>
+          <span className="min-w-0 flex-1 truncate text-xs font-semibold">{t(stages[kind].label)}</span>
+          {badge && <span className={styles.badge} data-tone={badge.tone}>{badge.text}</span>}
+        </span>
+        <strong className={styles.headline} title={data.title}>{data.title}</strong>
+        {data.context && <span className={styles.context} title={data.context}>{data.context}</span>}
+        {(data.label || data.meta) && <span className={styles.footer}>
+          <span className="min-w-0 truncate" title={data.label}>{data.label}</span>
+          {data.meta && <span className="shrink-0 tabular-nums" title={data.meta}>{data.meta}</span>}
+        </span>}
+      </button>
+    </div>
+  )
 }
 const nodeTypes = { stage: Stage }
 
-export function TimelineMap({ graph, from, choose, goal, outcome, receipts }: { graph: ConversationTimeline; from: number; choose: (n: number) => void; goal: () => void; outcome: () => void; receipts: (finding: TimelineFinding) => void }) {
-  const t = useTranslations("aiChat.exploration")
-  const scroller = React.useRef<HTMLDivElement>(null)
-  const currentIndex = Math.max(0, graph.sections.findIndex(s => s.first <= from && s.last >= from))
-  const offset = Math.floor(currentIndex / windowSize) * windowSize
-  const visibleSections = React.useMemo(() => graph.sections.slice(offset, offset + windowSize), [graph.sections, offset])
-  const column = currentIndex - offset + 1
+// Leave room for the legend and controls. For a long trace, open on the current
+// section at reading size; the fit control can still show the entire window.
+function frameAxis(start: number, length: number, anchor: number, size: number, inset: number, zoom: number) {
+  const first = inset - start * zoom
+  const last = size - inset - (start + length) * zoom
+  return first <= last ? (first + last) / 2 : Math.min(first, Math.max(last, size / 2 - anchor * zoom))
+}
+
+function MapViewport({ nodes, focusId, offset }: { nodes: MapNode[]; focusId: string; offset: number }) {
+  const { viewportInitialized, getNodesBounds, getViewport, setViewport } = useReactFlow<MapNode>()
+  const width = useStore(state => state.width)
+  const height = useStore(state => state.height)
+  const last = React.useRef<{ focusId: string; offset: number; width: number; height: number } | null>(null)
+
   React.useEffect(() => {
-    const el = scroller.current
-    if (!el || !column) return
-    const left = 14 + column * spacing * zoom
-    if (left < el.scrollLeft || left + cardWidth * zoom > el.scrollLeft + el.clientWidth) el.scrollLeft = Math.max(0, left - 28)
-  }, [column, offset])
-  const { nodes, edges } = React.useMemo(() => {
-    const nodes: MapNode[] = []
-    const edges: Edge[] = []
-    const add = (id: string, column: number, y: number, data: CardData) => nodes.push({ id, type: "stage", position: { x: column * spacing, y }, width: cardWidth, height: 100, data })
-    const link = (source: string, target: string, evidence = false) => edges.push({
-      id: `${source}:${target}`, source, target, type: "smoothstep",
-      sourceHandle: evidence ? "evidence-out" : undefined, targetHandle: evidence ? "evidence-in" : undefined,
-      style: { stroke: evidence ? "#b7791f" : "#64748b", strokeWidth: 1.5, strokeDasharray: evidence ? undefined : "4 4" },
-      markerEnd: { type: MarkerType.ArrowClosed, color: evidence ? "#b7791f" : "#64748b" },
-    })
-    add("request", 0, 0, offset ? { kind: "section", label: t("taskPurpose.navigation"), title: t("taskPurpose.earlier"), open: () => choose(graph.sections[offset - 1].first) }
-      : { kind: "goal", label: t("request"), title: graph.request.text || t("noSummary"), open: goal })
-    let previous = "request"
-    visibleSections.forEach((section, i) => {
-      const id = `section-${section.first}`
-      const range = t("range", { first: section.first, last: section.last })
-      const secondary = section.purpose?.topics?.[1]
-      const context = section.purpose?.subject ?? (secondary ? t(`taskPurpose.topics.${secondary}`) : undefined)
-      add(id, i + 1, 0, { kind: "section", label: t(`taskPurpose.sources.${section.purpose?.source ?? "unknown"}`), title: timelineTaskTitle(t, section.purpose), context, meta: section.findings ? `${range} · ${t("registrations", { count: section.findings })}` : range, selected: section.first <= from && section.last >= from, open: () => choose(section.first) })
-      link(previous, id)
-      previous = id
-      const listed = graph.findings.filter(f => f.step && f.step >= section.first && f.step <= section.last)
-      const visible = listed.length ? listed : section.firstFinding ? [section.firstFinding] : []
-      // Each branch belongs to one receipt, including when several findings
-      // share the same section. The receipt list exposes the complete page.
-      for (const [row, f] of visible.slice(0, 2).entries()) {
-        const target = `receipt-${f.receiptId}`
-        add(target, i + 1, 118 + row * 112, { kind: "finding", label: t("stepNumber", { number: f.step! }), title: f.title, open: () => receipts(f) })
-        const origins = new Set([id])
-        for (const ref of f.evidenceSources ?? []) {
-          const origin = visibleSections.find(s => s.first <= ref.step && ref.step <= s.last)
-          if (origin) origins.add(`section-${origin.first}`)
-        }
-        for (const source of origins) link(source, target, true)
+    if (!viewportInitialized || !width || !height) return
+    const previous = last.current
+    const changedWindow = !previous || previous.offset !== offset || previous.width !== width
+    last.current = { focusId, offset, width, height }
+    if (!changedWindow && previous.focusId === focusId) {
+      // When new receipts add a lane, keep the same point under the centre
+      // of the canvas, including after the reader has panned or zoomed.
+      if (previous.height !== height) {
+        const view = getViewport()
+        void setViewport({ ...view, y: view.y + (height - previous.height) / 2 })
       }
+      return
+    }
+    const focus = nodes.find(node => node.id === focusId)
+    if (!focus) return
+    const bounds = getNodesBounds(nodes)
+    const overview = getViewportForBounds(bounds, width, height, 0.1, 1, fitPadding)
+    if (changedWindow && overview.zoom >= 0.74) {
+      void setViewport(overview)
+      return
+    }
+    const box = getNodesBounds([focus])
+    const view = getViewport()
+    const left = view.x + box.x * view.zoom
+    const top = view.y + box.y * view.zoom
+    if (!changedWindow && left >= 8 && top >= 44 && left + box.width * view.zoom <= width - 8 && top + box.height * view.zoom <= height - 42) return
+    const zoom = changedWindow ? Math.min(0.92, (width - 24) / box.width) : view.zoom
+    void setViewport({
+      zoom,
+      x: frameAxis(bounds.x, bounds.width, box.x + box.width / 2, width, 22, zoom),
+      y: frameAxis(bounds.y, bounds.height, box.y + box.height / 2, height, 52, zoom),
     })
-    const following = graph.sections[offset + windowSize]
-    add("outcome", visibleSections.length + 1, 0, following ? { kind: "section", label: t("taskPurpose.navigation"), title: t("taskPurpose.later"), open: () => choose(following.first) }
-      : { kind: "end", label: t("runOutcome"), title: t.has(`states.${graph.run?.status}`) ? t(`states.${graph.run?.status}`) : graph.run?.status || "", open: outcome })
-    link(previous, "outcome")
-    return { nodes, edges }
-  }, [graph, from, choose, goal, outcome, receipts, t, visibleSections, offset])
-  return <div className="overflow-hidden rounded-xl border bg-muted/25">
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-card px-3 py-2 text-xs text-muted-foreground">
-      <strong className="mr-auto font-medium text-foreground">{t("mainline")}</strong><span className="flex items-center gap-1.5"><i className="w-5 border-t border-dashed border-slate-500" />{t("order")}</span>
-      {graph.findingCount > 0 && <span className="flex items-center gap-1.5"><i className="w-5 border-t border-amber-600" />{t("citation")}</span>}
-    </div>
-    <div ref={scroller} tabIndex={0} className="overflow-x-auto" aria-label={t("mainline")}>
-      <div className={visibleSections.some(s => s.findings > 1) ? "h-[23rem]" : visibleSections.some(s => s.findings) ? "h-64" : "h-36"} style={{ minWidth: (visibleSections.length + 2) * spacing * zoom + 28 }}>
-      <ReactFlow<MapNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodesDraggable={false} nodesConnectable={false} edgesFocusable={false} defaultViewport={{ x: 14, y: 16, zoom }} minZoom={.75} maxZoom={1.6} zoomOnScroll={false} preventScrolling={false} deleteKeyCode={null}>
-        <Background gap={18} size={1} /><Controls showInteractive={false} orientation="horizontal" position="bottom-right" />
-      </ReactFlow>
+  }, [focusId, getNodesBounds, getViewport, height, nodes, offset, setViewport, viewportInitialized, width])
+  return null
+}
+
+export function TimelineMap({ graph, from, choose, goal, outcome, receipts }: TimelineMapProps) {
+  const t = useTranslations("aiChat.exploration")
+  const id = React.useId()
+  const { nodes, edges, usedRelations, offset, focusId } = React.useMemo(
+    () => timelineDiagram({ graph, from, choose, goal, outcome, receipts }, t),
+    [graph, from, choose, goal, outcome, receipts, t],
+  )
+  const count = graph.sections.length
+  const previous = graph.sections[offset - 1]
+  const next = graph.sections[offset + sectionWindowSize]
+  const kinds = new Set(nodes.map(node => node.data.kind))
+  const lanes = nodes.some(node => node.position.y < 0) ? 2 : Number(kinds.has("finding"))
+  return (
+    <section className={styles.frame} aria-label={t("mainline")}>
+      <header className={styles.header}>
+        <h3 className="flex shrink-0 items-center gap-2 text-sm font-semibold">
+          <GitBranch size={16} className="text-muted-foreground" aria-hidden />{t("mainline")}
+        </h3>
+        <span className="text-xs tabular-nums text-muted-foreground">{count > sectionWindowSize
+          ? t("map.window", { first: offset + 1, last: Math.min(offset + sectionWindowSize, count), total: count })
+          : t("map.sections", { count })}</span>
+        {count > sectionWindowSize && <nav className="flex items-center gap-1" aria-label={t("taskPurpose.navigation")}>
+          <Button size="icon-sm" variant="outline" aria-label={t("taskPurpose.earlier")} disabled={!previous} onClick={() => previous && choose(previous.first, false)}><ArrowLeft size={14} /></Button>
+          <Button size="icon-sm" variant="outline" aria-label={t("taskPurpose.later")} disabled={!next} onClick={() => next && choose(next.first, false)}><ArrowRight size={14} /></Button>
+        </nav>}
+        <div className={styles.edgeLegend}>
+          {relationOrder.filter(key => usedRelations.has(key)).map(key => <span key={key} className="inline-flex items-center gap-1.5">
+            <svg width="21" height="8" aria-hidden><path d="M1 4h19" fill="none" stroke={relations[key].color} strokeWidth="2" strokeDasharray={relations[key].dash} strokeLinecap="round" /></svg>
+            {t(relations[key].label)}
+          </span>)}
+        </div>
+      </header>
+      <div className={styles.board}>
+        <div className={styles.legend} role="group" aria-label={t("map.legend")}>
+          {kindOrder.filter(kind => kinds.has(kind)).map(kind => {
+            const Icon = icons[kind]
+            return <span key={kind} className="inline-flex items-center gap-1.5">
+              <span className={styles.legendGlyph} style={{ background: stages[kind].color }}><Icon size={12} aria-hidden /></span>
+              {t(stages[kind].label)}
+            </span>
+          })}
+        </div>
+        <div className={styles.canvas} data-lanes={lanes}>
+          <ReactFlow<MapNode> id={id} nodes={nodes} edges={edges} nodeTypes={nodeTypes} minZoom={0.1} maxZoom={1.8}
+            nodesDraggable={false} nodesConnectable={false} nodesFocusable={false} edgesFocusable={false}
+            elementsSelectable={false} deleteKeyCode={null} zoomOnScroll={false} preventScrolling={false}
+            attributionPosition="top-right"
+            ariaLabelConfig={{
+              "controls.ariaLabel": t("map.controls"), "controls.zoomIn.ariaLabel": t("map.zoomIn"),
+              "controls.zoomOut.ariaLabel": t("map.zoomOut"), "controls.fitView.ariaLabel": t("map.fit"),
+              "minimap.ariaLabel": t("map.minimap"),
+            }}>
+            <MapViewport nodes={nodes} focusId={focusId} offset={offset} />
+            <Background gap={18} size={1} color="var(--trace-grid)" />
+            <Controls className={styles.controls} orientation="horizontal" showInteractive={false} fitViewOptions={fitOptions} />
+            {nodes.length > 2 && <MiniMap<MapNode> pannable zoomable className={styles.minimap}
+              style={{ width: 118, height: 68 }} maskColor="var(--trace-mask)" nodeBorderRadius={5}
+              nodeColor={node => stages[node.data.kind].color} />}
+          </ReactFlow>
+        </div>
       </div>
-    </div>
-  </div>
+    </section>
+  )
 }
