@@ -20,6 +20,9 @@ describe("live step detail", () => {
     read.mockResolvedValue(graph)
     readDetail.mockResolvedValue("Current task: Compare invoice totals")
     renderWithProviders(<ConversationExploration conversationId="purpose" running={false} />)
+    await screen.findByRole("button", { name: "steps" })
+    expect(screen.queryByRole("heading", { name: "Compare invoice totals" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "steps" }))
     expect(await screen.findByRole("heading", { name: "Compare invoice totals" })).toBeVisible()
     expect(readDetail).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole("button", { name: "taskPurpose.basisRecord" }))
@@ -28,6 +31,8 @@ describe("live step detail", () => {
     fireEvent.click(summary)
     expect(await within(drawer).findByText("Current task: Compare invoice totals")).toBeVisible()
     expect(readDetail).toHaveBeenCalledWith("purpose", "19", expect.any(AbortSignal))
+    fireEvent.click(within(drawer).getByRole("button", { name: "close" }))
+    expect(await screen.findByRole("heading", { name: "Compare invoice totals" })).toBeVisible()
   })
   it("restores the pinned run and step for the current user and conversation", async () => {
     const id="10000000-0000-4000-9000-000000000033"
@@ -51,6 +56,7 @@ describe("live step detail", () => {
     }
     read.mockResolvedValue(fixture)
     const { queryClient } = renderWithProviders(<ConversationExploration conversationId="fixture" running />)
+    fireEvent.click(await screen.findByRole("button", { name: "steps" }))
     fireEvent.click(await screen.findByText("Inspect fixture"))
     const drawer = await screen.findByRole("dialog")
     expect(within(drawer).queryByText("returnRecord")).not.toBeInTheDocument()

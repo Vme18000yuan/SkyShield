@@ -1,13 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
 import { useLocale, useTranslations } from "next-intl"
-import { ChevronRight, Clock3, Link2 } from "lucide-react"
+import { ChevronRight, Clock, semanticIcons } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { VulnerabilityEvidencePanel } from "@/components/vulnerabilities/vulnerability-evidence-panel"
-import { getConversationExplorationDetail } from "@/services/conversation-exploration.service"
+import { useConversationTimelineSource } from "@/hooks/use-conversation-timeline"
 import type { TimelineFinding, TimelineStep } from "@/types/conversation-exploration.types"
 import { timelineCaption } from "./conversation-timeline-labels"
 
@@ -19,18 +18,18 @@ export type TraceSelection =
 function StepCard({ step, select }: { step: TimelineStep; select: (s: TraceSelection) => void }) {
   const t = useTranslations("aiChat.exploration")
   const title = timelineCaption(t, step)
-  return <article className="rounded-lg border bg-card p-3">
-    <button className="block w-full text-left focus-visible:ring-2 focus-visible:ring-ring" onClick={() => select({ kind: "step", step })}>
+  return <article className="rounded-lg border bg-card">
+    <Button size="action-card" variant="ghost" className="block text-left" onClick={() => select({ kind: "step", step })}>
       <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="font-mono">#{step.number}</span><span>{step.tool}</span>
         {step.round && <span>{t("roundBatch", { round: step.round, batch: step.batch ?? 0 })}</span>}
-        {step.overlap && <span className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-300"><Clock3 className="size-3" />{t("overlap")}</span>}
-        <span className={`ml-auto ${step.state === "failed" || step.state === "interrupted" ? "text-amber-700 dark:text-amber-300" : ""}`}>{t(`states.${step.state}`)}</span>
+        {step.overlap && <span className="inline-flex items-center gap-1 text-muted-foreground"><Clock className="size-3" />{t("overlap")}</span>}
+        <span className={`ml-auto ${step.state === "failed" || step.state === "interrupted" ? "text-destructive" : ""}`}>{t(`states.${step.state}`)}</span>
       </span>
       <strong className="mt-1.5 block break-words text-sm font-medium">{title}</strong>
       <span className="mt-1 block break-words text-xs text-muted-foreground">{[step.outcomeCount !== undefined ? t("resultCount", { count: step.outcomeCount }) : "", step.outcome].filter(Boolean).join(" · ") || (step.resultId ? t("recordAvailable") : t("noResult"))}</span>
-    </button>
-    {step.finding && <Button size="sm" variant="link" className="mt-1 h-auto max-w-full justify-start p-0 text-amber-700 dark:text-amber-300" onClick={() => select({ kind: "finding", finding: step.finding! })}><Link2 className="size-3" /><span className="truncate">{step.finding.title}</span></Button>}
+    </Button>
+    {step.finding && <Button size="content" variant="link" layout="textCellLink" onClick={() => select({ kind: "finding", finding: step.finding! })}><semanticIcons.action.view className="size-3" /><span className="truncate">{step.finding.title}</span></Button>}
   </article>
 }
 
@@ -67,7 +66,7 @@ export function TimelineSteps({ steps, select }: { steps: TimelineStep[]; select
 function SavedRecord({ user, conversation, id, label }: { user: number; conversation: string; id: string; label: string }) {
   const t = useTranslations("aiChat.exploration")
   const [open, setOpen] = React.useState(false)
-  const query = useQuery({ queryKey: ["conversation-source", user, conversation, id], enabled: open, gcTime: 0, retry: false, queryFn: ({ signal }) => getConversationExplorationDetail(conversation, id, signal) })
+  const query = useConversationTimelineSource(user, conversation, id, open)
   return <details onToggle={event => setOpen(event.currentTarget.open)} className="rounded-md border p-2 text-sm">
     <summary className="cursor-pointer font-medium">{label} <span className="font-mono text-xs text-muted-foreground">#{id}</span></summary>
     {open && (query.isError ? <Button size="sm" variant="link" onClick={() => void query.refetch()}>{t("retryDetail")}</Button> : query.isPending ? <p>{t("loading")}</p> : <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded bg-muted p-2 font-mono text-xs">{query.data || t("noSummary")}</pre>)}

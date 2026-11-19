@@ -5,12 +5,12 @@
 services:
   server:
     environment:
-      OAST_PUBLIC_URL: ${OAST_PUBLIC_URL:?Set the callback origin, e.g. http://callback.example.com:8081}
-      OAST_HTTP_LISTEN: 0.0.0.0:8081
+      OAST_PUBLIC_URL: ${OAST_PUBLIC_URL:?Set the callback origin, e.g. http://callback.example.com:8899}
+      OAST_HTTP_LISTEN: 0.0.0.0:8899
       OAST_DNS_LISTEN: 0.0.0.0:5353
       OAST_DNS_ZONE: ${OAST_DNS_ZONE:?Set the delegated DNS zone}
       OAST_DNS_ANSWER_IP: ${OAST_DNS_ANSWER_IP:?Set the public A or AAAA answer IP}
-    ports:
-      - "${OAST_HTTP_PORT:-8081}:8081/tcp"
+    ports: !override
+      - "${OAST_HTTP_PORT:-8899}:8899/tcp"
       - "${OAST_DNS_PORT:-53}:5353/udp"
       - "${OAST_DNS_PORT:-53}:5353/tcp"

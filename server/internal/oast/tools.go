@@ -18,7 +18,7 @@ func (s *Service) Tools(user int) []tool.CoreTool {
 		return map[string]any{"type": "string", "description": description}
 	}
 	makeTool := func(name, description string, readOnly bool, properties map[string]any, required []string, run func(context.Context, Scope, json.RawMessage, *tool.ToolContext) (any, error)) tool.CoreTool {
-		return tool.Build(tool.Spec{Name: name, Description: description, Schema: map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false},
+		return tool.Build(tool.Spec{Name: name, Description: description, Prompt: s.toolGuidance(name), Schema: map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false},
 			ReadOnly: func(json.RawMessage) bool { return readOnly }, Concurrent: func(json.RawMessage) bool { return readOnly },
 			Permissions: func(context.Context, json.RawMessage, permission.Context) permission.Decision {
 				return permission.Allowed()
@@ -44,6 +44,12 @@ func (s *Service) Tools(user int) []tool.CoreTool {
 			},
 		})
 	}
+	status := makeTool("oast_status", "检查内置反连服务的配置、支持协议和回连地址适用范围。需要带外测试时先查询；此操作不创建探针，不验证目标侧网络连通性。", true, map[string]any{}, []string{}, func(_ context.Context, _ Scope, raw json.RawMessage, _ *tool.ToolContext) (any, error) {
+		if decodeTool(raw, &struct{}{}) != nil {
+			return nil, ErrInvalid
+		}
+		return s.capabilities(), nil
+	})
 	create := makeTool("oast_create", "为当前对话或 AI 任务申请 SSRF/XXE 等带外测试的独立反连地址。每个测试点单独创建，用 label 说明目标和参数。只把返回地址发送给已授权的测试目标；不要自行访问测试地址，以免污染证据。未配置 DNS 时只返回 HTTP URL。", false, map[string]any{"label": property("测试点标签，最多200个字符"), "ttl_seconds": map[string]any{"type": "integer", "minimum": 60, "maximum": 86400, "description": "有效期秒数，默认3600"}}, []string{"label"}, func(ctx context.Context, scope Scope, raw json.RawMessage, tc *tool.ToolContext) (any, error) {
 		var in struct {
 			Label string `json:"label"`
@@ -85,7 +91,7 @@ func (s *Service) Tools(user int) []tool.CoreTool {
 		err := s.Revoke(ctx, user, scope, in.ID)
 		return map[string]bool{"revoked": err == nil}, err
 	})
-	return []tool.CoreTool{create, list, poll, revoke}
+	return []tool.CoreTool{status, create, list, poll, revoke}
 }
 func decodeTool(raw json.RawMessage, out any) error {
 	if len(raw) > 4096 {

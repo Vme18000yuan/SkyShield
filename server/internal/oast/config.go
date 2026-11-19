@@ -20,6 +20,32 @@ type Config struct {
 var dnsLabel = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 var tokenPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
 
+// DeploymentConfig derives the callback origin from the configured listener,
+// never from the Web port. An explicit reverse-proxy/public URL takes priority.
+func DeploymentConfig(siteURL string, c Config) (Config, error) {
+	c.HTTPListen = strings.TrimSpace(c.HTTPListen)
+	if strings.EqualFold(c.HTTPListen, "off") {
+		c.HTTPListen = ""
+	}
+	if strings.TrimSpace(c.PublicURL) == "" {
+		c.PublicURL = siteURL
+		if c.HTTPListen != "" {
+			_, port, err := net.SplitHostPort(c.HTTPListen)
+			if err != nil || !validPort(port) {
+				return c, fmt.Errorf("invalid OAST_HTTP_LISTEN")
+			}
+			site, err := url.Parse(siteURL)
+			if err != nil || site.Hostname() == "" {
+				return c, fmt.Errorf("PUBLIC_URL must contain a host to derive OAST_PUBLIC_URL")
+			}
+			// The dedicated listener serves HTTP; HTTPS needs an explicit URL
+			// pointing at a TLS reverse proxy, independent of the Web's scheme.
+			c.PublicURL = (&url.URL{Scheme: "http", Host: net.JoinHostPort(site.Hostname(), port)}).String()
+		}
+	}
+	return c.Normalize()
+}
+
 func (c Config) Normalize() (Config, error) {
 	c.PublicURL = strings.TrimRight(strings.TrimSpace(c.PublicURL), "/")
 	c.DNSZone = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(c.DNSZone), "."))

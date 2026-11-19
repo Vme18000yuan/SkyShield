@@ -57,6 +57,7 @@ class DeploymentNetworkTests(unittest.TestCase):
         self.assertEqual(config['allowedCIDRs'], ['172.30.240.0/24', '172.17.0.0/16', '127.0.0.0/8', '::1/128'])
         self.assertEqual(config['engineNetworkMode'], 'host')
         self.assertEqual(overlay['services']['server']['network_mode'], 'host')
+        self.assertEqual(overlay['services']['server']['ports'], [])
         self.assertEqual(overlay['services']['agent']['network_mode'], 'host')
         self.assertEqual(overlay['services']['frontend']['network_mode'], 'host')
         self.assertEqual(overlay['services']['nginx']['network_mode'], 'host')

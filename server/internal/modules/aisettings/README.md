@@ -15,6 +15,13 @@ they are enabled in the catalog. They retain explicit-ID tools such as
 Task runners retain their real graph-backed handlers; global fallback metadata
 must not replace them.
 
+OAST tools include `oast_status`, `oast_create`, `oast_list`, `oast_poll`, and
+`oast_revoke`. Native tool `Prompt` guidance survives catalog description
+overrides and supplies the autonomous probe lifecycle to the model. Stored
+Agent prompts, descriptions, disabled flags and bindings remain authoritative;
+the new status tool is seeded once using the usual catalog policy. Reporter
+defaults include only status/list/poll, while test roles receive the full set.
+
 ## Built-in Skills
 
 `resources/skills` is copied from ARTEX and mounted in the Server image at `/usr/local/share/lunafox/skills`. `resources/skills/manifest.json` is the shipped catalog and default Agent-visibility map. Startup inserts each skill once by `builtin_key`; later startup preserves administrators' enabled and visibility changes. Built-in skills are initially imported once. Administrators can edit or delete them, and subsequent startups preserve those changes; custom skills remain user-managed.

@@ -14,6 +14,7 @@ const (
 	DefaultWorkflowDefinitionsRoot  = "/usr/local/share/lunafox/workflows"
 	DefaultNucleiPocWorkspaceRoot   = "/var/lib/lunafox/nuclei-poc-workspaces"
 	DefaultUpgradeDeploymentRoot    = "/opt/lunafox"
+	DefaultOASTHTTPListen           = "0.0.0.0:8899"
 
 	// Bound untrusted OCI package downloads and cache writes unless deployment
 	// configuration explicitly opts into a larger quota.
@@ -61,6 +62,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("WORKFLOW_DEFINITIONS_ROOT", DefaultWorkflowDefinitionsRoot)
 	v.SetDefault("NUCLEI_POC_WORKSPACE_ROOT", DefaultNucleiPocWorkspaceRoot)
 	v.SetDefault("PUBLIC_URL", "")
+	v.SetDefault("OAST_HTTP_LISTEN", DefaultOASTHTTPListen)
 	v.SetDefault("SCAN_HISTORY_RETENTION_MODE", "enforce")
 	v.SetDefault("SCAN_HISTORY_RETENTION_INTERVAL", "1h")
 	v.SetDefault("SCAN_HISTORY_RETENTION_DURATION", "720h")
@@ -144,5 +146,6 @@ func GetDefaults() *Config {
 			SocketPath:          DefaultUpgradeDeploymentRoot + "/.lunafox/upgrade/upgrader.sock",
 		},
 		PublicURL: "",
+		OAST:      OASTConfig{HTTPListen: DefaultOASTHTTPListen},
 	}
 }

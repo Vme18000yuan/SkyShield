@@ -37,7 +37,7 @@
 
 对话顶部和任务详情都有 **反连监控** 入口。AI 使用 `oast_create` 申请测试地址、`oast_poll` 增量查询证据；探针自动关联当前会话或任务，支持有效期和撤销，证据持久化保存。
 
-默认复用站点的 HTTP/HTTPS 入口。远程目标测试前，配置目标能访问的 `OAST_PUBLIC_URL`；可选独立 HTTP 监听和带 NS 委派的 DNS 服务。Docker 环境变量已接入 `.env.example`，本地启动可直接传入同名环境变量。[配置、部署和验证说明](server/internal/oast/README.md)
+默认使用独立 HTTP 8899 端口接收反连，与 Web 界面分开。远程目标测试前，配置目标能访问的 `OAST_PUBLIC_URL`；可选带 NS 委派的 DNS 服务。Docker 环境变量已接入 `.env.example`，本地启动可直接传入同名环境变量。[配置、部署和验证说明](server/internal/oast/README.md)
 
 ## 本地一键部署
 

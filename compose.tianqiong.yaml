@@ -14,7 +14,7 @@ x-server-env: &server-env
   PUBLIC_HOST: ${PUBLIC_HOST:-localhost}
   PUBLIC_PORT: ${PUBLIC_PORT:-8443}
   OAST_PUBLIC_URL: ${OAST_PUBLIC_URL:-}
-  OAST_HTTP_LISTEN: ${OAST_HTTP_LISTEN:-}
+  OAST_HTTP_LISTEN: ${OAST_HTTP_LISTEN:-0.0.0.0:8899}
   OAST_DNS_LISTEN: ${OAST_DNS_LISTEN:-}
   OAST_DNS_ZONE: ${OAST_DNS_ZONE:-}
   OAST_DNS_ANSWER_IP: ${OAST_DNS_ANSWER_IP:-}
@@ -125,6 +125,8 @@ services:
       context: .
       dockerfile: server/Dockerfile
     environment: *server-env
+    ports:
+      - "8899:8899/tcp"
     secrets: [db_password, jwt_secret, ai_encryption_key]
     volumes:
       - ./.local/updater/socket:/run/skyshield-updater:ro

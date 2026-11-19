@@ -3,6 +3,20 @@
   "description": "Unified UI foundation exception ledger. Counts represent the approved initial baseline and verify mode fails when matching findings exceed these counts.",
   "exceptions": [
     {
+      "id": "button-conversation-graph-node",
+      "check": "button",
+      "rule": "adhoc-button-size",
+      "count": 1,
+      "status": "keep",
+      "scope": "components/ai/conversation-timeline-map.tsx",
+      "pattern": "styles.nodeContent",
+      "class": "runtime-calculated-geometry",
+      "owner": "ai-conversation-exploration",
+      "reason": "The graph node uses the shared Button for keyboard activation. Its body fills the fixed React Flow node below a separate draggable header; CSS is restricted to graph-node content and does not style toolbar controls.",
+      "reviewTrigger": "When graph node dimensions, drag handles or click targets change.",
+      "recoveryPath": "Move the node body into a shared graph-card primitive if another graph needs this interaction."
+    },
+    {
       "id": "motion-asset-monitor-recent-discoveries",
       "check": "motion",
       "rule": "prefers-reduced-motion",

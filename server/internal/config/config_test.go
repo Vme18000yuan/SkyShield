@@ -25,7 +25,7 @@ func TestConfigDefaults(t *testing.T) {
 		"ENGINE_PACKAGE_CACHE_ROOT",
 		"WORKFLOW_DEFINITIONS_ROOT",
 		"JWT_SECRET",
-		"PUBLIC_URL",
+		"PUBLIC_URL", "OAST_HTTP_LISTEN",
 		"SCAN_HISTORY_RETENTION_MODE",
 		"SCAN_HISTORY_RETENTION_INTERVAL",
 		"SCAN_HISTORY_RETENTION_DURATION",
@@ -59,6 +59,9 @@ func TestConfigDefaults(t *testing.T) {
 	}
 
 	defaults := GetDefaults()
+	if cfg.OAST.HTTPListen != DefaultOASTHTTPListen || defaults.OAST.HTTPListen != DefaultOASTHTTPListen {
+		t.Fatalf("OAST must default to the dedicated 8899 listener: loaded=%q defaults=%q", cfg.OAST.HTTPListen, defaults.OAST.HTTPListen)
+	}
 
 	// Test Server defaults
 	if cfg.Server.Port != defaults.Server.Port {

@@ -101,7 +101,7 @@ func NativeToolSeeds(extra []tool.CoreTool) []ToolRecord {
 		}
 		if strings.HasPrefix(item.Name(), "oast_") {
 			agents = []string{"mainagent", "auto", "pentest", "planner", "worker", "retester"}
-			if item.Name() == "oast_list" || item.Name() == "oast_poll" {
+			if item.Name() == "oast_status" || item.Name() == "oast_list" || item.Name() == "oast_poll" {
 				agents = append(agents, "reporter")
 			}
 		}

@@ -109,7 +109,9 @@ CREATE FUNCTION tianqiong_ai.finding_case_review_conversation_visible(uuid) RETU
 		return s
 	}
 	s := newService()
-	exerciseChatTools(t, s, run, conversation)
+	exerciseAutonomousTools(t, s, run, Scope{ConversationID: conversation}, "pentest")
+	exerciseAutonomousTools(t, s, taskRun, Scope{TaskID: 41}, "worker")
+	exerciseAutonomousTools(t, s, mainRun, Scope{TaskID: 41}, "mainagent")
 	scope := Scope{ConversationID: conversation}
 	for _, item := range []struct {
 		run      string

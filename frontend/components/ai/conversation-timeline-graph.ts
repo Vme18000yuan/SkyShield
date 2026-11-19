@@ -1,5 +1,6 @@
 import { MarkerType, Position, type Edge, type Node } from "@xyflow/react"
 import type { ConversationTimeline, TimelineFinding, TimelineSection } from "@/types/conversation-exploration.types"
+import { explorationLayout } from "./conversation-graph-layout"
 import { timelineTaskTitle } from "./conversation-timeline-labels"
 
 export type TimelineMapProps = {
@@ -17,16 +18,17 @@ type Translator = {
 }
 
 export const stages = {
-  goal: { color: "#12856d", label: "request" },
-  section: { color: "#526bd0", label: "map.section" },
-  finding: { color: "#be4d71", label: "map.finding" },
-  end: { color: "#805cb1", label: "runOutcome" },
+  goal: { color: "var(--chart-2)", label: "request" },
+  section: { color: "var(--chart-1)", label: "map.section" },
+  finding: { color: "var(--destructive)", label: "map.finding" },
+  end: { color: "var(--chart-3)", label: "runOutcome" },
 } as const
 
 export const relations = {
-  order: { color: "#7888c1", dash: "5 4", label: "order" },
-  registration: { color: "#cc6986", dash: undefined, label: "map.registration" },
-  citation: { color: "#b0833a", dash: "2 4", label: "citation" },
+  contains: { color: "var(--chart-2)", dash: undefined, label: "map.contains" },
+  registration: { color: "var(--destructive)", dash: undefined, label: "map.registration" },
+  citation: { color: "var(--chart-4)", dash: "4 4", label: "citation" },
+  summary: { color: "var(--chart-3)", dash: "4 4", label: "map.summary" },
 } as const
 
 type Badge = { text: string; tone: "neutral" | "live" | "ok" | "attention" }
@@ -38,17 +40,16 @@ type StageData = {
   context?: string
   badge?: Badge
   selected?: boolean
+  ordinal?: number
   cited?: boolean
   open: () => void
 }
 export type MapNode = Node<StageData, "stage">
 type MapRelation = keyof typeof relations
 
-const nodeWidth = 230
-const nodeHeight = 120
-const columnGap = 74
-const branchGap = 52
-export const sectionWindowSize = 12
+export const nodeWidth = 244
+export const nodeHeight = 140
+export const sectionWindowSize = 6
 
 function sectionBadge(section: TimelineSection, t: Translator): Badge | undefined {
   for (const key of ["failed", "interrupted", "pending", "missing"] as const) {
@@ -76,79 +77,71 @@ export function timelineDiagram({ graph, from, choose, goal, outcome, receipts }
   const edges: Edge[] = []
   const usedRelations = new Set<MapRelation>()
 
-  function add(id: string, x: number, y: number, data: StageData) {
-    const targetPosition = data.kind === "finding" ? (y < 0 ? Position.Bottom : Position.Top) : Position.Left
-    nodes.push({ id, type: "stage", position: { x, y }, width: nodeWidth, height: nodeHeight, targetPosition, data })
+  function add(id: string, data: StageData) {
+    nodes.push({ id, type: "stage", position: { x: 0, y: 0 }, width: nodeWidth, height: nodeHeight,
+      dragHandle: ".trace-drag-handle", sourcePosition: Position.Right, targetPosition: Position.Left, data })
   }
 
-  function link(source: string, target: string, relation: MapRelation, above = false) {
-    const { color, dash } = relations[relation]
+  function link(source: string, target: string, relation: MapRelation) {
+    const { color, dash, label } = relations[relation]
     usedRelations.add(relation)
     edges.push({
       id: `${source}:${relation}:${target}`, source, target, type: "default",
-      sourceHandle: relation === "order" ? "next" : above ? "branch-up" : "branch-down",
-      targetHandle: relation === "order" ? "previous" : relation === "citation" ? "citation" : "receipt",
-      style: { stroke: color, strokeWidth: relation === "registration" ? 2 : 1.6, strokeDasharray: dash, strokeLinecap: "round" },
+      sourceHandle: "out", targetHandle: relation === "citation" ? "citation" : "in",
+      label: t(label), labelShowBg: false, labelStyle: { fill: color, fontSize: 10, fontWeight: 500 },
+      style: { stroke: color, strokeWidth: 1.5, strokeDasharray: dash, strokeOpacity: 0.65 },
       markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color },
     })
   }
 
-  let previous: string | undefined
-  let x = 0
-  function mainline(id: string, data: StageData) {
-    add(id, x, 0, data)
-    if (previous) link(previous, id, "order")
-    previous = id
-    x += nodeWidth + columnGap
-  }
-
-  if (!offset) mainline("request", {
+  add("request", {
     kind: "goal", title: graph.request.text || t("noSummary"), open: goal,
-    label: graph.request.activityId ? t("sourceRecord") : undefined,
-    meta: graph.request.activityId ? `#${graph.request.activityId}` : undefined,
+    label: graph.request.activityId ? t("sourceRecord") : undefined, meta: graph.request.activityId ? `#${graph.request.activityId}` : undefined,
   })
-  for (const section of sections) {
+  for (const [row, section] of sections.entries()) {
     const id = `section-${section.first}`
-    const branchX = x + columnGap
-    const secondary = section.purpose?.topics?.[1]
-    const range = t("range", { first: section.first, last: section.last })
-    mainline(id, {
-      kind: "section", title: timelineTaskTitle(t, section.purpose),
+    add(id, {
+      kind: "section", title: timelineTaskTitle(t, section.purpose), ordinal: offset + row + 1,
       label: t(`taskPurpose.sources.${section.purpose?.source ?? "unknown"}`),
-      context: section.purpose?.subject || (secondary ? t(`taskPurpose.topics.${secondary}`) : undefined),
-      meta: section.findings ? `${range} · ${t("registrations", { count: section.findings })}` : range,
-      badge: sectionBadge(section, t), selected: section.first <= from && from <= section.last, open: () => choose(section.first),
+      context: section.purpose?.subject,
+      meta: t("range", { first: section.first, last: section.last }),
+      badge: sectionBadge(section, t), selected: section.first <= from && from <= section.last,
+      open: () => choose(section.first),
     })
-
-    const listed = graph.findings.filter(f => f.step !== undefined && section.first <= f.step && f.step <= section.last)
-    const findings = listed.length ? listed : section.firstFinding ? [section.firstFinding] : []
-    // One lane on each side keeps a second receipt out of the first one's path.
-    // The receipt list under the map still exposes every registration.
-    for (const [row, finding] of findings.slice(0, 2).entries()) {
-      const target = `receipt-${finding.receiptId}`
-      const above = row === 1
-      const sources = new Set<string>()
-      for (const ref of finding.evidenceSources ?? []) {
-        const origin = sections.find(s => s.first <= ref.step && ref.step <= s.last)
-        if (origin) sources.add(`section-${origin.first}`)
-      }
-      add(target, branchX, (above ? -1 : 1) * (nodeHeight + branchGap), {
-        kind: "finding", title: finding.title, cited: sources.size > 0, open: () => receipts(finding),
-        label: finding.step ? t("stepNumber", { number: finding.step }) : t("unlinked"), meta: `#${finding.vulnerabilityId}`,
-        badge: { text: t(finding.reviewed ? "states.reviewed" : "states.pending_review"), tone: finding.reviewed ? "ok" : "neutral" },
-      })
-      link(id, target, "registration", above)
-      for (const source of sources) link(source, target, "citation", above)
+    link("request", id, "contains")
+  }
+  // Keep every loaded receipt, including multiple receipts from one task and
+  // receipts without a recorded source. A missing link is never synthesized.
+  const findings = new Map<string, TimelineFinding>()
+  for (const section of sections) if (section.firstFinding) findings.set(section.firstFinding.receiptId, section.firstFinding)
+  for (const finding of graph.findings) {
+    if (finding.step === undefined || sections.some(section => section.first <= finding.step! && finding.step! <= section.last)) {
+      findings.set(finding.receiptId, finding)
     }
   }
-  if (offset + sections.length === graph.sections.length) {
-    const run = graph.run
-    mainline("outcome", {
-      kind: "end", title: graph.conclusion.text || t(run?.running ? "inProgress" : "noConclusion"), open: outcome,
-      label: graph.conclusion.activityId ? t("sourceRecord") : undefined,
-      meta: graph.conclusion.activityId ? `#${graph.conclusion.activityId}` : undefined,
-      badge: outcomeBadge(run, t),
+  for (const finding of findings.values()) {
+    const target = `receipt-${finding.receiptId}`
+    const source = sections.find(section => finding.step !== undefined && section.first <= finding.step && finding.step <= section.last)
+    const sources = new Set<string>()
+    for (const ref of finding.evidenceSources ?? []) {
+      const origin = sections.find(section => section.first <= ref.step && ref.step <= section.last)
+      if (origin) sources.add(`section-${origin.first}`)
+    }
+    add(target, {
+      kind: "finding", title: finding.title, cited: sources.size > 0, open: () => receipts(finding),
+      label: finding.step ? t("stepNumber", { number: finding.step }) : t("unlinked"), meta: `#${finding.vulnerabilityId}`,
+      badge: { text: t(finding.reviewed ? "states.reviewed" : "states.pending_review"), tone: finding.reviewed ? "ok" : "neutral" },
     })
+    if (source) link(`section-${source.first}`, target, "registration")
+    for (const origin of sources) link(origin, target, "citation")
   }
+  add("outcome", {
+    kind: "end", title: graph.conclusion.text || t(graph.run?.running ? "inProgress" : "noConclusion"), open: outcome,
+    label: graph.conclusion.activityId ? t("sourceRecord") : undefined, meta: graph.conclusion.activityId ? `#${graph.conclusion.activityId}` : undefined,
+    badge: outcomeBadge(graph.run, t),
+  })
+  link("request", "outcome", "summary")
+  const layout = explorationLayout(nodes.map(node => node.id), edges)
+  for (const node of nodes) node.position = layout.get(node.id)!
   return { nodes, edges, usedRelations, offset, focusId }
 }

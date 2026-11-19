@@ -948,11 +948,11 @@ func buildDependencies(infra *infra, cfg *config.Config) (*deps, error) {
 	if !ok {
 		return nil, fmt.Errorf("OAST task authorization is unavailable")
 	}
-	oastPublicURL := cfg.OAST.PublicURL
-	if oastPublicURL == "" {
-		oastPublicURL = cfg.PublicURL
+	oastConfig, err := oast.DeploymentConfig(cfg.PublicURL, oast.Config{PublicURL: cfg.OAST.PublicURL, HTTPListen: cfg.OAST.HTTPListen, DNSListen: cfg.OAST.DNSListen, DNSZone: cfg.OAST.DNSZone, DNSAnswerIP: cfg.OAST.DNSAnswerIP})
+	if err != nil {
+		return nil, fmt.Errorf("configure OAST: %w", err)
 	}
-	oastService, err := oast.New(oast.NewPostgresStore(infra.db), oast.Config{PublicURL: oastPublicURL, HTTPListen: cfg.OAST.HTTPListen, DNSListen: cfg.OAST.DNSListen, DNSZone: cfg.OAST.DNSZone, DNSAnswerIP: cfg.OAST.DNSAnswerIP}, oastConversations, oastTasks)
+	oastService, err := oast.New(oast.NewPostgresStore(infra.db), oastConfig, oastConversations, oastTasks)
 	if err != nil {
 		return nil, fmt.Errorf("configure OAST: %w", err)
 	}

@@ -6,7 +6,8 @@ import type { ConversationTimeline, TimelineFinding } from "@/types/conversation
 const capture = vi.hoisted(() => vi.fn())
 vi.mock("@xyflow/react", () => ({
   ReactFlow: (props: unknown) => { capture(props); return null },
-  Background: () => null, Controls: () => null, Handle: () => null, MiniMap: () => null,
+  Background: () => null, Controls: () => null, Handle: () => null, MiniMap: () => null, Panel: () => null,
+  useNodesState: (nodes: unknown[]) => [nodes, vi.fn(), vi.fn()],
   MarkerType: { ArrowClosed: "arrow" }, Position: { Top: "top", Bottom: "bottom", Left: "left", Right: "right" },
 }))
 vi.mock("next-intl", () => ({ useTranslations: () => Object.assign((key: string) => key, { has: () => true }) }))
@@ -27,11 +28,11 @@ it("shows a distinct source branch for each receipt in the same range", () => {
   expect(origins("receipt-3")).toEqual(["section-1","section-33"])
   expect(origins("receipt-4")).toEqual(["section-17","section-33","section-33"])
   const ownLinks = edges.filter((edge: { source: string; target: string }) => edge.source === "section-33" && edge.target === "receipt-4")
-  expect(ownLinks.map((edge: { targetHandle: string }) => edge.targetHandle).sort()).toEqual(["citation", "receipt"])
+  expect(ownLinks.map((edge: { targetHandle: string }) => edge.targetHandle).sort()).toEqual(["citation", "in"])
   expect(new Set(ownLinks.map((edge: { id: string }) => edge.id)).size).toBe(2)
-  const nodeY = (id: string) => nodes.find((node: { id: string }) => node.id === id).position.y
-  expect(nodeY("receipt-3")).toBeGreaterThan(nodeY("section-33"))
-  expect(nodeY("receipt-4")).toBeLessThan(nodeY("section-33"))
+  const nodeX = (id: string) => nodes.find((node: { id: string }) => node.id === id).position.x
+  expect(nodeX("receipt-3")).toBeGreaterThan(nodeX("section-33"))
+  expect(nodeX("receipt-4")).toBeGreaterThan(nodeX("section-17"))
   nodes.find((n: {id:string})=>n.id==="receipt-4").data.open()
   expect(receipts).toHaveBeenCalledWith(b)
 })
@@ -60,12 +61,12 @@ it("pages through a long trace without jumping to the step list or inventing off
   const view = render(<TimelineMap {...props} from={1} />)
   expect(screen.getByRole("button", { name: "taskPurpose.earlier" })).toBeDisabled()
   fireEvent.click(screen.getByRole("button", { name: "taskPurpose.later" }))
-  expect(props.choose).toHaveBeenCalledWith(13, false)
+  expect(props.choose).toHaveBeenCalledWith(7, false)
   view.rerender(<TimelineMap {...props} from={13} />)
   const { nodes, edges } = capture.mock.calls.at(-1)![0]
   const ids = nodes.map((node: { id: string }) => node.id)
   expect(ids).toContain("outcome")
-  expect(ids).not.toContain("request")
+  expect(ids).toContain("request")
   expect(edges.every((edge: { source: string; target: string }) => ids.includes(edge.source) && ids.includes(edge.target))).toBe(true)
   expect(screen.getByRole("button", { name: "taskPurpose.later" })).toBeDisabled()
 })

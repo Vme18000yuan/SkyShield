@@ -297,6 +297,8 @@ def prepare(root, hub=False):
         if mode == 'host':
             override['network_mode'] = 'host'
             override['dns_opt'] = ['ndots:0']
+            if name == 'server':
+                override['ports'] = []
         services[name] = override
     services['agent'] = dict(dns=[bind_ip], dns_search=search,
                              volumes=[str(upstream_socket) + ':/var/run/docker.sock', 'network_socket:/run/skyshield-network:ro'],
@@ -312,8 +314,8 @@ def prepare(root, hub=False):
         if 'server server:8080;' not in nginx or 'server server:9090 resolve;' not in nginx:
             raise RuntimeError('Nginx 上游配置与宿主网络模板不匹配，请检查当前源码版本。')
         public_port = int(env.get('PUBLIC_PORT', '8443'))
-        if not 1 <= public_port <= 65535 or public_port in (3000, 8080, 9090):
-            raise RuntimeError('宿主网络模式的 PUBLIC_PORT 必须与执行组件的 3000/8080/9090 端口不同。')
+        if not 1 <= public_port <= 65535 or public_port in (3000, 8080, 9090, oast_http_port(env)):
+            raise RuntimeError('宿主网络模式的 PUBLIC_PORT 必须与执行组件的 3000/8080/9090 和反连监听端口不同。')
         nginx = nginx.replace('server server:8080;', 'server 127.0.0.1:8080;')
         nginx = nginx.replace('server server:9090 resolve;', 'server 127.0.0.1:9090;')
         nginx = nginx.replace('server frontend:3000 resolve;', 'server 127.0.0.1:3000;')
@@ -377,13 +379,28 @@ def check(root, target):
         print('Server TCP 连接：成功（仅确认端口连通，不代表应用认证或 TLS 验证通过）')
 
 
+def oast_http_port(env):
+    listen = (env.get('OAST_HTTP_LISTEN') or '0.0.0.0:8899').strip()
+    if listen.lower() == 'off':
+        return None
+    try:
+        port = int(listen.rsplit(':', 1)[1])
+        if not 1 <= port <= 65535:
+            raise ValueError()
+        return port
+    except (ValueError, IndexError):
+        raise RuntimeError('OAST_HTTP_LISTEN 必须包含有效的监听端口，或设置为 off。') from None
+
+
 def preflight(root):
     env = settings(root)
     if env.get('SKYSHIELD_INHERIT_HOST_NETWORK', '1') == '0' or env.get('SKYSHIELD_NETWORK_MODE', 'host') != 'host':
         return
     public_port = int(env.get('PUBLIC_PORT', '8443'))
+    callback_port = oast_http_port(env)
+    server_ports = (8080, 9090) + ((callback_port,) if callback_port else ())
     owned = set()
-    for service, ports in [('server', (8080, 9090)), ('frontend', (3000,)), ('nginx', (public_port,))]:
+    for service, ports in [('server', server_ports), ('frontend', (3000,)), ('nginx', (public_port,))]:
         existing = docker('compose', '-f', str(root / 'compose.tianqiong.yaml'), 'ps', '--all', '--quiet', service)
         if not existing or '\n' in existing:
             continue
@@ -396,7 +413,7 @@ def preflight(root):
         else:
             for bindings in (host_config.get('PortBindings') or {}).values():
                 owned.update(int(binding['HostPort']) for binding in (bindings or []) if binding.get('HostPort'))
-    for port in (3000, 8080, 9090, public_port):
+    for port in (3000, *server_ports, public_port):
         if port in owned:
             continue
         with socket.socket() as probe:
@@ -404,7 +421,7 @@ def preflight(root):
             try:
                 probe.bind(('0.0.0.0', port))
             except OSError:
-                raise RuntimeError('宿主网络模式需要 3000/8080/9090 和 PUBLIC_PORT 端口，端口 ' + str(port) + ' 已被其他程序占用。请先停止对应本地服务，或显式配置 SKYSHIELD_NETWORK_MODE=bridge。') from None
+                raise RuntimeError('宿主网络模式需要 3000/8080/9090、反连监听和 PUBLIC_PORT 端口，端口 ' + str(port) + ' 已被其他程序占用。请先停止对应本地服务，或显式配置 SKYSHIELD_NETWORK_MODE=bridge。') from None
 
 
 def stop_disabled(root):
