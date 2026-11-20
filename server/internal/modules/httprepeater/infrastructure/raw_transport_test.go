@@ -60,7 +60,7 @@ func TestRawWirePreservesDuplicatesChunkingAndVirtualHost(t *testing.T) {
 		received <- raw.String()
 		_, _ = io.WriteString(conn, wire)
 	}()
-	p := prepared(t, "http://"+listener.Addr().String(), get("virtual.test"), true)
+	p := prepared(t, "http://"+listener.Addr().String(), get("virtual.test:9443"), true)
 	result := (&RawTransport{}).Send(context.Background(), p, nil)
 	if !result.Sent || result.StatusCode != 201 || result.ErrorCode != "" || result.ResponseRaw != wire || !bytes.Equal(result.ResponseBytes, []byte(wire)) {
 		t.Fatalf("wire changed: %#v", result)
@@ -170,5 +170,76 @@ func TestSystemProxyTunnelKeepsCredentialsOutOfTargetPacket(t *testing.T) {
 	}
 	if header := <-received; header != "" {
 		t.Fatal("proxy credentials forwarded")
+	}
+}
+
+func TestOmittedTargetPortIsResolvedOnlyForConnection(t *testing.T) {
+	for _, scheme := range []string{"http", "https"} {
+		t.Run(scheme, func(t *testing.T) {
+			seenHost := make(chan string, 1)
+			target := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				seenHost <- r.Host
+				_, _ = io.WriteString(w, "ok")
+			}))
+			port := "80"
+			if scheme == "https" {
+				port = "443"
+				target.StartTLS()
+			} else {
+				target.Start()
+			}
+			defer target.Close()
+			seenTunnel := make(chan string, 1)
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				host, actualPort, err := net.SplitHostPort(r.Host)
+				if r.Method != "CONNECT" || err != nil || net.ParseIP(host) == nil || actualPort != port {
+					t.Errorf("unexpected tunnel address: %q", r.Host)
+					http.Error(w, "bad tunnel address", http.StatusBadGateway)
+					return
+				}
+				seenTunnel <- r.Host
+				// Route the default-port tunnel to an ephemeral local server, so
+				// this exercises real HTTP/TLS without binding privileged ports.
+				upstream, err := net.Dial("tcp", target.Listener.Addr().String())
+				if err != nil {
+					http.Error(w, "connect failed", http.StatusBadGateway)
+					return
+				}
+				defer upstream.Close()
+				client, _, err := w.(http.Hijacker).Hijack()
+				if err != nil {
+					return
+				}
+				defer client.Close()
+				_, _ = io.WriteString(client, "HTTP/1.1 200 Connection Established\r\n\r\n")
+				done := make(chan struct{})
+				go func() { _, _ = io.Copy(upstream, client); close(done) }()
+				_, _ = io.Copy(client, upstream)
+				client.Close()
+				<-done
+			}))
+			defer proxy.Close()
+			proxyURL, _ := url.Parse(proxy.URL)
+			connectionTarget := scheme + "://localhost/"
+			p := prepared(t, connectionTarget, get("localhost"), false)
+			transport := &RawTransport{Proxy: func(request *http.Request) (*url.URL, error) {
+				if request.URL.String() != connectionTarget {
+					t.Errorf("proxy target URL changed: %q", request.URL)
+				}
+				return proxyURL, nil
+			}}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			result := transport.Send(ctx, p, nil)
+			if result.ErrorCode != "" || result.StatusCode != 200 || !result.Sent {
+				t.Fatalf("portless target failed: %#v", result)
+			}
+			if p.Target.Host != "localhost" || result.RequestRaw != get("localhost") || <-seenHost != "localhost" {
+				t.Fatalf("target or Raw Host gained a port: target=%q raw=%q", p.Target.Host, result.RequestRaw)
+			}
+			if address := <-seenTunnel; !strings.HasSuffix(address, ":"+port) {
+				t.Fatalf("wrong connection port: %q", address)
+			}
+		})
 	}
 }

@@ -5,6 +5,10 @@ accepts one HTTP/1.0, HTTP/1.1 or HTTP/2 text representation and an independent 
 The UI requires only Raw text: its transport service derives that connection
 URL from the absolute request target or Host header and passes it to this
 existing API. No manual destination field or fallback resend is used.
+The derived URL preserves the supplied authority: omitted ports stay omitted,
+and explicit ports (including 80/443) are retained. Default ports are resolved
+only when opening a socket or proxy tunnel; Raw Host and HTTP/2 authority are
+not reconstructed from the protocol's default port.
 Admin/analyst membership and global/applicable target blacklists are checked
 before dialing. The actual destination IP is checked and pinned for both direct
 connections and CONNECT tunnels through the system proxy. No redirects,

@@ -29,9 +29,52 @@ func TestPreparePreservesHeadersAndRepairsByteLength(t *testing.T) {
 	}
 }
 
+func TestPreparePreservesDestinationAndHostPorts(t *testing.T) {
+	for _, protocol := range []string{"HTTP/1.1", "HTTP/2.0"} {
+		for _, target := range []struct{ scheme, host string }{
+			{"http", "example.test"},
+			{"https", "example.test"},
+			{"http", "example.test:80"},
+			{"https", "example.test:443"},
+			{"https", "example.test:00443"},
+			{"https", "example.test:80"},
+			{"http", "192.0.2.1"},
+			{"https", "192.0.2.1:8443"},
+			{"http", "[2001:db8::1]"},
+			{"https", "[2001:db8::1]"},
+			{"https", "[2001:db8::1]:443"},
+		} {
+			t.Run(protocol+"/"+target.scheme+"/"+target.host, func(t *testing.T) {
+				raw := "GET /path HTTP/1.1\r\nHost: " + target.host + "\r\n\r\n"
+				raw = strings.Replace(raw, "HTTP/1.1", protocol, 1)
+				p, err := Prepare(Input{RequestID: uuid.NewString(), TargetURL: target.scheme + "://" + target.host + "/", RawRequest: raw})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if p.Target.Host != target.host || p.Request.Host != target.host || string(p.Raw) != raw {
+					t.Fatalf("authority changed: target=%q Host=%q raw=%q", p.Target.Host, p.Request.Host, p.Raw)
+				}
+				if got := p.PolicyURLs()[0]; got != target.scheme+"://"+target.host+"/path" {
+					t.Fatalf("policy URL authority changed: %q", got)
+				}
+			})
+		}
+	}
+}
+
+func TestPrepareRejectsInvalidDestinationPorts(t *testing.T) {
+	for _, target := range []string{"http://example.test:0/", "https://example.test:65536/", "http://example.test:/", "https://[::1]:/"} {
+		in := input()
+		in.TargetURL = target
+		if _, err := Prepare(in); err == nil {
+			t.Fatalf("accepted invalid destination port: %q", target)
+		}
+	}
+}
+
 func TestHeaderOnlyPasteAfterTransportNormalization(t *testing.T) {
 	raw := "GET /container?restype=container&comp=list HTTP/1.1\nHost: storage.skyshield.example\nAccept: application/xml"
-	p, err := Prepare(Input{RequestID: uuid.NewString(), TargetURL: "http://storage.skyshield.example:80/", RawRequest: raw + "\n\n"})
+	p, err := Prepare(Input{RequestID: uuid.NewString(), TargetURL: "http://storage.skyshield.example/", RawRequest: raw + "\n\n"})
 	if err != nil {
 		t.Fatal(err)
 	}

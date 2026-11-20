@@ -108,17 +108,14 @@ export function deriveReplayTarget(raw: string, scheme: RepeaterDraft["scheme"])
   if (/^[a-z][a-z0-9+.-]*:/i.test(target)) {
     const absolute = /^(https?):\/\/([^/?#]+)(?:[/?]|$)/i.exec(target)
     if (!absolute || target.includes("#")) throw new RepeaterTargetError()
-    const parsed = authorityURL(absolute[2])
-    // Read the port with HTTPS as well, since URL.port omits a scheme's default.
-    const normalized = new URL(`${absolute[1].toLowerCase()}://${absolute[2]}`)
-    return `${absolute[1].toLowerCase()}://${normalized.host || parsed.host}/`
+    authorityURL(absolute[2])
+    // URL.host drops explicit default ports. Validate without serializing the
+    // authority so the connection target preserves what the user supplied.
+    return `${absolute[1].toLowerCase()}://${absolute[2]}/`
   }
   if (target[0] !== "/" && target !== "*") throw new RepeaterTargetError("raw_request_line")
   if (host === undefined) throw new RepeaterTargetError("raw_missing_host")
   const parsed = authorityURL(host)
   const protocol = scheme === "auto" ? parsed.port === "443" || first[3] === "2" || first[3] === "2.0" ? "https" : "http" : scheme
-  // Keep explicit ports when switching from the authority parser's HTTP scheme.
-  const explicitPort = host.startsWith("[") ? /\]:(\d+)$/.exec(host)?.[1] : /:(\d+)$/.exec(host)?.[1]
-  const port = explicitPort ? String(Number(explicitPort)) : protocol === "https" ? "443" : "80"
-  return `${protocol}://${parsed.hostname}:${port}/`
+  return `${protocol}://${host}/`
 }

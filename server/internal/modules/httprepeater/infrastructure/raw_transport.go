@@ -49,6 +49,15 @@ func (t *RawTransport) Send(ctx context.Context, p app.Prepared, guard app.Addre
 			return finish("proxy_failed")
 		}
 	}
+	// An omitted URL port stays omitted in the target and HTTP authority.
+	// Resolve its default only for the socket (or the proxy CONNECT address).
+	port := p.Target.Port()
+	if port == "" {
+		port = "80"
+		if p.Target.Scheme == "https" {
+			port = "443"
+		}
+	}
 	var conn net.Conn
 	var cleanup func()
 	code := "connect_failed"
@@ -56,7 +65,7 @@ func (t *RawTransport) Send(ctx context.Context, p app.Prepared, guard app.Addre
 		if i >= 8 {
 			break
 		}
-		conn, cleanup, code = t.open(ctx, p, net.JoinHostPort(address.IP.String(), p.Target.Port()), proxyURL)
+		conn, cleanup, code = t.open(ctx, p, net.JoinHostPort(address.IP.String(), port), proxyURL)
 		if conn != nil {
 			break
 		}

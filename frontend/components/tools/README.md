@@ -161,7 +161,9 @@ retry it automatically. Tabs and history are in-memory and account scoped.
 History navigation and request editing must not perform network requests.
 The transport service derives the destination from the Raw request's absolute
 URL or Host and supplies the existing sender API's `targetUrl`; it is never a
-page input. This is one request contract, with no fallback or automatic resend.
+page input. Preserve the supplied authority and any explicit port; do not add
+80/443 to a Host or URL that omitted its port, or serialize away an explicit
+default port. This is one request contract, with no fallback or automatic resend.
 The backend remains the authority for HTTP framing, permissions and blacklists.
 The optional protocol selector is only used for origin-form requests; no URL
 input or generation step is required. The shared

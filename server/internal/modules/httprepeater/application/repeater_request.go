@@ -40,17 +40,20 @@ func Prepare(in Input) (Prepared, error) {
 		}
 	}
 	port := u.Port()
-	if port == "" {
-		port = "80"
-		if u.Scheme == "https" {
-			port = "443"
-		}
-	}
-	n, err := strconv.Atoi(port)
-	if err != nil || n < 1 || n > 65535 {
+	if strings.HasSuffix(u.Host, ":") {
 		return bad("Destination port must be between 1 and 65535")
 	}
-	u.Host = net.JoinHostPort(host, port)
+	if port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return bad("Destination port must be between 1 and 65535")
+		}
+		u.Host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		u.Host = "[" + host + "]"
+	} else {
+		u.Host = host
+	}
 	timeout := in.TimeoutSeconds
 	if timeout == 0 {
 		timeout = 15

@@ -9,19 +9,26 @@ vi.mock("@/lib/api-client", () => ({ api: transport }))
 describe("Raw-only replay transport", () => {
   beforeEach(() => { transport.post.mockReset(); transport.post.mockResolvedValue({ data: { statusCode: 200, responseRaw: "HTTP/1.1 200 OK\r\n\r\n" } }) })
   it.each([
-    ["example.test", "auto", "http://example.test:80/"],
+    ["example.test", "auto", "http://example.test/"],
+    ["example.test:80", "auto", "http://example.test:80/"],
     ["example.test:443", "auto", "https://example.test:443/"],
-    ["example.test:00443", "auto", "https://example.test:443/"],
-    ["example.test", "https", "https://example.test:443/"],
+    ["example.test:00443", "auto", "https://example.test:00443/"],
+    ["example.test", "https", "https://example.test/"],
     ["example.test:8443", "https", "https://example.test:8443/"],
     ["example.test:80", "https", "https://example.test:80/"],
+    ["192.0.2.1", "http", "http://192.0.2.1/"],
+    ["192.0.2.1", "https", "https://192.0.2.1/"],
+    ["192.0.2.1:8080", "https", "https://192.0.2.1:8080/"],
+    ["[2001:db8::1]", "http", "http://[2001:db8::1]/"],
+    ["[2001:db8::1]", "https", "https://[2001:db8::1]/"],
+    ["[2001:db8::1]:443", "auto", "https://[2001:db8::1]:443/"],
     ["[::1]:8080", "auto", "http://[::1]:8080/"],
   ] as const)("derives %s with %s without a URL input", async (host, scheme, target) => {
     const rawRequest = `POST /inspect?q=1 HTTP/1.1\r\nhOsT: ${host}\r\nX-Proof: one\r\nX-Proof: two\r\n\r\nbody`
-    const input: RepeaterInput = { requestId: "fixture", rawRequest, scheme, timeoutSeconds: 15, verifyTls: true, autoContentLength: true }
+    const request = { requestId: "fixture", rawRequest, timeoutSeconds: 15, verifyTls: true, autoContentLength: true }
+    const input: RepeaterInput = { ...request, scheme }
     const signal = new AbortController().signal
     const result = await sendHttpReplay(input, signal)
-    const { scheme: _scheme, ...request } = input
     expect(transport.post).toHaveBeenCalledExactlyOnceWith("/httpRepeater:send", { ...request, targetUrl: target }, { signal, timeout: 20000 })
     expect(transport.post.mock.calls[0][1].rawRequest).toBe(rawRequest)
     expect(transport.post.mock.calls[0][1]).not.toHaveProperty("scheme")
@@ -32,6 +39,21 @@ describe("Raw-only replay transport", () => {
     const result = await sendHttpReplay({ requestId: "fixture", scheme: "http", rawRequest, verifyTls: true, timeoutSeconds: 15, autoContentLength: true }, new AbortController().signal)
     expect(transport.post.mock.calls[0][1]).toEqual(expect.objectContaining({ rawRequest, targetUrl: "https://absolute.test:9443/" }))
     expect(result.connectionTarget).toBe("https://absolute.test:9443/")
+  })
+  it.each([
+    "http://absolute.test/",
+    "http://absolute.test:80/",
+    "https://absolute.test/",
+    "https://absolute.test:443/",
+    "https://absolute.test:00443/",
+    "https://192.0.2.1:8443/",
+    "https://[2001:db8::1]/",
+    "https://[2001:db8::1]:443/",
+  ])("preserves the authority of absolute target %s", async target => {
+    const rawRequest = `GET ${target}path?q=1 HTTP/1.1\r\nHost: virtual.test:8080\r\n\r\n`
+    const result = await sendHttpReplay({ requestId: "fixture", scheme: "auto", rawRequest, verifyTls: true, timeoutSeconds: 15, autoContentLength: true }, new AbortController().signal)
+    expect(transport.post.mock.calls[0][1]).toEqual(expect.objectContaining({ rawRequest, targetUrl: target }))
+    expect(result.connectionTarget).toBe(target)
   })
   it.each([
     "GET / HTTP/1.1\n\n",
@@ -49,13 +71,13 @@ describe("Raw-only replay transport", () => {
     expect(transport.post).not.toHaveBeenCalled()
   })
   it("never takes a Host-looking body line as the destination", () => {
-    expect(deriveReplayTarget("POST / HTTP/1.1\r\nHost: actual.test\r\n\r\nHost: body.test", "auto")).toBe("http://actual.test:80/")
+    expect(deriveReplayTarget("POST / HTTP/1.1\r\nHost: actual.test\r\n\r\nHost: body.test", "auto")).toBe("http://actual.test/")
   })
   it("accepts the reported header-only GET without requiring a final empty line", async () => {
     const rawRequest = "GET /container?restype=container&comp=list HTTP/1.1\nHost: storage.skyshield.example\nAccept: application/xml"
     await sendHttpReplay({ requestId: "fixture", scheme: "auto", rawRequest, timeoutSeconds: 15, verifyTls: true, autoContentLength: true }, new AbortController().signal)
     expect(transport.post).toHaveBeenCalledTimes(1)
-    expect(transport.post.mock.calls[0][1]).toEqual(expect.objectContaining({ targetUrl: "http://storage.skyshield.example:80/", rawRequest: rawRequest + "\n\n" }))
+    expect(transport.post.mock.calls[0][1]).toEqual(expect.objectContaining({ targetUrl: "http://storage.skyshield.example/", rawRequest: rawRequest + "\n\n" }))
   })
   it.each(["\n", "\r\n"])("completes a header-only %j message without creating a body", eol => {
     const headers = `GET / HTTP/1.1${eol}Host: example.test${eol}Accept: application/xml`
@@ -82,7 +104,7 @@ describe("Raw-only replay transport", () => {
     const rawRequest = `GET /container?restype=container&comp=list ${version}\nHost: storage.skyshield.example\nAccept: application/xml`
     await sendHttpReplay({ requestId: "fixture", scheme: "auto", rawRequest, verifyTls: true, timeoutSeconds: 15, autoContentLength: true }, new AbortController().signal)
     expect(transport.post).toHaveBeenCalledTimes(1)
-    expect(transport.post.mock.calls[0][1]).toEqual(expect.objectContaining({ targetUrl: "https://storage.skyshield.example:443/", rawRequest: rawRequest + "\n\n" }))
+    expect(transport.post.mock.calls[0][1]).toEqual(expect.objectContaining({ targetUrl: "https://storage.skyshield.example/", rawRequest: rawRequest + "\n\n" }))
   })
   it("allows explicit cleartext HTTP/2", () => {
     expect(deriveReplayTarget("GET / HTTP/2.0\nHost: example.test:8080\n\n", "http")).toBe("http://example.test:8080/")
