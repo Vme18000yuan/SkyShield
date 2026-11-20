@@ -41,6 +41,9 @@ if args[:2] == ["volume", "inspect"]:
         sys.exit(1)
     if "--format" in args:
         print(owners[args[2]])
+if "compose" in args and "config" in args and "--format" in args:
+    project = os.environ.get("COMPOSE_PROJECT_NAME", "tianqiong")
+    print(json.dumps({"volumes": {"postgres_data": {"name": project + "_postgres_data"}}}))
 if "compose" in args and "ps" in args and "--quiet" in args:
     service = args[-1]
     if service != os.environ.get("SKYSHIELD_TEST_MISSING_CONTAINER"):
@@ -107,6 +110,54 @@ if "port" in args and "nginx" in args:
         result = self.run_docker(owners={volume: "tianqiong" for volume in VOLUMES})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(any("up" in call for call in self.calls()))
+
+    def test_existing_database_with_missing_keys_stops_before_generating_or_starting(self):
+        for action in ("start", "pull"):
+            for missing in ("db_password", "jwt_secret", "ai_encryption_key"):
+                with self.subTest(action=action, missing=missing):
+                    secret_dir = self.root / ".local/secrets"
+                    shutil.rmtree(secret_dir, ignore_errors=True)
+                    secret_dir.mkdir(parents=True, mode=0o700)
+                    for name in ("db_password", "jwt_secret", "ai_encryption_key"):
+                        if name != missing:
+                            (secret_dir / name).write_bytes(b"original-fixture-secret\n")
+                    before = {path.name: path.read_bytes() for path in secret_dir.iterdir()}
+                    result = self.run_docker(action, owners={"tianqiong_postgres_data": "tianqiong"})
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("tianqiong_postgres_data", result.stderr)
+                    self.assertIn(missing, result.stderr)
+                    self.assertIn("恢复原 .local/secrets", result.stderr)
+                    self.assertEqual({path.name: path.read_bytes() for path in secret_dir.iterdir()}, before)
+                    self.assertFalse(any("up" in call or "pull" in call for call in self.calls()))
+
+    def test_existing_database_with_empty_key_is_rejected(self):
+        secret_dir = self.root / ".local/secrets"
+        secret_dir.mkdir(parents=True, mode=0o700)
+        (secret_dir / "db_password").touch(mode=0o600)
+        result = self.run_docker("pull", owners={"tianqiong_postgres_data": "tianqiong"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("db_password", result.stderr)
+        self.assertEqual((secret_dir / "db_password").read_bytes(), b"")
+        self.assertFalse((secret_dir / "jwt_secret").exists())
+
+    def test_existing_database_with_original_keys_reuses_them(self):
+        secret_dir = self.root / ".local/secrets"
+        secret_dir.mkdir(parents=True, mode=0o700)
+        for name in ("db_password", "jwt_secret", "ai_encryption_key"):
+            path = secret_dir / name
+            path.write_bytes(b"original-fixture-secret\n")
+            path.chmod(0o600)
+        result = self.run_docker("pull", owners={"tianqiong_postgres_data": "tianqiong"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(all(path.read_bytes() == b"original-fixture-secret\n" for path in secret_dir.iterdir()))
+        self.assertTrue(any("up" in call for call in self.calls()))
+
+    def test_database_guard_uses_resolved_compose_volume_name(self):
+        self.env["COMPOSE_PROJECT_NAME"] = "fixture-project"
+        result = self.run_docker("pull", owners={"fixture-project_postgres_data": "fixture-project"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fixture-project_postgres_data", result.stderr)
+        self.assertFalse((self.root / ".local/secrets").exists())
 
     def test_existing_secret_files_with_newlines_are_preserved(self):
         secret_dir = self.root / ".local/secrets"

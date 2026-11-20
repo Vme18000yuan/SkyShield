@@ -54,6 +54,52 @@ SkyShield 的 Docker 入口为项目根目录的 `./docker.sh`，它使用
 `sha-<提交号>` 标签。当前发布平台为 `linux/amd64`。扫描 Agent 和引擎
 继续使用上游镜像；它们不包含在 `solder110/skyshield-*` 镜像中。
 
+## 数据库认证故障恢复
+
+如果卸载旧容器、重新下载项目后出现 `password authentication failed for user
+"tianqiong" (SQLSTATE 28P01)`，首先检查旧的 `postgres_data` 数据卷是否仍在、
+原 `.local/secrets` 是否被删除或替换。PostgreSQL 只会在首次初始化空数据目录时
+采用 `POSTGRES_PASSWORD_FILE`；重新拉取镜像或修改密码文件不会更新已有数据库
+角色的密码，见 [PostgreSQL 官方镜像说明](https://hub.docker.com/_/postgres)。
+
+启动脚本发现数据库卷已存在、任一密钥文件缺失或为空时，会在生成新密钥及启动
+容器前停止。PostgreSQL 健康检查也会实际验证当前文件中的密码；`pg_isready`
+仅表示服务接受连接，不能验证密码是否匹配。
+
+优先从备份恢复原 `.local/secrets`，保留数据库和三个密钥的对应关系。如果旧密码
+已经无法找回，但当前 `.local/secrets/db_password` 存在，且 PostgreSQL 容器已在
+运行，可在项目根目录执行以下命令，将 `tianqiong` 角色的密码同步为容器挂载的
+当前密码。此操作会修改数据库登录密码，保留业务数据，不输出明文密码：
+
+```bash
+docker compose -f compose.tianqiong.yaml exec -T postgres sh -eu -c '
+  password="$(cat "$POSTGRES_PASSWORD_FILE")"
+  test -n "$password"
+  printf "%s\n%s\n" "$password" "$password" |
+    psql -X -w -h /var/run/postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+      -v ON_ERROR_STOP=1 -c "\password tianqiong"
+  PGPASSWORD="$password" PGCONNECT_TIMEOUT=2 \
+    psql -X -w -h postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+      -v ON_ERROR_STOP=1 -tAc "SELECT 1"
+'
+./docker.sh pull
+```
+
+看到查询结果 `1` 表示密码同步及 TCP 认证成功。这条恢复命令使用
+官方镜像默认允许的容器内 Unix socket 本地连接；若自行修改过本地认证规则，需
+按现有数据库管理员的认证方式恢复。密码同步仅解决数据库登录；若原
+`ai_encryption_key` 也已丢失，已有加密模型凭据仍需恢复原密钥或重新配置。
+
+不要为修复认证错误直接执行 `docker compose down -v` 或删除数据库卷，
+这些操作会删除持久化数据。今后卸载容器或更新项目时，应保留并备份
+`.local/secrets` 和数据卷。
+
+如果明确要丢弃全部旧数据重新安装，先用
+`./uninstall.sh --mode docker --purge --dry-run` 预览，再执行
+`./uninstall.sh --mode docker --purge --yes`，最后运行 `./docker.sh pull`。
+该入口会一并删除数据库卷、原密钥、Agent 身份、证书和版本覆盖记录，
+参见[卸载与干净重装](17-卸载与干净重装.md)。
+
 ## 部署机网络继承
 
 `./update.sh --mode docker` 将安装的镜像摘要保存至 `.local/updater/compose.release.json`，

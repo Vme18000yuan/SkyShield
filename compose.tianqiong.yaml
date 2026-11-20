@@ -46,7 +46,14 @@ services:
     secrets: [db_password]
     volumes: [postgres_data:/var/lib/postgresql/data]
     healthcheck:
-      test: [CMD-SHELL, pg_isready -U tianqiong -d tianqiong]
+      # A readiness probe alone accepts stale credentials after a reinstall.
+      # Use the bridge address: official images allow passwordless loopback.
+      test:
+        - CMD-SHELL
+        - >-
+          PGPASSWORD="$$(cat "$$POSTGRES_PASSWORD_FILE")" PGCONNECT_TIMEOUT=2
+          psql -X -w -h postgres -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+          -v ON_ERROR_STOP=1 -tAc 'SELECT 1' >/dev/null
       interval: 5s
       timeout: 3s
       retries: 20

@@ -127,8 +127,21 @@ case "${1:-start}" in
         fi
       fi
     done
+    if ! command -v python3 >/dev/null; then printf '部署检查和网络配置继承需要 Python 3，请先安装 python3。\n' >&2; exit 1; fi
+    database_volume="$(docker compose -f "$project_dir/compose.tianqiong.yaml" config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["volumes"]["postgres_data"]["name"])')"
+    if docker volume inspect "$database_volume" >/dev/null 2>&1; then
+      # Reinstalling a checkout must not generate new credentials against an
+      # existing database. PostgreSQL only adopts its password on first init;
+      # losing the AI key also makes persisted model credentials unreadable.
+      for name in db_password jwt_secret ai_encryption_key; do
+        path="$project_dir/.local/secrets/$name"
+        if [[ ! -s "$path" ]]; then
+          printf '数据库卷 %s 已存在，但密钥 .local/secrets/%s 缺失或为空。为避免凭据与旧数据不一致，已停止部署；请从备份恢复原 .local/secrets，参见 docs/15-Docker一键部署.md 的数据库认证故障恢复说明。\n' "$database_volume" "$name" >&2
+          exit 1
+        fi
+      done
+    fi
     bash "$project_dir/scripts/tianqiong-dev-init.sh"
-    if ! command -v python3 >/dev/null; then printf '网络配置继承需要 Python 3，请先安装 python3。\n' >&2; exit 1; fi
     mkdir -p -m 700 "$project_dir/.local/updater/socket"
     network_args=(prepare --root "$project_dir")
     compose=(docker compose -f "$project_dir/compose.tianqiong.yaml")

@@ -147,6 +147,21 @@ http_headers = { Authorization = "Bearer <MCP密钥>" }
 
 轮换密钥会立即使旧密钥失效；撤销客户端也会立即关闭它的访问权限。AI 设置中的 MCP 页面用于管理“天穹连接外部 MCP 服务”，与这里的“外部客户端连接天穹”方向不同。[MCP 工具与权限说明](server/internal/mcp/README.md)
 
+## 卸载与干净重装
+
+`./uninstall.sh --mode local|docker|all` 默认保留数据和密钥。要放弃旧实例、从头安装，先预览，
+再彻底清除两种部署：
+
+```bash
+./uninstall.sh --mode all --purge --dry-run
+./uninstall.sh --mode all --purge --yes
+./docker.sh pull             # 或 ./local.sh start
+```
+
+彻底清除会永久删除数据库、扫描数据、密钥、Agent 身份、更新备份和本地构建/依赖，避免旧
+数据卷与新密钥混用。`.env` 默认保留，附加 `--remove-env` 可重置本机配置。
+[完整清理范围、自定义目录与权限](docs/17-卸载与干净重装.md)
+
 ## 开发与测试
 
 前端位于 `frontend/`，Go 后端位于 `server/`，扫描引擎位于 `extensions/engines/`。其中的工具、测试和 `resources/skills/` 脚本是构建、验证或产品功能所需的内部依赖；项目根目录提供部署及日常启动、重启入口。
