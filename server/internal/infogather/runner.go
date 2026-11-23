@@ -231,20 +231,26 @@ func readRunFiles(root *os.Root, dir, id string) ([]byte, json.RawMessage, error
 	if err != nil {
 		return nil, nil, err
 	}
-	var folder string
+	var base string
 	for _, entry := range entries {
 		if !entry.IsDir() || entry.Name() == ".tmp" || entry.Name() == ".task-output" {
 			continue
 		}
-		if folder != "" {
+		// The sandbox also uses this directory as HOME, so tools may create
+		// configuration and caches alongside the target's result directory.
+		candidate := filepath.Join(dir, entry.Name(), "runs", id)
+		info, err := root.Stat(candidate)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		if base != "" {
 			return nil, nil, errors.New("采集结果目录不唯一")
 		}
-		folder = entry.Name()
+		base = candidate
 	}
-	if folder == "" {
+	if base == "" {
 		return nil, nil, errors.New("采集未生成结果目录")
 	}
-	base := filepath.Join(dir, folder, "runs", id)
 	read := func(name string, limit int64) ([]byte, error) {
 		file, err := root.Open(filepath.Join(base, name))
 		if err != nil {
@@ -284,6 +290,7 @@ func passiveCoverage(raw json.RawMessage, source, stderr []byte) json.RawMessage
 			Name       string `json:"name"`
 			Status     string `json:"status"`
 			ReturnCode int    `json:"returncode"`
+			Attempts   int    `json:"attempts"`
 		} `json:"sources"`
 	}
 	if json.Unmarshal(source, &current) != nil {
@@ -311,6 +318,9 @@ func passiveCoverage(raw json.RawMessage, source, stderr []byte) json.RawMessage
 			succeeded = append(succeeded, name)
 		} else if entry.Status == "failed" || entry.Status == "timeout" {
 			item := map[string]any{"source": name, "status": entry.Status}
+			if entry.Attempts >= 1 && entry.Attempts <= 3 {
+				item["attempts"] = entry.Attempts
+			}
 			if name == "certificate_transparency" && entry.ReturnCode == 22 {
 				if match := curlStatusPattern.FindSubmatch(stderr); len(match) == 2 {
 					if status, err := strconv.Atoi(string(match[1])); err == nil && status >= 100 && status <= 599 {
@@ -360,7 +370,7 @@ func sanitizedCoverage(raw []byte) json.RawMessage {
 	details := map[string]any{}
 	for name, allowed := range map[string][]string{
 		"ports": {"total", "completed", "timed_out", "failed", "unprocessed"},
-		"web":   {"discovered_origins", "selected", "omitted", "attempted", "completed", "partial", "failed", "timed_out", "pending", "workers", "per_worker_rate"},
+		"web":   {"discovered_origins", "selected", "omitted", "attempted", "completed", "partial", "failed", "timed_out", "pending", "workers", "per_worker_rate", "crawler_timed_out", "crawler_failed", "failed_requests"},
 		"axfr":  {"success", "refused", "failed", "timeout"},
 		"http":  {"seeds", "alive", "cdn_ips_excluded"},
 	} {
@@ -384,6 +394,7 @@ func sanitizedCoverage(raw []byte) json.RawMessage {
 			Source     string `json:"source"`
 			Status     string `json:"status"`
 			HTTPStatus int    `json:"http_status"`
+			Attempts   int    `json:"attempts"`
 		} `json:"failed_sources"`
 	}
 	if json.Unmarshal(manifest.Coverage["organization"], &organization) == nil {
@@ -399,6 +410,9 @@ func sanitizedCoverage(raw []byte) json.RawMessage {
 				continue
 			}
 			value := map[string]any{"source": item.Source, "status": item.Status}
+			if item.Attempts >= 1 && item.Attempts <= 3 {
+				value["attempts"] = item.Attempts
+			}
 			if item.HTTPStatus >= 100 && item.HTTPStatus <= 599 {
 				value["http_status"] = item.HTTPStatus
 			}

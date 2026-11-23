@@ -43,13 +43,16 @@ def main():
     client = HttpClient(out, scope, rate)
     client.deadline = deadline - 3
     failed_tools = []
+    timed_out_tools = []
     base = origin(a.url)
     def run(name, argv, *, time_limit=None, **kwargs):
         if deadline - time.monotonic() <= 1:
             failed_tools.append(name + ': budget'); return False
         remaining = deadline - time.monotonic() - 1
         timeout = min(remaining, time_limit) if time_limit is not None else remaining
-        ok = run_command(argv, out, name, timeout=timeout, **kwargs)['status'] == 'success'
+        result = run_command(argv, out, name, timeout=timeout, **kwargs)
+        ok = result['status'] == 'success'
+        if result['status'] == 'timeout': timed_out_tools.append(name)
         if not ok: failed_tools.append(name)
         return ok
     def allowed(url):
@@ -78,8 +81,9 @@ def main():
             pattern = r'https?://\[' + re.escape(scope) + r'\](?::\d+)?(?:/|$)'
         else:
             pattern = r'https?://(?:[a-zA-Z0-9-]+\.)*' + re.escape(scope) + r'(?::\d+)?(?:/|$)'
-        crawl_budget = min(25, max(1, (deadline - time.monotonic() - 2) * .3))
-        run('katana', ['katana', '-u', a.url, '-d', '3' if mode == 'deep' else '2', '-jc', '-silent', '-cs', pattern, '-rl', str(rate), '-c', '2', *(['-proxy', proxy] if proxy else []), '-o', path], time_limit=crawl_budget)
+        path.unlink(missing_ok=True)
+        crawl_budget = min(60, max(1, (deadline - time.monotonic() - 2) * .3))
+        run('katana', ['katana', '-duc', '-u', a.url, '-d', '3' if mode == 'deep' else '2', '-jc', '-silent', '-cs', pattern, '-rl', str(rate), '-c', '2', '-timeout', '8', *(['-proxy', proxy] if proxy else []), '-o', path], time_limit=crawl_budget)
         crawled = lines(path)
     crawled = [u for u in crawled if allowed(u)]
     js_urls.update(u for u in crawled if re.search(r'\.js(?:\?|$)', u, re.I))
@@ -204,7 +208,7 @@ def main():
         js_urls=len(js_urls), js_downloaded=len(index), js_omitted=max(0, len(js_urls)-len(index)), source_maps=maps,
         api_paths=len(endpoints), api_tested=tested, api_attempted=attempted, api_failed=attempted-tested, api_omitted=max(0, len(endpoints)-attempted),
         unauth_high=0, unauth_medium=unauth['medium'], token_comparison=validate,
-        requests=client.attempted, failed_requests=client.failed, recovered_requests=recovered_requests, budget_exhausted=client.exhausted, failed_tools=failed_tools)
+        requests=client.attempted, failed_requests=client.failed, recovered_requests=recovered_requests, budget_exhausted=client.exhausted, failed_tools=failed_tools, timed_out_tools=timed_out_tools)
     atomic_json(out / 'web-probe-summary.json', summary)
     print(json.dumps(summary, ensure_ascii=False))
     return 2 if summary['status'] == 'partial' else 0

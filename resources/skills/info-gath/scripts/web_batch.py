@@ -12,7 +12,7 @@ from pathlib import Path
 import threading
 import time
 
-from recon_common import atomic_json, normalize_url, run_command, service_id
+from recon_common import atomic_json, load_json, normalize_url, run_command, service_id
 
 SCRIPTS = Path(__file__).resolve().parent
 
@@ -50,6 +50,8 @@ def main():
             failed=sum(item['status'] == 'failed' for item in items),
             timed_out=sum(item['status'] == 'timeout' for item in items),
             pending=pending, workers=workers, per_worker_rate=worker_rate, results=items)
+        for key in ('crawler_timed_out', 'crawler_failed', 'failed_requests'):
+            summary[key] = sum(item.get(key, 0) for item in items)
         atomic_json(status_path, summary)
         return summary
 
@@ -83,9 +85,15 @@ def main():
             fingerprint = run('fingerprint', fingerprint_budget)
             update(index, fingerprint=fingerprint)
             web = run('web_probe', entry_deadline - time.monotonic() - 1)
+            details = load_json(dest / 'web-probe-summary.json', {})
+            if not isinstance(details, dict): details = {}
+            crawl_timeout = 'katana' in details.get('timed_out_tools', [])
+            failed_requests = details.get('failed_requests', 0)
+            if type(failed_requests) is not int or failed_requests < 0: failed_requests = 0
             statuses = (fingerprint, web)
             result = 'success' if all(value == 'success' for value in statuses) else 'timeout' if 'timeout' in statuses else 'failed' if 'failed' in statuses else 'partial'
-            summary = update(index, web=web, status=result)
+            summary = update(index, web=web, status=result, crawler_timed_out=int(crawl_timeout),
+                crawler_failed=int('katana' in details.get('failed_tools', []) and not crawl_timeout), failed_requests=failed_requests)
             print(f"Web 分析：已处理 {summary['selected'] - summary['pending']}/{summary['selected']} 个入口。", flush=True)
         except Exception as exc:
             update(index, status='failed', error=type(exc).__name__)

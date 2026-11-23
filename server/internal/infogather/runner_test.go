@@ -20,6 +20,86 @@ import (
 	assets "github.com/yyhuni/lunafox/server/internal/modules/assetregistry/application"
 )
 
+func TestReadRunFilesSelectsCurrentRunArtifacts(t *testing.T) {
+	const id = "current-run"
+	const body = `{"run":{"id":"current-run"},"assets":[]}`
+	for _, test := range []struct {
+		name    string
+		dirs    []string
+		reports []string
+		wantErr string
+	}{
+		{
+			name:    "tool configuration and caches beside results",
+			dirs:    []string{".config/subfinder", ".cache", ".dit", ".tmp", ".task-output/tasks", "tool-data", "old.example/runs/previous-run"},
+			reports: []string{"example.test"},
+		},
+		{
+			name:    "multiple results for the current run",
+			reports: []string{"example.test", "other.example"},
+			wantErr: "采集结果目录不唯一",
+		},
+		{
+			name:    "configuration without results",
+			dirs:    []string{".config/subfinder", ".cache", "example.test/runs/previous-run"},
+			wantErr: "采集未生成结果目录",
+		},
+		{
+			name:    "current run directory without import report",
+			dirs:    []string{".config/subfinder", "example.test/runs/" + id},
+			wantErr: "采集未生成可导入结果",
+		},
+		{
+			name:    "incomplete second result remains ambiguous",
+			dirs:    []string{"other.example/runs/" + id},
+			reports: []string{"example.test"},
+			wantErr: "采集结果目录不唯一",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			workspace := t.TempDir()
+			dir := filepath.Join("info-gather", id)
+			for _, name := range test.dirs {
+				if err := os.MkdirAll(filepath.Join(workspace, dir, name), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, target := range test.reports {
+				base := filepath.Join(workspace, dir, target, "runs", id)
+				if err := os.MkdirAll(base, 0700); err != nil {
+					t.Fatal(err)
+				}
+				for name, data := range map[string]string{
+					"skyshield-import.json": body,
+					"manifest.json":         `{"steps":{"passive":{"status":"partial"}}}`,
+				} {
+					if err := os.WriteFile(filepath.Join(base, name), []byte(data), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			root, err := os.OpenRoot(workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer root.Close()
+			raw, coverage, err := readRunFiles(root, dir, id)
+			if test.wantErr != "" {
+				if err == nil || err.Error() != test.wantErr {
+					t.Fatalf("want %q, got %v", test.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != body || !strings.Contains(string(coverage), `"passive":"partial"`) {
+				t.Fatalf("lost current report or coverage: %s %s", raw, coverage)
+			}
+		})
+	}
+}
+
 // Fast mode for an IP runs the real skill without DNS, HTTP or external scans.
 func TestSandboxExecutesBundledSkillOffline(t *testing.T) {
 	if runtime.GOOS != "linux" {
@@ -48,6 +128,12 @@ func TestSandboxExecutesBundledSkillOffline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	id := uuid.NewString()
+	// A full collection shares HOME with subfinder and other tool state.
+	for _, name := range []string{".config/subfinder", ".dit"} {
+		if err := os.MkdirAll(filepath.Join(executor.ArtifactDirectory(1, id), name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
 	scope, err := parseScope("127.0.0.1")
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +171,9 @@ func TestSandboxExecutesSeparatePhasesOffline(t *testing.T) {
 	mock := `#!/usr/bin/python3
 import json,sys
 from pathlib import Path
+# Network tools can initialize HOME even when only probing their version.
+(Path.home()/'.config/httpx').mkdir(parents=True,exist_ok=True)
+(Path.home()/'.cache/httpx').mkdir(parents=True,exist_ok=True)
 a=sys.argv[1:]
 if '-h' in a:
  print('-tech-detect -status-code -json'); sys.exit(0)

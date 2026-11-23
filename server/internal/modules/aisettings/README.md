@@ -32,6 +32,11 @@ The information-gathering Agent can invoke Skill phases separately and decide be
 
 The resumable phase update likewise changes the adapter only when the installed phase scripts match the previous shipped version. A customized package remains untouched.
 
+The source reliability update adds bounded retries for third-party HTTP sources,
+disables Katana's startup update check during collection, and reports crawler
+timeouts separately from completed Web analysis. It upgrades only the unchanged
+collector scripts and preserves all other Skill files and settings.
+
 The information-gathering risk contract update accepts DNS and cloud-storage risk candidates. It updates only the unchanged shipped schema file; administrators' customized Skill documents and files are preserved.
 
 The ARTEX default visibility is preserved: `api-recon` is visible to `auto`, `pentest`, and `worker`; `playwright-cli` and `scopesentry` begin with no Agent bindings.

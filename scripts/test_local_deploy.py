@@ -4,7 +4,9 @@ import io
 import os
 import pathlib
 import socket
+import subprocess
 import tempfile
+import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -380,6 +382,117 @@ class LocalDeployTests(unittest.TestCase):
             listener.listen()
             with self.assertRaises(RuntimeError):
                 deploy.free_port(listener.getsockname()[1])
+
+    def test_process_identity_includes_boot_and_rejects_missing_start(self):
+        entry = {"pid": os.getpid(), "start": deploy.process_start(os.getpid()), "boot_id": "previous-boot"}
+        self.assertFalse(deploy.alive(entry))
+        entry['boot_id'] = deploy.boot_id()
+        self.assertTrue(deploy.alive(entry))
+        self.assertFalse(deploy.alive({"pid": 0, "start": None}))
+
+    def test_stale_postgres_pid_is_archived_without_touching_reused_process(self):
+        for started in (1, int(time.time())):
+            with self.subTest(started=started), tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
+                root = pathlib.Path(directory)
+                data, logs = root / 'data', root / 'logs'
+                data.mkdir(); logs.mkdir()
+                with socket.socket() as listener:
+                    listener.bind(('127.0.0.1', 0)); port = listener.getsockname()[1]
+                contents = f'{os.getpid()}\n{data}\n{started}\n{port}\n{root}\n127.0.0.1\n'
+                pid_file = data / 'postmaster.pid'; pid_file.write_text(contents)
+                lock = root / f'.s.PGSQL.{port}.lock'; lock.write_text(contents)
+                sentinel = data / 'existing-data'; sentinel.write_text('preserved')
+                for name, value in {'PGDATA': data, 'PGSOCKET': root, 'PG_PORT': port, 'LOGS': logs, 'STATE': root / 'state.json'}.items():
+                    stack.enter_context(mock.patch.object(deploy, name, value))
+                identity = deploy.process_start(os.getpid())
+                state = {'postgres': {'pid': os.getpid(), 'start': identity, 'owned': False}}
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertIsNone(deploy.reconcile_postgres_pid(state))
+                self.assertFalse(pid_file.exists()); self.assertFalse(lock.exists())
+                archive = next(logs.iterdir())
+                self.assertEqual((archive / 'postmaster.pid').read_text(), contents)
+                self.assertEqual((archive / lock.name).read_text(), contents)
+                self.assertEqual(sentinel.read_text(), 'preserved')
+                self.assertEqual(deploy.process_start(os.getpid()), identity)
+                self.assertNotIn('postgres', state)
+
+    def test_postgres_locks_are_preserved_when_listener_or_lock_owner_disagrees(self):
+        for conflict in ('tcp', 'unix', 'lock'):
+            with self.subTest(conflict=conflict), tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
+                root = pathlib.Path(directory); data = root / 'data'; logs = root / 'logs'
+                data.mkdir(); logs.mkdir()
+                listener = stack.enter_context(socket.socket())
+                listener.bind(('127.0.0.1', 0)); port = listener.getsockname()[1]
+                if conflict == 'tcp': listener.listen()
+                else: listener.close()
+                contents = f'{os.getpid()}\n{data}\n1\n{port}\n{root}\n127.0.0.1\n'
+                pid_file = data / 'postmaster.pid'; pid_file.write_text(contents)
+                lock = root / f'.s.PGSQL.{port}.lock'
+                lock.write_text('different owner' if conflict == 'lock' else contents)
+                if conflict == 'unix':
+                    unix = stack.enter_context(socket.socket(socket.AF_UNIX))
+                    unix.bind(str(root / f'.s.PGSQL.{port}')); unix.listen()
+                for name, value in {'PGDATA': data, 'PGSOCKET': root, 'PG_PORT': port, 'LOGS': logs}.items():
+                    stack.enter_context(mock.patch.object(deploy, name, value))
+                with self.assertRaises(RuntimeError):
+                    deploy.reconcile_postgres_pid({})
+                self.assertEqual(pid_file.read_text(), contents)
+                self.assertTrue(lock.exists())
+                self.assertEqual(list(logs.iterdir()), [])
+
+    @unittest.skipUnless(os.environ.get('SKYSHIELD_TEST_POSTGRES_BIN'), 'isolated PostgreSQL test not configured')
+    def test_postgres_restart_recovers_reused_pid_and_preserves_database(self):
+        pg_bin = pathlib.Path(os.environ['SKYSHIELD_TEST_POSTGRES_BIN'])
+        with tempfile.TemporaryDirectory(prefix='ss-pg-') as directory, contextlib.ExitStack() as stack:
+            root = pathlib.Path(directory); logs = root / 'logs'; logs.mkdir()
+            secrets = root / 'secrets'; secrets.mkdir()
+            (secrets / 'db_password').write_text('local-deploy-test-only\n')
+            with socket.socket() as listener:
+                listener.bind(('127.0.0.1', 0)); port = listener.getsockname()[1]
+            data = root / 'data'
+            for name, value in {'PGDATA': data, 'PGSOCKET': root, 'PG_PORT': port, 'LOGS': logs,
+                                'SECRETS': secrets, 'STATE': root / 'state.json', 'DB_NAME': 'tianqiong_local_deploy_test'}.items():
+                stack.enter_context(mock.patch.object(deploy, name, value))
+            stack.enter_context(mock.patch.object(deploy, 'pg_binary', side_effect=lambda name: str(pg_bin / name)))
+            env = dict(os.environ, PGPASSWORD='local-deploy-test-only')
+            state = {}
+            try:
+                deploy.postgres_start(state, env)
+                deploy.query(env, "CREATE TABLE retained(value text); INSERT INTO retained VALUES ('preserved')")
+                deploy.call([pg_bin / 'pg_ctl', '-D', data, '-m', 'fast', '-w', 'stop'])
+                contents = f'{os.getpid()}\n{data}\n1\n{port}\n{root}\n127.0.0.1\n'
+                (data / 'postmaster.pid').write_text(contents)
+                (root / f'.s.PGSQL.{port}.lock').write_text(contents)
+                with socket.socket(socket.AF_UNIX) as stale:
+                    stale.bind(str(root / f'.s.PGSQL.{port}'))
+                state['postgres'] = {'pid': os.getpid(), 'start': deploy.process_start(os.getpid()), 'owned': False}
+                deploy.postgres_start(state, env)
+                self.assertEqual(deploy.query(env, 'SELECT value FROM retained'), 'preserved')
+                self.assertNotEqual(state['postgres']['pid'], os.getpid())
+                self.assertTrue(state['postgres']['owned'])
+                self.assertEqual(state['postgres']['boot_id'], deploy.boot_id())
+                running = state['postgres']['pid']
+                deploy.postgres_start(state, env)
+                self.assertEqual(state['postgres']['pid'], running)
+                state['postgres'] = {'pid': os.getpid(), 'start': deploy.process_start(os.getpid()), 'owned': False}
+                deploy.postgres_start(state, env)
+                self.assertEqual(state['postgres']['pid'], running)
+                self.assertFalse(state['postgres']['owned'])
+                with mock.patch.object(deploy, 'PG_PORT', 1 if port != 1 else 2):
+                    with self.assertRaisesRegex(RuntimeError, '端口.*不一致'):
+                        deploy.postgres_start(state, env)
+                self.assertTrue(deploy.alive(state['postgres']))
+            finally:
+                pid_file = data / 'postmaster.pid'
+                if pid_file.exists():
+                    pid = int(pid_file.read_text().splitlines()[0])
+                    try:
+                        executable = pathlib.Path(os.readlink(f'/proc/{pid}/exe')).name
+                        args = pathlib.Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
+                    except OSError:
+                        executable, args = '', []
+                    if executable == 'postgres' and str(data).encode() in args:
+                        subprocess.run([str(pg_bin / 'pg_ctl'), '-D', str(data), '-m', 'fast', '-w', 'stop'], check=True)
 
     def test_wildcard_listener_detects_other_address_collision(self):
         with socket.socket() as listener:

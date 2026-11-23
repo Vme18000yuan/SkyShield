@@ -129,6 +129,8 @@ class Pipeline:
             if name not in aliases or item.get('status') == 'success':
                 continue
             entry = dict(source=aliases[name], status='timeout' if item.get('status') == 'timeout' else 'failed')
+            if type(item.get('attempts')) is int and 1 <= item['attempts'] <= 3:
+                entry['attempts'] = item['attempts']
             stderr = self.out / 'raw' / (name + '.stderr')
             if item.get('returncode') == 22 and stderr.is_file():
                 with stderr.open(errors='replace') as stream:
@@ -298,7 +300,7 @@ class Pipeline:
         self.save()
         ok = self.command('web-batch', [sys.executable, SCRIPTS / 'web_batch.py', entry_file, self.out])
         batch = load_json(self.out / 'raw/web-batch-status.json', {})
-        for name in ('attempted', 'completed', 'partial', 'failed', 'timed_out', 'pending', 'workers', 'per_worker_rate'):
+        for name in ('attempted', 'completed', 'partial', 'failed', 'timed_out', 'pending', 'workers', 'per_worker_rate', 'crawler_timed_out', 'crawler_failed', 'failed_requests'):
             value = batch.get(name)
             if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
                 self.m['coverage']['web'][name] = value

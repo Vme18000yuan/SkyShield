@@ -10,6 +10,7 @@ import shutil
 import time
 from urllib.parse import quote
 from recon_common import atomic_json, lines, load_json, normalize_target, run_command, write_lines
+from source_http import fetch_source
 
 
 def registrable(host):
@@ -31,7 +32,12 @@ def main():
     deadline = time.monotonic() + min(120, int(os.getenv('RECON_STAGE_TIMEOUT', '300')))
     statuses, org, email, domains = [], '', '', set()
     def command(name, argv, dest):
-        record = run_command(argv, out, name, timeout=max(0.1, min(30, deadline-time.monotonic())), stdout=dest)
+        if argv[0] == 'curl':
+            record = fetch_source(argv[-1], out, name, stdout=dest, deadline=deadline,
+                max_bytes=int(argv[argv.index('--max-filesize') + 1]), redirects='-fsSL' in argv,
+                request_timeout=int(argv[argv.index('--max-time') + 1]))
+        else:
+            record = run_command(argv, out, name, timeout=max(0.1, min(30, deadline-time.monotonic())), stdout=dest)
         statuses.append(record); return record['status'] == 'success'
     if shutil.which('whois'):
         path = out / 'raw/org-whois.txt'

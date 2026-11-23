@@ -19,6 +19,7 @@ func coverageSummary(raw json.RawMessage) string {
 					Source     string `json:"source"`
 					Status     string `json:"status"`
 					HTTPStatus int    `json:"http_status"`
+					Attempts   int    `json:"attempts"`
 				} `json:"failed_sources"`
 			} `json:"passive"`
 			Ports struct {
@@ -28,14 +29,18 @@ func coverageSummary(raw json.RawMessage) string {
 				Unprocessed int `json:"unprocessed"`
 			} `json:"ports"`
 			Web struct {
-				Selected  int `json:"selected"`
-				Completed int `json:"completed"`
-				Omitted   int `json:"omitted"`
+				Selected        int `json:"selected"`
+				Completed       int `json:"completed"`
+				Omitted         int `json:"omitted"`
+				CrawlerTimedOut int `json:"crawler_timed_out"`
+				CrawlerFailed   int `json:"crawler_failed"`
+				FailedRequests  int `json:"failed_requests"`
 			} `json:"web"`
 			Organization struct {
 				FailedSources []struct {
 					Source     string `json:"source"`
 					HTTPStatus int    `json:"http_status"`
+					Attempts   int    `json:"attempts"`
 				} `json:"failed_sources"`
 			} `json:"organization"`
 			Agentic struct {
@@ -100,16 +105,33 @@ func coverageSummary(raw json.RawMessage) string {
 	if present, known := value.Tools["katana"]; known && !present {
 		parts = append(parts, "katana 未安装，Web 爬取覆盖受限")
 	}
+	if count := value.Details.Web.CrawlerTimedOut; count > 0 {
+		parts = append(parts, fmt.Sprintf("Katana 爬取超时 %d 个入口，已保留完成的 HTTP/JS 分析", count))
+	}
+	if count := value.Details.Web.CrawlerFailed; count > 0 {
+		parts = append(parts, fmt.Sprintf("Katana 爬取失败 %d 个入口", count))
+	}
+	if count := value.Details.Web.FailedRequests; count > 0 {
+		parts = append(parts, fmt.Sprintf("Web 请求失败 %d 次", count))
+	}
 	for _, item := range value.Details.Passive.FailedSources {
 		if item.Source == "certificate_transparency" && item.HTTPStatus >= 100 && item.HTTPStatus <= 599 {
-			parts = append(parts, fmt.Sprintf("被动证书查询返回 HTTP %d", item.HTTPStatus))
+			message := fmt.Sprintf("被动证书查询返回 HTTP %d", item.HTTPStatus)
+			if item.Attempts > 1 && item.Attempts <= 3 {
+				message += fmt.Sprintf("（已尝试 %d 次）", item.Attempts)
+			}
+			parts = append(parts, message)
 		} else if item.Source == "subfinder" && (item.Status == "failed" || item.Status == "timeout") {
 			parts = append(parts, "subfinder 来源"+statusNames[item.Status])
 		}
 	}
 	for _, item := range value.Details.Organization.FailedSources {
 		if item.Source == "certificate_transparency" && item.HTTPStatus >= 100 && item.HTTPStatus <= 599 {
-			parts = append(parts, fmt.Sprintf("证书透明日志查询返回 HTTP %d", item.HTTPStatus))
+			message := fmt.Sprintf("证书透明日志查询返回 HTTP %d", item.HTTPStatus)
+			if item.Attempts > 1 && item.Attempts <= 3 {
+				message += fmt.Sprintf("（已尝试 %d 次）", item.Attempts)
+			}
+			parts = append(parts, message)
 		}
 	}
 	if value.Details.Web.Omitted > 0 {

@@ -13,6 +13,7 @@ import time
 from urllib.parse import urlsplit
 import xml.etree.ElementTree as ET
 from recon_common import atomic_json, in_scope, lines, normalize_target, run_command, write_lines
+from source_http import fetch_source
 
 
 def main():
@@ -43,7 +44,10 @@ def main():
     statuses, domains, parameter_urls = [], set(), set()
     def collect(spec):
         name, argv, dest, stdin = spec
-        record = run_command(argv, out, 'source-' + name, timeout=max(0.1, min(180, deadline-time.monotonic())), stdout=dest, stdin=stdin)
+        if name == 'crtsh':
+            record = fetch_source(argv[-1], out, 'source-' + name, stdout=dest, deadline=deadline, max_bytes=8388608)
+        else:
+            record = run_command(argv, out, 'source-' + name, timeout=max(0.1, min(180, deadline-time.monotonic())), stdout=dest, stdin=stdin)
         found, params = set(), set()
         if record['status'] == 'success':
             try:

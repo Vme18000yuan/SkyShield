@@ -47,6 +47,22 @@ install_go_tool subfinder github.com/projectdiscovery/subfinder/v2/cmd/subfinder
 install_go_tool puredns github.com/d3mondev/puredns/v2@v2.1.2-0.20260223162428-46bd4c963ec2
 install_go_tool katana github.com/projectdiscovery/katana/cmd/katana@v1.6.1
 
+# Keep the AI information-gathering DNS tool aligned with the Server image.
+if [[ ! -x "$tools_dir/dnsx" ]]; then
+  printf '安装本地 DNSX（信息收集 DNS 解析）\n'
+  case "$arch" in
+    amd64) dnsx_sum=dabd54146d63b53fdd08186156ca117fcb79656c66153e3d3c61367aa87a9943 ;;
+    arm64) dnsx_sum=072c615f7c2acd3d056cbc6a8da105eaffdc78cbc5c3aa549b7fd0e3dc1436e8 ;;
+  esac
+  archive="dnsx_1.2.2_linux_${arch}.zip"
+  download_checked "https://github.com/projectdiscovery/dnsx/releases/download/v1.2.2/$archive" "$dnsx_sum" "$tmp_dir/$archive"
+  unzip -q "$tmp_dir/$archive" dnsx LICENSE.md -d "$tmp_dir/dnsx"
+  mkdir -p "$runtime_dir/tools/licenses"
+  install -m 644 "$tmp_dir/dnsx/LICENSE.md" "$runtime_dir/tools/licenses/dnsx.txt"
+  chmod 755 "$tmp_dir/dnsx/dnsx"
+  mv "$tmp_dir/dnsx/dnsx" "$tools_dir/dnsx"
+fi
+
 if [[ ! -x "$tools_dir/httpx" ]]; then
   printf '构建本地 HTTPX（包含截图请求头修正）\n'
   module_dir="$("$go_bin" mod download -json github.com/projectdiscovery/httpx@v1.10.0 | python3 -c 'import json,sys; print(json.load(sys.stdin)["Dir"])')"

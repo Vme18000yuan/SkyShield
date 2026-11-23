@@ -163,13 +163,19 @@ class ModelTests(unittest.TestCase):
                 with lock: active-=1
                 if 'web2.example.test' in str(argv[2]) and str(argv[1]).endswith('fingerprint.sh'):
                     return {'status':'timeout','returncode':124}
+                if 'web1.example.test' in str(argv[2]) and str(argv[1]).endswith('web_probe.sh'):
+                    dest = Path(argv[3]); dest.mkdir(parents=True, exist_ok=True)
+                    (dest/'web-probe-summary.json').write_text(json.dumps({'failed_tools':['katana'], 'timed_out_tools':['katana'], 'failed_requests':2}))
+                    return {'status':'failed','returncode':2}
                 return {'status':'success','returncode':0}
             with patch.object(sys,'argv',['web_batch.py',str(entries),str(out)]), patch.dict(os.environ,{'RECON_HTTP_RATE':'10','RECON_STAGE_TIMEOUT':'30','RECON_STEALTH':'0'}), patch.object(web_batch,'run_command',fake_run):
                 result=web_batch.main()
             summary=json.loads((out/'raw/web-batch-status.json').read_text())
             self.assertEqual(result,2); self.assertEqual(summary['selected'],5)
-            self.assertEqual(summary['attempted'],5); self.assertEqual(summary['completed'],4)
+            self.assertEqual(summary['attempted'],5); self.assertEqual(summary['completed'],3)
             self.assertEqual(summary['timed_out'],1); self.assertEqual(peak,3)
+            self.assertEqual(summary['crawler_timed_out'],1); self.assertEqual(summary['crawler_failed'],0)
+            self.assertEqual(summary['failed_requests'],2); self.assertEqual(summary['partial'],1)
             self.assertTrue(all(rate==3 for rate in rates))
             self.assertTrue(any(item['web']=='success' and item['fingerprint']=='timeout' for item in summary['results']))
 
@@ -245,7 +251,11 @@ class RuntimeTests(Fixture):
     def test_external_source_failure_is_recorded_without_raw_url(self):
         result,base,data=self.recon('example.test','--fast',env=dict(self.env,MOCK_CRT_502='1'))
         self.assertEqual(result.returncode,2,result.stdout+result.stderr)
-        self.assertIn({'source':'certificate_transparency','status':'failed','http_status':502},data['coverage']['organization']['failed_sources'])
+        self.assertIn({'source':'certificate_transparency','status':'failed','http_status':502,'attempts':3},data['coverage']['organization']['failed_sources'])
+        passive = json.loads((base/'raw/subdomain-status.json').read_text())
+        source = next(item for item in passive['sources'] if item['name']=='source-crtsh')
+        self.assertEqual(source['attempts'],3)
+        self.assertGreater(len(data['subdomains']),0)
         self.assertNotIn('https://',json.dumps(data['coverage']['organization']))
 
     def test_asn_dns_fallback_without_whois(self):

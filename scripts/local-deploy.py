@@ -154,6 +154,10 @@ def process_start(pid):
         return None
 
 
+def boot_id():
+    return pathlib.Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+
+
 def read_state():
     try:
         return json.loads(STATE.read_text())
@@ -169,14 +173,16 @@ def write_state(state):
 
 
 def alive(entry):
-    return bool(entry and process_start(entry.get("pid", 0)) == entry.get("start"))
+    return bool(entry and entry.get("start")
+                and (not entry.get("boot_id") or entry["boot_id"] == boot_id())
+                and process_start(entry.get("pid", 0)) == entry["start"])
 
 
 def record(state, name, pid, owned=True):
     start = process_start(pid)
     if not start:
         fail(f"{name} 启动后立即退出，请查看 {LOGS}")
-    state[name] = {"pid": pid, "start": start, "owned": owned}
+    state[name] = {"pid": pid, "start": start, "owned": owned, "boot_id": boot_id()}
     write_state(state)
 
 
@@ -495,23 +501,97 @@ def stop_managed(state, name):
     write_state(state)
 
 
+def reconcile_postgres_pid(state):
+    """Verify the postmaster identity before trusting or archiving its locks."""
+    pid_file = PGDATA / "postmaster.pid"
+    if not pid_file.exists():
+        return None
+    if pid_file.is_symlink() or not pid_file.is_file():
+        fail(f"PostgreSQL PID 文件无效：{pid_file}")
+    original = pid_file.read_bytes()
+    fields = original.decode().splitlines()
+    try:
+        pid, started, port = int(fields[0]), int(fields[2]), int(fields[3])
+        if pid <= 0 or started <= 0 or not 1 <= port <= 65535 or pathlib.Path(fields[1]).resolve() != PGDATA.resolve():
+            raise ValueError("invalid postmaster identity")
+    except (ValueError, IndexError):
+        fail(f"PostgreSQL PID 文件格式或数据目录不匹配，不会自动清理：{pid_file}")
+    boot_time = next(int(line.split()[1]) for line in pathlib.Path("/proc/stat").read_text().splitlines() if line.startswith("btime "))
+    stale = started < boot_time or process_start(pid) is None
+    if not stale:
+        try:
+            executable_path = os.readlink(f"/proc/{pid}/exe").removesuffix(" (deleted)")
+            args = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes().decode().split("\0")
+        except FileNotFoundError:
+            stale = True
+        except OSError:
+            fail(f"无法核实 PostgreSQL PID {pid} 的身份，不会自动清理 PID 文件")
+        else:
+            stale = pathlib.Path(executable_path).name != "postgres"
+            if not stale:
+                try:
+                    process_data = pathlib.Path(args[args.index("-D") + 1]).resolve()
+                except (ValueError, IndexError):
+                    fail(f"无法核实 PostgreSQL PID {pid} 的数据目录，不会自动清理 PID 文件")
+                stale = process_data != PGDATA.resolve()
+    if not stale:
+        if port != PG_PORT:
+            fail(f"本地 PostgreSQL 已在端口 {port} 运行，与配置端口 {PG_PORT} 不一致；请使用原端口或先正常停止该实例")
+        return pid
+
+    # An unrelated process may now own the old PID. Never signal it, and do
+    # not remove locks if either the TCP port or the local socket is active.
+    for candidate_port in {port, PG_PORT}:
+        free_port(candidate_port)
+    socket_path = PGSOCKET / f".s.PGSQL.{port}"
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(1)
+        try:
+            connection.connect(str(socket_path))
+        except (FileNotFoundError, ConnectionRefusedError):
+            pass
+        except OSError:
+            fail(f"无法确认 PostgreSQL socket 是否已停止，不会清理锁文件：{socket_path}")
+        else:
+            fail(f"PostgreSQL socket 仍在使用，不会清理锁文件：{socket_path}")
+    files = [(pid_file, original)]
+    socket_lock = PGSOCKET / f".s.PGSQL.{port}.lock"
+    if socket_lock.exists():
+        if socket_lock.is_symlink() or not socket_lock.is_file():
+            fail(f"PostgreSQL socket 锁文件无效：{socket_lock}")
+        contents = socket_lock.read_bytes()
+        if contents.decode().splitlines()[:3] != fields[:3]:
+            fail(f"PostgreSQL socket 锁与 PID 文件不匹配，不会自动清理：{socket_lock}")
+        files.append((socket_lock, contents))
+    if any(path.read_bytes() != contents for path, contents in files):
+        fail("PostgreSQL 锁文件已变化，请等待当前启动操作结束")
+    archive = LOGS / ("postgres-stale-" + uuid.uuid4().hex)
+    archive.mkdir(mode=0o700)
+    for path, _ in files:
+        path.replace(archive / path.name)
+    state.pop("postgres", None)
+    write_state(state)
+    print(f"已归档失效的 PostgreSQL 进程锁（旧 PID {pid}）：{archive}", flush=True)
+    return None
+
+
 def postgres_start(state, env):
     pgctl = pg_binary("pg_ctl")
     initdb = pg_binary("initdb")
     if not (PGDATA / "PG_VERSION").exists():
         PGDATA.mkdir(parents=True, exist_ok=True, mode=0o700)
         call([initdb, "-D", PGDATA, "-U", "postgres", "--auth-local=trust", "--auth-host=scram-sha-256", "--pwfile=" + str(SECRETS / "db_password"), "--no-instructions"], env=env)
-    if subprocess.run([pgctl, "-D", str(PGDATA), "status"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+    pid = reconcile_postgres_pid(state)
+    if pid is None:
         free_port(PG_PORT)
         options = f"-h 127.0.0.1 -p {PG_PORT} -k {shlex.quote(str(PGSOCKET))}"
         call([pgctl, "-D", PGDATA, "-l", LOGS / "local-postgres.log", "-o", options, "-w", "start"], env=env)
         pid = int((PGDATA / "postmaster.pid").read_text().splitlines()[0])
         record(state, "postgres", pid)
-    elif not alive(state.get("postgres")):
-        pid = int((PGDATA / "postmaster.pid").read_text().splitlines()[0])
+    elif state.get("postgres", {}).get("pid") != pid or not alive(state.get("postgres")):
         record(state, "postgres", pid, owned=False)
     ready = pg_binary("pg_isready")
-    wait_for(lambda: subprocess.run([ready, "-h", "127.0.0.1", "-p", str(PG_PORT), "-U", "postgres"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0, "PostgreSQL")
+    wait_for(lambda: subprocess.run([ready, "-h", "127.0.0.1", "-p", str(PG_PORT), "-U", "postgres", "-d", "postgres", "-t", "1"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0, "PostgreSQL", process=state.get("postgres"))
     psql = pg_binary("psql")
     present = call([psql, "-X", "-h", "127.0.0.1", "-p", PG_PORT, "-U", "postgres", "-d", "postgres", "-Atc", f"SELECT 1 FROM pg_database WHERE datname='{DB_NAME}'"], env=env, capture=True)
     if present != "1":

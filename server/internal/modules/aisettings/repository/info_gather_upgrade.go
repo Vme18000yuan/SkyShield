@@ -186,3 +186,17 @@ var infoGatherEvidenceScripts = map[string]string{
 func (s *SkillStore) upgradeInfoGatherEvidenceScripts(ctx context.Context) error {
 	return s.upgradeInfoGatherScriptsVersion(ctx, infoGatherEvidenceScripts, "builtin_info_gather_evidence_v1/")
 }
+
+// Retry and crawler fixes apply only to the unchanged shipped collectors.
+var infoGatherSourceReliabilityScripts = map[string]string{
+	"scripts/subdomain_enum.py":   "b36ba03295dacbb89d87553019b935f627340830d15afa38f2a8c95ac049aa8f",
+	"scripts/org_assets.py":       "534b72cf82dc645ed93c1fb31efb33728a04189d5c85a71b9007c02d452f927b",
+	"scripts/web_probe_driver.py": "c8d37287e04cc7f66a8f9c9a5a0b4865ac625625c4b7f40837727ab2729c27f4",
+	"scripts/web_batch.py":        "81a8f7e7caecbf458e7622841de4dba0d8373f2e9ad461f3b9bf9e2751a6e4d3",
+	"scripts/recon_pipeline.py":   "9991a5033e2ddd51c2c639af94ab73bb27c25a559a60f93911035811327bba04",
+	"scripts/source_http.py":      "",
+}
+
+func (s *SkillStore) upgradeInfoGatherSourceReliabilityScripts(ctx context.Context) error {
+	return s.upgradeInfoGatherScriptsVersion(ctx, infoGatherSourceReliabilityScripts, "builtin_info_gather_source_reliability_v1/")
+}

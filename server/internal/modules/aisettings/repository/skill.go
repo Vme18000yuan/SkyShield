@@ -169,7 +169,10 @@ VALUES(?,?,?,?,?,TRUE,?,?)`, id, assetapp.DefaultTenantID, entry.Name, descripti
 	if err := s.upgradeInfoGatherRiskContract(ctx); err != nil {
 		return err
 	}
-	return s.upgradeInfoGatherEvidenceScripts(ctx)
+	if err := s.upgradeInfoGatherEvidenceScripts(ctx); err != nil {
+		return err
+	}
+	return s.upgradeInfoGatherSourceReliabilityScripts(ctx)
 }
 
 func readSkills(tx *gorm.DB, id string) ([]settingsapp.SkillRecord, error) {
