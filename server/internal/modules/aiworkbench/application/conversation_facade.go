@@ -31,6 +31,7 @@ type ToolResolver func(int) []tool.CoreTool
 type manualChatTimingKey struct{}
 
 type ConversationFacade struct {
+	deleteData            func(context.Context, int, string) (bool, error)
 	chatBudget            airuntime.ModelRunBudgetResolver
 	governor              *airuntime.ExecutionGovernor
 	localTools            bool
@@ -63,6 +64,9 @@ type ConversationFacade struct {
 }
 
 func (f *ConversationFacade) SetExecutionGovernor(g *airuntime.ExecutionGovernor) { f.governor = g }
+func (f *ConversationFacade) SetDataDeletion(deleteData func(context.Context, int, string) (bool, error)) {
+	f.deleteData = deleteData
+}
 func (f *ConversationFacade) SetChatBudgetResolver(resolve airuntime.ModelRunBudgetResolver) {
 	f.chatBudget = resolve
 }

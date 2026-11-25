@@ -62,6 +62,9 @@ func registerRoutes(engine *gin.Engine, d *deps, jwtMiddleware gin.HandlerFunc) 
 	if d.infoGatherHandler != nil {
 		d.infoGatherHandler.Register(protected)
 	}
+	if d.aiStorageCleanup != nil {
+		d.aiStorageCleanup.Register(protected)
+	}
 	if d.assetMonitorHandler != nil {
 		assetmonitorrouter.RegisterRoutes(protected, d.assetMonitorHandler)
 	}

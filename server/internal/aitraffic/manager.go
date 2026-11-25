@@ -380,12 +380,71 @@ func (m *Manager) Read(ctx context.Context, scope Scope, visit func(*traffic.Tra
 		return false, err
 	}
 	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	// A different process may have removed this scope while we waited on the
+	// old lock inode. Read must not recreate a recorder after its parent deletion.
+	currentLock, statErr := os.Stat(filepath.Join(dir, ".initialize.lock"))
+	heldLock, heldErr := lock.Stat()
+	if errors.Is(statErr, os.ErrNotExist) {
+		return false, nil
+	}
+	if statErr != nil {
+		return false, statErr
+	}
+	if heldErr != nil {
+		return false, heldErr
+	}
+	if !os.SameFile(currentLock, heldLock) {
+		return false, nil
+	}
+	if _, err = os.Stat(filepath.Join(dir, "_index", "index.sqlite")); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
 	store, err := traffic.Open(dir, "127.0.0.1:0")
 	if err != nil {
 		return false, err
 	}
 	defer store.Close()
 	return true, visit(store)
+}
+
+// RemoveScope requires that no writer is using this recorder. The callback is
+// confined by the caller to the deleted owner's files. Readers opened without
+// a live recorder serialize through the same on-disk initialization lock.
+func (m *Manager) ScopeInUse(scope Scope) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.closed || m.entries[scope] != nil || m.building[scope] != nil
+}
+
+func (m *Manager) RemoveScope(ctx context.Context, scope Scope, remove func() error) error {
+	name, err := scope.name()
+	if err != nil || remove == nil {
+		return errors.New("invalid traffic cleanup")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed || m.entries[scope] != nil || m.building[scope] != nil {
+		return errors.New("traffic recorder is in use")
+	}
+	path := filepath.Join(m.root, scope.TenantID, fmt.Sprintf("user-%d", scope.UserID), "traffic", name, ".initialize.lock")
+	lock, err := os.OpenFile(path, os.O_RDWR, 0600)
+	if errors.Is(err, os.ErrNotExist) {
+		return remove()
+	}
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		return err
+	}
+	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return remove()
 }
 
 func (l *Lease) ProxyURL() string           { return l.entry.proxyURL }

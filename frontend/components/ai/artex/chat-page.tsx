@@ -61,7 +61,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Spinner } from "@/components/ui/spinner";
 import { useSideQuestions } from "@/hooks/artex/use-side-questions";
 import { mergeActivities } from "@/lib/artex/activity-merge";
-import { hasUnreadConversationEvents, conversationStatusMessage } from "@/lib/artex/conversation-feed";
+import { hasUnreadConversationEvents, conversationStatusMessage, conversationCanResume, RESUME_SAVED_WORK_PROMPT } from "@/lib/artex/conversation-feed";
 import { api } from "@/services/artex-ai.service";
 import { shouldSubmitOnKey, useChatSendMode } from "@/lib/artex/chat-send-mode";
 import { getLocalStorageValue, setLocalStorageValue } from "@/lib/artex/local-storage.client";
@@ -512,6 +512,7 @@ function ChatView({
   const viewingHistoryRef = React.useRef(false);
   const [viewingHistory, setViewingHistory] = React.useState(false);
   const [runNotice, setRunNotice] = React.useState("");
+  const [canResume, setCanResume] = React.useState(false);
   const [connectionError, setConnectionError] = React.useState(false);
   const [livePreview, setLivePreview] = React.useState({ text: "", kind: "" });
   const [input, setInput] = React.useState(initial?.input ?? "");
@@ -572,6 +573,7 @@ function ChatView({
     setRunning(false);
     setPolling(false);
     setRunNotice("");
+    setCanResume(false);
     setLivePreview({ text: "", kind: "" });
     setConnectionError(false);
     let live = true;
@@ -587,6 +589,8 @@ function ChatView({
         setRunning((current) => current || r.running);
         setPolling((current) => current || r.running || (r.finalCursor ?? r.cursor) > r.cursor);
         setRunNotice(conversationStatusMessage(r));
+        // History hasMore refers to older pages, not an unread terminal tail.
+        setCanResume(conversationCanResume({ ...r, hasMore: false }));
         setLivePreview({ text: r.liveText ?? "", kind: r.liveKind ?? "" });
         setHistoryLoaded(true);
       })
@@ -635,6 +639,7 @@ function ChatView({
         keepPolling = r.running || hasUnreadConversationEvents(r);
         setRunning(r.running);
         setRunNotice(conversationStatusMessage(r));
+        setCanResume(conversationCanResume(r));
         setLivePreview({ text: r.liveText ?? "", kind: r.liveKind ?? "" });
         setConnectionError(false);
         setPolling(keepPolling);
@@ -677,6 +682,7 @@ function ChatView({
       setRunning(page.running);
       setPolling(page.running || (page.finalCursor ?? page.cursor) > page.cursor);
       setRunNotice(conversationStatusMessage(page));
+      setCanResume(conversationCanResume({ ...page, hasMore: false }));
       setConnectionError(false);
     } catch { setConnectionError(true); }
   };
@@ -814,6 +820,22 @@ function ChatView({
     }
   }
 
+  async function resumeSavedWork() {
+    if (!canResume || running || sending || polling || connectionError || conv.review_read_only) return;
+    setSending(true);
+    try {
+      await api.sendConversationMessage(conv.id, RESUME_SAVED_WORK_PROMPT);
+      setCanResume(false);
+      setRunNotice("");
+      setRunning(true);
+      setPolling(true);
+    } catch (error) {
+      toast.error("继续执行失败：" + (error as Error).message);
+    } finally {
+      setSending(false);
+    }
+  }
+
   // stop aborts the in-flight run for this conversation. running flips to false on
   // the next 1s poll once the backend unwinds the agent; the trigger queue is not
   // affected — the agent's next queued fire still starts.
@@ -890,6 +912,7 @@ function ChatView({
 
       {(connectionError || runNotice || (polling && !running)) && <div role="status" className="border-t px-4 py-2 text-sm text-muted-foreground">
         {connectionError ? "连接暂时不可用，正在重新获取执行记录…" : polling && !running ? "正在补齐执行记录…" : runNotice}
+        {canResume && !running && !polling && !connectionError && !viewingHistory && !conv.review_read_only && <Button variant="outline" size="sm" className="ml-2" disabled={sending} onClick={() => void resumeSavedWork()}>继续未完成步骤</Button>}
       </div>}
 
       <Composer
@@ -1090,7 +1113,7 @@ const ConversationItem = React.memo(function ConversationItem({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>删除对话「{conv.title || "新对话"}」？</AlertDialogTitle>
-            <AlertDialogDescription>此操作不可撤销；若有关联的自动任务，也会取消尚未完成的任务。</AlertDialogDescription>
+            <AlertDialogDescription>此操作不可撤销，将删除执行记录、原始会话、文件和流量；若有关联的自动任务，也会取消尚未完成的任务。已归集的资产、漏洞保留。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel variant="outline">取消</AlertDialogCancel>
@@ -1368,6 +1391,7 @@ export default function ChatPage() {
           return next;
         });
         if (deleted.error) toast.warning(deleted.error);
+        else if (deleted.cleanupPending) toast.warning("对话已删除，文件清理正在排队重试");
         void reloadConvs();
       } catch (e) {
         toast.error("删除失败：" + (e as Error).message);
@@ -1382,10 +1406,12 @@ export default function ChatPage() {
     setBulkDeleting(true);
     const deleted = new Set<string>();
     const failed: { id: string; error: string }[] = [];
+    let cleanupPending = 0;
     try {
       for (let offset = 0; offset < ids.length; offset += 100) {
         const result = await api.deleteConversations(ids.slice(offset, offset + 100));
         for (const item of result.items) {
+          if (item.ok && item.cleanupPending) cleanupPending++;
           if (item.ok) deleted.add(item.id);
           else failed.push({ id: item.id, error: item.error ?? "对话不存在" });
         }
@@ -1397,6 +1423,7 @@ export default function ChatPage() {
         return next;
       });
       if (deleted.size > 0) toast.success(`已删除 ${deleted.size} 个对话`);
+      if (cleanupPending > 0) toast.warning(`${cleanupPending} 个对话的文件清理正在排队重试`);
       if (failed.length > 0) {
         const details = failed
           .slice(0, 3)

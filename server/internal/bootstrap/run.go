@@ -89,6 +89,9 @@ func Run(ctx context.Context, cfg *config.Config, migrationsFS embed.FS) {
 	if d.aiWorkbench != nil {
 		d.aiWorkbench.Start(jobCtx)
 	}
+	if d.aiStorageCleanup != nil {
+		d.aiStorageCleanup.Start(jobCtx)
+	}
 	if d.aiAgentTriggerController != nil {
 		d.aiAgentTriggerController.Start(jobCtx)
 	}
@@ -202,6 +205,9 @@ func Run(ctx context.Context, cfg *config.Config, migrationsFS embed.FS) {
 		waitForManagedBackgroundJob(shutdownCtx, "AI credential processor", d.aiCredentialProcessor)
 	}
 	if d.aiTraffic != nil {
+		if d.aiStorageCleanup != nil {
+			waitForManagedBackgroundJob(shutdownCtx, "AI storage cleanup", d.aiStorageCleanup)
+		}
 		d.aiTraffic.Close()
 	}
 	if d.aiScheduleController != nil {

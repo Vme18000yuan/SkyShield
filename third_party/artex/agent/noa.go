@@ -52,7 +52,11 @@ func enableNoa(opts *agentcore.Options, enabled func() bool, archiveRoot, sessio
 	// summaries into user messages. Replaying modified model-generated calls can
 	// be rejected by strict reasoning gateways. Keep the original call bytes in
 	// the request view; raw history and archived tool outputs stay untouched.
-	opts.Compactor = &replaySafeNoaCompactor{Compactor: opts.Compactor}
+	guard := &replaySafeNoaCompactor{Compactor: opts.Compactor}
+	if provider, ok := opts.Provider.(contextWindowProvider); ok {
+		guard.window = provider.ContextWindowTokens
+	}
+	opts.Compactor = guard
 	// Compactor 覆盖 Compaction,但两者并存时 agentcore 每次会告警;明确清掉。
 	opts.Compaction = nil
 }

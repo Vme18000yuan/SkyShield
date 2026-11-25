@@ -100,7 +100,7 @@ func formatParseError(d noa.CompressParseDiagnostics) string {
 	case noa.ParseMissingContent:
 		b.WriteString("Compress arguments have no `content` field.")
 	case noa.ParseContentNotList:
-		b.WriteString("Compress `content` is neither an array of ranges nor a JSON-encoded one.")
+		b.WriteString("Compress `content` could not be decoded as an array of ranges. If it is a JSON-encoded string, its inner JSON must be complete and valid; prefer passing the array directly.")
 	case noa.ParseNoValidRanges:
 		b.WriteString("No usable ranges: every entry was missing startId, endId or summary.")
 	case noa.ParseTruncated:

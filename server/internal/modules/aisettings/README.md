@@ -32,6 +32,12 @@ The information-gathering Agent can invoke Skill phases separately and decide be
 
 The resumable phase update likewise changes the adapter only when the installed phase scripts match the previous shipped version. A customized package remains untouched.
 
+The port checkpoint update upgrades the unchanged scanner, pipeline and phase
+adapter together. Normal managed TCP discovery reuses completed hosts, retains
+prior evidence, and retries only unfinished hosts with lower concurrency and a
+separate bounded host timeout. Repeating a completed phase with the same inputs
+returns its saved result without consuming a scan attempt.
+
 The source reliability update adds bounded retries for third-party HTTP sources,
 disables Katana's startup update check during collection, and reports crawler
 timeouts separately from completed Web analysis. It upgrades only the unchanged

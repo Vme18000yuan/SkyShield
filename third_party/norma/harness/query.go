@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"iter"
@@ -146,6 +147,12 @@ type Compactor interface {
 	Pre(ctx context.Context, msgs []llm.Message, lastInputTokens int) []llm.Message
 	Reactive(ctx context.Context, msgs []llm.Message) ([]llm.Message, bool)
 	IsOverflow(err error) bool
+}
+
+// RequestBudgeter accounts for the non-conversation portion of a request.
+// Optional so third-party context managers keep their existing contract.
+type RequestBudgeter interface {
+	SetRequestBudget(overheadTokens, maxOutputTokens int)
 }
 
 // ContextView is optionally implemented by a Compactor that builds the request
@@ -448,6 +455,14 @@ func (l *loop) run() {
 
 		// Non-destructive proactive compaction (MicroCompact → AutoCompact).
 		if l.in.Compactor != nil {
+			if budget, ok := l.in.Compactor.(RequestBudgeter); ok {
+				static, _ := json.Marshal(struct {
+					System   []string
+					Tools    []llm.ToolSchema
+					Reminder string
+				}{l.in.System, schemas, l.in.SystemReminder})
+				budget.SetRequestBudget((len(static)+2)/3, l.maxTokens())
+			}
 			l.messages = l.in.Compactor.Pre(l.toolCtx, l.messages, l.lastInputTokens)
 			l.recordNewBoundary()
 		}
@@ -517,13 +532,16 @@ func (l *loop) run() {
 				return
 			}
 			// Reactive recovery from prompt-too-long: one forced AutoCompact, then retry.
-			if l.in.Compactor != nil && l.in.Compactor.IsOverflow(streamErr) && !l.hasAttemptedReactiveCompact {
-				l.hasAttemptedReactiveCompact = true
-				if msgs, ok := l.in.Compactor.Reactive(l.ctx, l.messages); ok {
-					l.messages = msgs
-					l.recordNewBoundary()
-					l.lastContinue = ContinueReactiveCompactRetry
-					continue
+			if l.in.Compactor != nil && l.in.Compactor.IsOverflow(streamErr) {
+				if !l.hasAttemptedReactiveCompact {
+					l.hasAttemptedReactiveCompact = true
+					if msgs, ok := l.in.Compactor.Reactive(l.ctx, l.messages); ok {
+						l.messages = msgs
+						l.lastInputTokens = 0 // the rejected request no longer describes this view
+						l.recordNewBoundary()
+						l.lastContinue = ContinueReactiveCompactRetry
+						continue
+					}
 				}
 				l.finish(ReasonPromptTooLong, streamErr, "")
 				return
@@ -536,7 +554,7 @@ func (l *loop) run() {
 		turnUsage := usageDelta(usageBefore, l.usage)
 		// The size the model just reported for its input, preferred by the
 		// compactor over local estimation on the next turn's gate check.
-		l.lastInputTokens = turnUsage.InputTokens + turnUsage.OutputTokens
+		l.lastInputTokens = turnUsage.InputTokens
 		l.record(asst, turnUsage)
 		// surface cumulative usage after each model turn so hosts can show live token
 		// counts during a run (not just at the terminal event).

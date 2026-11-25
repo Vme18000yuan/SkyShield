@@ -402,8 +402,8 @@ func (s *ConversationStore) ListToolExecutions(ctx context.Context, user int, qu
 		comparison = "(? > 0 AND u.id = ?)"
 		inputExpr, outputExpr = "u.detail", "COALESCE(result.detail,'')"
 	}
-	// The matching result must occur after this use and before any later use of
-	// the same tool-call ID in the same run. This prevents cross-run pairing.
+	// Server occurrence IDs also disambiguate concurrent reused model call IDs.
+	// Older records fall back to the durable call boundaries within the same run.
 	statement := `SELECT u.id,u.conversation_id::text,c.title AS conversation,u.run_id::text,u.tool,` + inputExpr + ` AS input,` + outputExpr + ` AS output,
 		CASE WHEN result.id IS NULL THEN CASE WHEN r.status='running' AND r.lease_until>CURRENT_TIMESTAMP THEN 'running' ELSE 'unknown' END
 			WHEN result.is_error THEN 'failed' ELSE 'succeeded' END AS status,u.created_at
@@ -413,10 +413,12 @@ func (s *ConversationStore) ListToolExecutions(ctx context.Context, user int, qu
 		LEFT JOIN LATERAL (
 			SELECT x.id,x.detail,x.is_error FROM ai_conversation_activity x
 			WHERE x.tenant_id=u.tenant_id AND x.conversation_id=u.conversation_id AND x.run_id=u.run_id
-			AND x.tool_use_id=u.tool_use_id AND x.kind='tool_result' AND x.id>u.id
-			AND NOT EXISTS (SELECT 1 FROM ai_conversation_activity later WHERE later.run_id=u.run_id
+			AND x.kind='tool_result' AND (
+			 (u.trace_call_id IS NOT NULL AND x.trace_call_id=u.trace_call_id) OR
+			 (u.trace_call_id IS NULL AND x.trace_call_id IS NULL AND x.tool_use_id=u.tool_use_id AND x.id>u.id
+			 AND NOT EXISTS (SELECT 1 FROM ai_conversation_activity later WHERE later.run_id=u.run_id
 				AND later.conversation_id=u.conversation_id AND later.tool_use_id=u.tool_use_id AND later.kind='tool_use'
-				AND later.id>u.id AND later.id<x.id)
+				AND later.id>u.id AND later.id<x.id)))
 			ORDER BY x.id LIMIT 1
 		) result ON TRUE
 		WHERE u.tenant_id=? AND u.owner_user_id=? AND u.kind='tool_use' AND t.status='active' AND a.is_active=TRUE AND tianqiong_ai.finding_case_review_conversation_visible(c.id)

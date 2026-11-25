@@ -76,8 +76,12 @@ func (r *TaskModelRouter) Complete(ctx context.Context, request llm.CompletionRe
 		var message llm.Message
 		var stop string
 		var usage llm.Usage
+		callCtx := llm.WithRequestBudget(ctx, max(4, options.MaxRequestAttempts, retries+1))
+		if retries > 0 {
+			callCtx = llm.WithConnectRetryLimit(callCtx, 0)
+		}
 		for attempt := 0; ; attempt++ {
-			message, stop, usage, err = selection.Provider.Complete(ctx, request)
+			message, stop, usage, err = selection.Provider.Complete(callCtx, request)
 			if err == nil || ctx.Err() != nil || attempt >= retries || !retryableStreamError(err) {
 				break
 			}
@@ -95,6 +99,9 @@ func (r *TaskModelRouter) Complete(ctx context.Context, request llm.CompletionRe
 		}
 		if err == nil {
 			return message, stop, usage, nil
+		}
+		if ctx.Err() == nil && retryableStreamError(err) {
+			err = errors.Join(ErrModelRecoveryExhausted, err)
 		}
 		if selection.ProfileID == "" || ctx.Err() != nil || !agent.IsQuotaExhaustedMessage(err.Error()) {
 			return llm.Message{}, "", llm.Usage{}, err

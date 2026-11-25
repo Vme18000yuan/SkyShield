@@ -28,6 +28,10 @@ func (c *adaptiveCompactor) Pre(ctx context.Context, messages []llm.Message, tok
 	c.refresh()
 	return c.current.Pre(ctx, messages, tokens)
 }
+func (c *adaptiveCompactor) SetRequestBudget(overhead, output int) {
+	c.refresh()
+	c.current.SetRequestBudget(overhead, output)
+}
 func (c *adaptiveCompactor) Reactive(ctx context.Context, messages []llm.Message) ([]llm.Message, bool) {
 	c.refresh()
 	return c.current.Reactive(ctx, messages)

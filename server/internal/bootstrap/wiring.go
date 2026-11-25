@@ -19,6 +19,7 @@ import (
 	"github.com/Autumn-27/norma/tool"
 	"github.com/yyhuni/lunafox/contracts/sharedstorage"
 	"github.com/yyhuni/lunafox/server/internal/agentlicense"
+	"github.com/yyhuni/lunafox/server/internal/aicleanup"
 	"github.com/yyhuni/lunafox/server/internal/ainotification"
 	"github.com/yyhuni/lunafox/server/internal/airuntime"
 	"github.com/yyhuni/lunafox/server/internal/aitraffic"
@@ -143,6 +144,7 @@ import (
 )
 
 type deps struct {
+	aiStorageCleanup               *aicleanup.Service
 	httpRepeaterHandler            *repeaterhandler.Handler
 	infoGatherHandler              *infogather.Handler
 	aiVulnerabilityService         *aivuln.Service
@@ -766,6 +768,8 @@ func buildDependencies(infra *infra, cfg *config.Config) (*deps, error) {
 	aiWorkbench.SetSideQuestions(aiSideQuestions)
 	aiAttachments := aiworkbenchapp.NewAttachmentFacade(aiworkbenchwiring.NewAIWorkbenchChatAttachmentStoreAdapter(infra.db), aiworkbenchinfra.NewChatFileStorage(aiRoot))
 	aiWorkbench.SetAttachments(aiAttachments)
+	aiStorageCleanup := aicleanup.New(infra.db, aiRoot, aiTraffic)
+	aiWorkbench.SetDataDeletion(aiStorageCleanup.DeleteConversation)
 	aiWorkbench.SetMCPAugmenter(mcpAugmenter)
 	aiWorkbench.SetAgentCatalogResolver(agentCatalogFacade.ResolveForChat)
 	aiWorkbench.SetProfileProviderResolver(provider.ResolveProfile)
@@ -932,6 +936,7 @@ func buildDependencies(infra *infra, cfg *config.Config) (*deps, error) {
 	})
 	aiCredentialProcessor.SetTrafficMatcher(aiworkbenchapp.NewScopedCredentialTrafficMatcher(credentialTrafficStore, aiTraffic))
 	aiTaskController := aiworkbenchapp.NewTaskController(aiTaskStore, aiTaskRuntime, taskProvider)
+	aiStorageCleanup.SetActiveTaskCheck(aiTaskController.HasActiveExecution)
 	aiTaskController.SetTaskModelResolver(taskModels)
 	aiTaskController.SetWorkerSlotsResolver(aiRuntimeSettings.WorkerSlots)
 	aiTaskFacade := aiworkbenchapp.NewTaskFacade(aiTaskStore, taskProvider, aiTaskController)
@@ -1055,6 +1060,7 @@ func buildDependencies(infra *infra, cfg *config.Config) (*deps, error) {
 	assetMonitor := assetmonitorapp.NewFacade(assetmonitorrepo.NewStore(infra.db), locationCoordinator, assetmonitorinfra.NewDNSResolver(nil))
 	return &deps{
 		infoGatherHandler:              infogather.NewHandler(infoGatherStore),
+		aiStorageCleanup:               aiStorageCleanup,
 		aiVulnerabilityService:         aiVulnerabilityService,
 		oastService:                    oastService,
 		oastCollector:                  oast.NewCollector(oastService),

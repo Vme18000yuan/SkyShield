@@ -42,7 +42,7 @@ type CompressParseDiagnostics struct {
 	Keys      []string
 	// Salvaged marks output recovered by bracket-matching rather than parsed.
 	Salvaged bool
-	// TailRepaired marks output fixed by appending a missing closing brace.
+	// TailRepaired marks output fixed by restoring missing closing delimiters.
 	TailRepaired bool
 }
 
@@ -253,22 +253,34 @@ func tryParseLenientArray(s string) ([]any, bool) {
 	return nil, false
 }
 
-// tailRepair fixes an array whose last object lost its closing brace.
+// tailRepair fixes missing closing object/array delimiters. It never inserts
+// a quote, so an unfinished summary cannot be accepted as a complete one.
 //
 // Deterministic and safe: well-formed JSON cannot be made parseable by
 // appending a brace, so a successful repair proves the input was malformed in
 // exactly this way.
 func tailRepair(s string) ([]any, bool) {
 	t := strings.TrimSpace(s)
-	if !strings.HasSuffix(t, "]") {
+	if !strings.HasPrefix(t, "[") {
 		return nil, false
 	}
-	withoutBracket := strings.TrimSpace(strings.TrimSuffix(t, "]"))
-	if !strings.HasSuffix(withoutBracket, `"`) {
+	var candidate string
+	switch {
+	case strings.HasSuffix(t, "]"):
+		withoutBracket := strings.TrimSpace(strings.TrimSuffix(t, "]"))
+		if !strings.HasSuffix(withoutBracket, `"`) {
+			return nil, false
+		}
+		candidate = withoutBracket + "}]"
+	case strings.HasSuffix(t, `"`):
+		candidate = t + "}]"
+	case strings.HasSuffix(t, "}"):
+		candidate = t + "]"
+	default:
 		return nil, false
 	}
 	var arr []any
-	if json.Unmarshal([]byte(withoutBracket+"}]"), &arr) == nil {
+	if json.Unmarshal([]byte(candidate), &arr) == nil {
 		return arr, true
 	}
 	return nil, false

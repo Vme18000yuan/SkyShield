@@ -204,6 +204,10 @@ func Open(dir, addr string) (*Traffic, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := t.recoverRecordDeleteStages(); err != nil {
+		_ = t.Close()
+		return nil, err
+	}
 
 	p, err := mproxy.NewProxy(&mproxy.Options{
 		Addr:        addr,
@@ -1210,6 +1214,9 @@ func (t *Traffic) DeleteAll() (deleted int64, reclaimed int64, err error) {
 	if err != nil {
 		return 0, 0, errors.Join(err, restoreTrees(stageDir, moves))
 	}
+	if err := deletionJournal(stageDir, moves, nil, true); err != nil {
+		return 0, 0, errors.Join(err, restoreTrees(stageDir, moves))
+	}
 	if err := tx.Commit(); err != nil {
 		return 0, 0, errors.Join(fmt.Errorf("提交流量索引删除: %w", err), restoreTrees(stageDir, moves))
 	}
@@ -1341,6 +1348,8 @@ type hostDeleteStageJournal struct {
 	ArchiveID int64                 `json:"archive_id,omitempty"`
 	TaskID    int64                 `json:"task_id,omitempty"`
 	Hosts     []string              `json:"hosts,omitempty"`
+	RecordIDs []string              `json:"record_ids,omitempty"`
+	ClearAll  bool                  `json:"clear_all,omitempty"`
 	Moves     []hostDeleteStageMove `json:"moves"`
 }
 
@@ -1586,6 +1595,10 @@ func (t *Traffic) stageDeleteHostsExact(hosts []string, archiveID, taskID int64)
 // SQLite rolls open transactions back on restart, while the supplied callback
 // identifies task archives whose PostgreSQL compaction already committed.
 func (t *Traffic) RecoverHostDeleteStages(archiveCommitted func(int64, int64) (bool, error)) error {
+	return t.recoverDeleteStages(archiveCommitted, false)
+}
+
+func (t *Traffic) recoverDeleteStages(archiveCommitted func(int64, int64) (bool, error), recordsOnly bool) error {
 	if t == nil {
 		return nil
 	}
@@ -1621,7 +1634,10 @@ func (t *Traffic) RecoverHostDeleteStages(archiveCommitted func(int64, int64) (b
 			errs = append(errs, fmt.Errorf("读取流量暂存日志 %s: %w", stageDir, err))
 			continue
 		}
-		if journal.Version != 1 {
+		if recordsOnly && len(journal.RecordIDs) == 0 && !journal.ClearAll {
+			continue
+		}
+		if journal.Version != 1 && !(journal.Version == 2 && (len(journal.RecordIDs) > 0 || journal.ClearAll)) {
 			errs = append(errs, fmt.Errorf("流量暂存日志 %s 的版本 %d 不受支持", stageDir, journal.Version))
 			continue
 		}
@@ -1644,7 +1660,20 @@ func (t *Traffic) RecoverHostDeleteStages(archiveCommitted func(int64, int64) (b
 			continue
 		}
 		committed := false
-		if journal.ArchiveID > 0 {
+		if journal.ClearAll {
+			count, countErr := t.Count()
+			if countErr != nil {
+				errs = append(errs, countErr)
+				continue
+			}
+			committed = count == 0
+		} else if len(journal.RecordIDs) > 0 {
+			committed, err = t.recordsHaveNoExchanges(journal.RecordIDs)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+		} else if journal.ArchiveID > 0 {
 			if archiveCommitted == nil {
 				errs = append(errs, fmt.Errorf("流量归档 %d 无状态解析器", journal.ArchiveID))
 				continue
@@ -1667,9 +1696,11 @@ func (t *Traffic) RecoverHostDeleteStages(archiveCommitted func(int64, int64) (b
 			}
 			continue
 		}
-		if err := t.deleteArchivedHosts(journal.Hosts); err != nil {
-			errs = append(errs, err)
-			continue
+		if len(journal.RecordIDs) == 0 && !journal.ClearAll {
+			if err := t.deleteArchivedHosts(journal.Hosts); err != nil {
+				errs = append(errs, err)
+				continue
+			}
 		}
 		if err := os.RemoveAll(stageDir); err != nil {
 			errs = append(errs, err)

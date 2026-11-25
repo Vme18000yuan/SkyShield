@@ -6450,5 +6450,25 @@
       "unknown": "Unknown"
     },
     "organizationAssetScope": "Organization asset scope"
+  },
+  "aiDataDeletion": {
+    "selectedCount": "{count} execution records selected",
+    "deleteSelected": "Delete selected ({count})",
+    "selectPage": "Select this page",
+    "selectRecord": "Select record {id}",
+    "delete": "Delete",
+    "clear": "Clear source traffic",
+    "title": "Delete AI data?",
+    "cancel": "Cancel",
+    "confirm": "Delete",
+    "deleting": "Deleting…",
+    "success": "AI data deleted",
+    "pending": "Records deleted; file cleanup is queued for retry",
+    "error": "Deletion failed. Stop related executions and try again.",
+    "preserved": "Registered assets and vulnerabilities are retained. Stop active executions first.",
+    "taskDescription": "Delete this AI task, execution records, related automatic conversations, raw transcripts and task files. This cannot be undone.",
+    "executionDescription": "Delete the selected tool execution records. Their conversations, tasks and raw transcripts are retained. This cannot be undone.",
+    "trafficDescription": "Delete selected traffic records and unreferenced data files. Independent evidence copies bound to findings are retained.",
+    "clearTrafficDescription": "Clear all traffic for this conversation or task, including records hidden by the current filters. This cannot be undone."
   }
 }

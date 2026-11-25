@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest"
-import { hasUnreadConversationEvents, conversationStatusMessage } from "./conversation-feed"
+import { hasUnreadConversationEvents, conversationStatusMessage, conversationCanResume } from "./conversation-feed"
 import { mergeActivities } from "./activity-merge"
 import type { Activity } from "@/types/artex-ai.types"
 
 describe("conversation recovery", () => {
+  it("offers recovery only after a model failure's complete tail is loaded", () => {
+    const page = { items: [], cursor: 12, finalCursor: 12, running: false, runStatus: "failed", terminalReason: "model_error" }
+    expect(conversationCanResume(page)).toBe(true)
+    expect(conversationStatusMessage(page)).toContain("已保留")
+    expect(conversationCanResume({ ...page, finalCursor: 13 })).toBe(false)
+    expect(conversationCanResume({ ...page, running: true })).toBe(false)
+    expect(conversationCanResume({ ...page, terminalReason: "user_stop" })).toBe(false)
+    expect(conversationCanResume({ ...page, terminalReason: "persistence_error" })).toBe(false)
+  })
   it("drains all unread pages after a completed run", () => {
     for (const cursor of [200, 400]) expect(hasUnreadConversationEvents({ items: [], cursor, finalCursor: 450, running: false })).toBe(true)
     expect(hasUnreadConversationEvents({ items: [], cursor: 450, finalCursor: 450, running: false })).toBe(false)

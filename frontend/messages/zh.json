@@ -6480,5 +6480,25 @@
       "unknown": "未知"
     },
     "organizationAssetScope": "组织关联资产"
+  },
+  "aiDataDeletion": {
+    "selectedCount": "本次选中 {count} 条执行记录",
+    "deleteSelected": "删除已选（{count}）",
+    "selectPage": "选择当前页",
+    "selectRecord": "选择记录 {id}",
+    "delete": "删除",
+    "clear": "清空本来源流量",
+    "title": "确认删除 AI 数据",
+    "cancel": "取消",
+    "confirm": "确认删除",
+    "deleting": "正在删除…",
+    "success": "AI 数据已删除",
+    "pending": "记录已删除，文件清理正在排队重试",
+    "error": "删除失败，请先停止相关执行后重试",
+    "preserved": "已归集的资产、漏洞保持不变。正在运行的执行需先停止。",
+    "taskDescription": "将删除此 AI 任务、执行记录、关联的自动对话、原始会话和任务文件。此操作无法撤销。",
+    "executionDescription": "将删除所选工具执行记录。所属对话、任务和原始会话保留。此操作无法撤销。",
+    "trafficDescription": "将删除所选流量记录及不再被引用的数据文件。已绑定到漏洞的独立证据副本保留。",
+    "clearTrafficDescription": "将清空此对话或任务的全部流量，包括当前筛选条件未显示的记录。此操作无法撤销。"
   }
 }

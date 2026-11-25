@@ -221,6 +221,7 @@ class Pipeline:
         items = [item for item in data.get('results', []) if isinstance(item, dict) and item.get('stage') != 'service-detail'] if isinstance(data.get('results'), list) else []
         total = len(targets)
         self.m['coverage']['ports'] = dict(total=total,
+            reused=data.get('reused_targets', 0),
             completed=sum(item.get('status') == 'success' for item in items),
             timed_out=sum(item.get('status') == 'timeout' for item in items),
             failed=sum(item.get('status') == 'failed' for item in items),

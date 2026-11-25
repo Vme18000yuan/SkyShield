@@ -64,12 +64,47 @@ def scan_normal_nmap(targets, outdir, rate, stage_seconds):
     # Finish writing results before the enclosing phase's deadline expires.
     deadline = time.monotonic() + max(.25, stage_seconds - 4)
     networks = {target: ipaddress.ip_network(target, strict=False) for target in targets}
-    groups = [(version, [target for target in targets if networks[target].version == version]) for version in (4, 6)]
-    groups = [(version, members) for version, members in groups if members]
     results, statuses = [], []
     limited = False
+    invalid_output = False
+    profile = 'normal-tcp-top100-v1'
+    previous = load_json(outdir / 'raw/port-scan-status.json', {})
+    if not isinstance(previous, dict):
+        previous = {}
+    prior_items = previous.get('results', [])
+    compatible = previous.get('scan_profile') == profile or (
+        not previous.get('scan_profile') and isinstance(prior_items, list) and prior_items
+        and all(isinstance(item, dict) and item.get('scanner') == 'nmap-batch-top100' for item in prior_items))
+    compatible = compatible and (outdir / 'raw/ports.json').is_file()
+    if compatible:
+        old_results = load_json(outdir / 'raw/ports.json', [])
+        compatible = isinstance(old_results, list)
+        if isinstance(old_results, list):
+            for record in old_results:
+                try:
+                    address = ipaddress.ip_address(record['ip'])
+                    if any(address.version == net.version and address in net for net in networks.values()) and record['protocol'] in ('tcp', 'udp') and 1 <= int(record['port']) <= 65535:
+                        results.append(record)
+                except (ValueError, KeyError, TypeError):
+                    continue
+        if compatible and isinstance(prior_items, list) and not previous.get('invalid_output'):
+            by_target = {item.get('target'): item for item in prior_items if isinstance(item, dict) and isinstance(item.get('target'), str)}
+            statuses = [dict(by_target[target]) for target in targets
+                if target in by_target and by_target[target].get('status') == 'success']
+    reused = {item['target'] for item in statuses}
+    pending_targets = [target for target in targets if target not in reused]
+    retry = compatible and bool(previous.get('targets'))
+    try:
+        attempt = max(1, int(previous.get('attempt', 1)) + 1) if retry else 1
+    except (TypeError, ValueError):
+        attempt = 2 if retry else 1
+    groups = [(version, [target for target in pending_targets if networks[target].version == version]) for version in (4, 6)]
+    groups = [(version, members) for version, members in groups if members]
 
     def save():
+        # Evidence is cumulative within this run, including partial attempts.
+        unique = {(r['ip'], r['protocol'], int(r['port'])): r for r in results}
+        results[:] = list(unique.values())
         completed = sum(item['status'] == 'success' for item in statuses)
         timed_out = sum(item['status'] == 'timeout' for item in statuses)
         failed = sum(item['status'] == 'failed' for item in statuses)
@@ -80,6 +115,7 @@ def scan_normal_nmap(targets, outdir, rate, stage_seconds):
             total_targets=len(targets), completed_targets=completed,
             timed_out_targets=timed_out, failed_targets=failed,
             unprocessed_targets=sum(item['status'] == 'unprocessed' for item in statuses) + max(0, len(targets) - len(statuses)),
+            scan_profile=profile, attempt=attempt, reused_targets=len(reused), invalid_output=invalid_output,
             service_detail='disabled_for_http_proxy' if os.getenv('RECON_MANAGED_PROXY') == '1' else 'active',
         ))
 
@@ -90,17 +126,20 @@ def scan_normal_nmap(targets, outdir, rate, stage_seconds):
             limited = True
             break
         allocation = max(1, (remaining - 1) / (len(groups) - index))
-        host_timeout = max(1, min(60, int(allocation - 2)))
-        input_file = outdir / f'raw/port-targets-v{version}.txt'
+        host_timeout = max(1, min(120 if retry else 60, int(allocation - 2)))
+        suffix = f'-attempt{attempt}' if retry else ''
+        input_file = outdir / f'raw/port-targets-v{version}{suffix}.txt'
         input_file.write_text(''.join(target + '\n' for target in group))
-        xml_file = outdir / f'raw/port-discovery-v{version}.xml'
-        argv = ['nmap', *(['-6'] if version == 6 else []), '-n', '-Pn', '-sT', '-T4', '--max-rate', str(rate),
+        xml_file = outdir / f'raw/port-discovery-v{version}{suffix}.xml'
+        argv = ['nmap', *(['-6'] if version == 6 else []), '-n', '-Pn', '-sT', '-T3' if retry else '-T4', '--max-rate', str(min(rate, 500) if retry else rate),
+            '--max-parallelism', '16' if retry else '32',
             '--max-retries', '2', '--host-timeout', f'{host_timeout}s', '--min-hostgroup', str(min(16, len(group))),
             '--max-hostgroup', '64', '-F', '-iL', input_file, '-oX', xml_file]
-        command = run_command(argv, outdir, f'nmap-batch-v{version}', timeout=allocation)
+        command = run_command(argv, outdir, f'nmap-batch-v{version}{suffix}', timeout=allocation)
         found, hosts, complete, invalid = read_batch_xml(xml_file, [networks[target] for target in group])
         results.extend(found)
         limited |= command['status'] != 'success' or not complete or invalid
+        invalid_output |= invalid
         for target in group:
             network = networks[target]
             matching = [state for address, state in hosts.items() if ipaddress.ip_address(address) in network]

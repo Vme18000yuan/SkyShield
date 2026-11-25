@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import json
 import re
 import signal
@@ -148,9 +149,23 @@ def execute(args):
             raise ValueError('该阶段不适用于当前目标或采集模式')
         attempts = pipeline.m.setdefault('agentic_attempts', {})
         count = int(attempts.get(args.stage, 0))
+        port_input = None
+        if args.stage == 'ports':
+            path = pipeline.out / '04-ips.txt'
+            port_input = hashlib.sha256(args.mode.encode() + b'\0' + (path.read_bytes() if path.exists() else b'')).hexdigest()
+            if (pipeline.m['steps'].get('ports', {}).get('status') == 'success'
+                and pipeline.m.get('agentic_port_input') == port_input
+                and (pipeline.out / 'raw/ports.json').is_file()
+                and (pipeline.out / 'raw/port-scan-status.json').is_file()):
+                data = checkpoint(pipeline)
+                print(json.dumps({'stage': 'ports', 'status': 'success', 'attempt': count,
+                    'reused': True, 'stats': data.get('stats', {})}, ensure_ascii=False))
+                return 0
         if count >= 2:
             raise ValueError('该阶段已达到重试上限')
         attempts[args.stage] = count + 1
+        if port_input is not None:
+            pipeline.m['agentic_port_input'] = port_input
         pipeline.save()
         callbacks = {'passive': pipeline.passive, 'organization': pipeline.organization,
             'dns_brute': pipeline.brute, 'dns': pipeline.dns, 'axfr': pipeline.axfr,

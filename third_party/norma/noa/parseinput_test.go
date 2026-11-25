@@ -1,6 +1,7 @@
 package noa
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -91,6 +92,36 @@ func TestParseCompressArgsTailRepair(t *testing.T) {
 	}
 	if len(r.Ranges) != 1 || r.Ranges[0].StartRef != "m1" {
 		t.Fatalf("Ranges = %+v", r.Ranges)
+	}
+}
+
+func TestStringifiedContentMissingClosingDelimiters(t *testing.T) {
+	summary := "Completed local fixture work.\nKeep escaped quotes: \"value\" and brackets: }]."
+	complete, _ := json.Marshal([]map[string]string{{"endId": "m00335", "startId": "m00001", "summary": summary}})
+	for _, missing := range []int{1, 2} {
+		raw, _ := json.Marshal(map[string]string{"content": string(complete[:len(complete)-missing]), "topic": "Saved fixture context"})
+		r := ParseCompressArgs(raw)
+		if !r.Diagnostics.Ok || !r.Diagnostics.TailRepaired || len(r.Ranges) != 1 {
+			t.Fatalf("missing %d delimiters: %+v", missing, r.Diagnostics)
+		}
+		got := r.Ranges[0]
+		if got.Summary != summary || got.StartRef != "m00001" || got.EndRef != "m00335" || got.Topic != "Saved fixture context" {
+			t.Fatalf("repair changed supplied data: %+v", got)
+		}
+	}
+}
+
+func TestTailRepairDoesNotCompleteTruncatedValues(t *testing.T) {
+	for _, inner := range []string{
+		`[{"startId":"m1","endId":"m2","summary":"unfinished`,
+		`[{"startId":"m1","endId":"m2","summary":"escaped final quote\"`,
+		`[{"startId":"m1","endId":"m2","summary":"complete","topic":`,
+	} {
+		raw, _ := json.Marshal(map[string]string{"content": inner})
+		r := ParseCompressArgs(raw)
+		if r.Diagnostics.Ok || len(r.Ranges) != 0 || r.Diagnostics.TailRepaired {
+			t.Fatalf("accepted an unfinished value: %+v", r)
+		}
 	}
 }
 

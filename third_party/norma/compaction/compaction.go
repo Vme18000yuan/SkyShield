@@ -73,10 +73,20 @@ const (
 
 // Compactor applies the strategy. Construct with New.
 type Compactor struct {
-	cfg       Config
-	summarize Summarizer
-	failures  int
-	tripped   bool
+	cfg              Config
+	summarize        Summarizer
+	failures         int
+	tripped          bool
+	overhead         int
+	previousEstimate int
+	requestOutput    int
+}
+
+// SetRequestBudget includes the system prompt and tool schemas in the gate.
+// They are not conversation messages and must never be summarized away.
+func (c *Compactor) SetRequestBudget(overhead, output int) {
+	c.overhead = max(0, overhead)
+	c.requestOutput = max(0, output)
 }
 
 // New builds a Compactor. summarize may be nil to disable AutoCompact.
@@ -96,7 +106,9 @@ func (c *Compactor) reservedForSummary() int {
 	}
 	return r
 }
-func (c *Compactor) effectiveWindow() int { return c.cfg.ContextWindow - c.reservedForSummary() }
+func (c *Compactor) effectiveWindow() int {
+	return c.cfg.ContextWindow - max(c.reservedForSummary(), c.requestOutput)
+}
 
 // buffer tiers off the EFFECTIVE window (== claude-code getAutocompactBufferTokens).
 func (c *Compactor) buffer() int {
@@ -124,10 +136,16 @@ func (c *Compactor) predictiveOver(tok int) bool {
 // tokenCountWithEstimation. After a working-set mutation, callers pass 0 to force
 // a fresh per-block estimate.
 func (c *Compactor) count(msgs []llm.Message, lastInputTokens int) int {
+	estimate := EstimateTokens(llm.MessagesForAPI(msgs))*4/3 + c.overhead
 	if lastInputTokens > 0 {
-		return lastInputTokens
+		// The previous response does not include newly appended tool results.
+		// Keep its measured overhead while accounting for the view's growth.
+		if c.previousEstimate > 0 {
+			return max(estimate, lastInputTokens+estimate-c.previousEstimate)
+		}
+		return max(estimate, lastInputTokens)
 	}
-	return EstimateTokens(llm.MessagesForAPI(msgs)) * 4 / 3
+	return estimate
 }
 
 // EstimateTokens approximates the token footprint of messages (~4 chars/token),
@@ -171,6 +189,7 @@ func blockChars(b llm.ContentBlock) int {
 // non-destructive. lastInputTokens is the previous response's total token size
 // (0 if none yet), used as the initial gate count.
 func (c *Compactor) Pre(ctx context.Context, msgs []llm.Message, lastInputTokens int) []llm.Message {
+	defer func() { c.previousEstimate = c.count(msgs, 0) }()
 	if c.cfg.ContextWindow <= 0 {
 		return msgs
 	}
@@ -181,9 +200,11 @@ func (c *Compactor) Pre(ctx context.Context, msgs []llm.Message, lastInputTokens
 	// MicroCompact: clear old COMPACTABLE tool results (non-destructive). Only
 	// re-estimate when it actually changed the array; otherwise the gate count
 	// (which prefers the accurate last-response size) still holds.
+	before := c.count(msgs, 0)
 	if out, changed := c.microCompact(msgs); changed {
 		msgs = out
-		tok = c.count(msgs, 0)
+		after := c.count(msgs, 0)
+		tok = max(after, tok-(before-after))
 	}
 	// AutoCompact: at the threshold, or predictively if the next turn would overflow.
 	if tok >= c.autoThreshold() || c.predictiveOver(tok) {
@@ -227,6 +248,28 @@ func IsOverflow(err error) bool {
 func (c *Compactor) workingBounds(msgs []llm.Message) (start, tailStart int) {
 	start = llm.LastBoundaryIndex(msgs) + 1
 	tailStart = max(lastNNonMarkerStart(msgs, c.cfg.KeepRecent), start)
+	// Keep complete tool exchanges together. A result at the start of the tail
+	// otherwise loses its call when MessagesForAPI drops orphaned blocks.
+	calls := make(map[string]int)
+	for i := start; i < len(msgs); i++ {
+		for _, b := range msgs[i].Content {
+			if b.Type == llm.BlockToolUse {
+				calls[b.ID] = i
+			}
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for i := tailStart; i < len(msgs); i++ {
+			for _, b := range msgs[i].Content {
+				if b.Type == llm.BlockToolResult {
+					if call, ok := calls[b.ToolUseID]; ok && call < tailStart {
+						tailStart, changed = call, true
+					}
+				}
+			}
+		}
+	}
 	return
 }
 
@@ -305,7 +348,7 @@ func (c *Compactor) autoCompact(ctx context.Context, msgs []llm.Message, preTok 
 		return msgs, false
 	}
 	summary, err := c.summarize(ctx, toSummarize)
-	if err != nil {
+	if err != nil || strings.TrimSpace(summary) == "" {
 		c.failures++
 		if c.failures >= maxAutoCompactFails {
 			c.tripped = true
@@ -335,6 +378,9 @@ func (c *Compactor) autoCompact(ctx context.Context, msgs []llm.Message, preTok 
 	out = append(out, boundary, summaryMsg)
 	out = append(out, reinjected...)
 	out = append(out, msgs[tailStart:]...)
+	if c.count(out, 0) >= c.count(msgs, 0) {
+		return msgs, false
+	}
 	return out, true
 }
 

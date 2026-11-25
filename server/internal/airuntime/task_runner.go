@@ -781,7 +781,7 @@ func (r *TaskRunner) RunTask(ctx context.Context, task TaskExecution, provider l
 			var err error
 			for attempt := 0; ; attempt++ {
 				reason, err = runWorker()
-				if errors.Is(err, agent.ErrRunBudget) || reason != harness.ReasonModelError || workCtx.Err() != nil || attempt >= retries || errors.Is(err, llmpool.ErrExhausted) || err != nil && agent.IsQuotaExhaustedMessage(err.Error()) {
+				if errors.Is(err, agent.ErrRunBudget) || reason != harness.ReasonModelError || workCtx.Err() != nil || attempt >= retries || errors.Is(err, llmpool.ErrExhausted) || err != nil && !retryableStreamError(err) {
 					break
 				}
 				emit(artexdb.Activity{Kind: "note", Summary: fmt.Sprintf("模型调用失败，重跑意图 (%d/%d)", attempt+1, retries)})

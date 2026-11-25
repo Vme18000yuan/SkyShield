@@ -35,6 +35,12 @@ func (o *overflowState) disarm() {
 	o.armed = false
 }
 
+func (o *overflowState) reset() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.armed, o.learnedWindow = false, 0
+}
+
 // armedFloor is the token ceiling the next view must fit under, or 0 when not
 // armed.
 func (o *overflowState) armedFloor() int {
@@ -59,6 +65,7 @@ func (o *overflowState) learn(window int) {
 // windowPatterns extract the real context window from an overflow error.
 // Providers phrase this several ways; each pattern captures the limit.
 var windowPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)configured model window \((\d+) tokens\)`),
 	regexp.MustCompile(`(?i)maximum context length is (\d+)`),
 	regexp.MustCompile(`(?i)context (?:window|length) (?:of|is) (\d+)`),
 	regexp.MustCompile(`(?i)max(?:imum)?[ _-]?tokens?[^0-9]{0,20}(\d{4,})`),

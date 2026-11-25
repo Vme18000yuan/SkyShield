@@ -11,7 +11,21 @@ import (
 // Preserve every retained model-generated tool input, including Compress's
 // summaries. Only the outgoing view changes: tools are never invoked here and
 // compressed-away exchanges remain represented by their archived summaries.
-type replaySafeNoaCompactor struct{ harness.Compactor }
+type replaySafeNoaCompactor struct {
+	harness.Compactor
+	window func() int
+}
+
+func (c *replaySafeNoaCompactor) SetRequestBudget(overhead, output int) {
+	if c.window != nil {
+		if setter, ok := c.Compactor.(interface{ SetContextWindow(int) }); ok {
+			setter.SetContextWindow(c.window())
+		}
+	}
+	if budget, ok := c.Compactor.(harness.RequestBudgeter); ok {
+		budget.SetRequestBudget(overhead, output)
+	}
+}
 
 func (c *replaySafeNoaCompactor) View(ctx context.Context, history []llm.Message) []llm.Message {
 	view := c.Compactor.(harness.ContextView).View(ctx, history)

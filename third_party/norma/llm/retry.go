@@ -26,7 +26,13 @@ func doStream(ctx context.Context, cfg Config, url string, body []byte, setHeade
 		return nil, err
 	}
 	retries := cfg.retries()
+	if limit, ok := ctx.Value(connectRetryLimitKey{}).(int); ok {
+		retries = min(retries, limit)
+	}
 	for attempt := 0; ; attempt++ {
+		if err := takeRequestAttempt(ctx); err != nil {
+			return nil, err
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return nil, err
@@ -34,8 +40,12 @@ func doStream(ctx context.Context, cfg Config, url string, body []byte, setHeade
 		setHeaders(req)
 
 		resp, err := cfg.HTTPClient.Do(req)
+		noteRequestFailure(ctx, err)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			return resp, nil
+		}
+		if err == nil && resp != nil {
+			noteRequestFailure(ctx, fmt.Errorf("%s: status %d", errPrefix, resp.StatusCode))
 		}
 
 		retryable := false

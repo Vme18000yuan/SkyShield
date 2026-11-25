@@ -323,7 +323,7 @@ func (s *Service) PhaseTools(user int) []tool.CoreTool {
 		},
 	})
 	step := tool.Build(tool.Spec{
-		Name: "run_info_gather_phase", Description: "只执行一个 info-gath 阶段并返回已保存的发现、覆盖和状态；你应阅读结果后决定下一步，可对失败阶段重试一次。passive 被动子域、organization 组织线索、dns_brute 字典枚举（仅 deep）、dns 解析、axfr 区域传送、cdn CDN/ASN、http 存活探测、ports 端口、web 深入 Web。依次优先考虑被动、DNS、HTTP，再按结果决定端口和 Web。仅使用已建立范围，关联线索不能扩展扫描范围。",
+		Name: "run_info_gather_phase", Description: "只执行一个 info-gath 阶段并返回已保存的发现、覆盖和状态；你应阅读结果后决定下一步，可对失败阶段重试一次。普通模式端口阶段会复用已完成目标，只补扫未完成目标。模型中断后在原会话沿用已有 run_id 续接，不要重新创建采集或重复已完成阶段。passive 被动子域、organization 组织线索、dns_brute 字典枚举（仅 deep）、dns 解析、axfr 区域传送、cdn CDN/ASN、http 存活探测、ports 端口、web 深入 Web。依次优先考虑被动、DNS、HTTP，再按结果决定端口和 Web。仅使用已建立范围，关联线索不能扩展扫描范围。",
 		Schema: map[string]any{"type": "object", "properties": map[string]any{
 			"run_id":        map[string]any{"type": "string", "description": "prepare_info_gather 返回的 run.id。"},
 			"phase":         map[string]any{"type": "string", "enum": []string{"passive", "organization", "dns_brute", "dns", "axfr", "cdn", "http", "ports", "web"}},

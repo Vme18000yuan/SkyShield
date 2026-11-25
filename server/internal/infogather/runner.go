@@ -369,7 +369,7 @@ func sanitizedCoverage(raw []byte) json.RawMessage {
 	}
 	details := map[string]any{}
 	for name, allowed := range map[string][]string{
-		"ports": {"total", "completed", "timed_out", "failed", "unprocessed"},
+		"ports": {"total", "completed", "timed_out", "failed", "unprocessed", "reused"},
 		"web":   {"discovered_origins", "selected", "omitted", "attempted", "completed", "partial", "failed", "timed_out", "pending", "workers", "per_worker_rate", "crawler_timed_out", "crawler_failed", "failed_requests"},
 		"axfr":  {"success", "refused", "failed", "timeout"},
 		"http":  {"seeds", "alive", "cdn_ips_excluded"},

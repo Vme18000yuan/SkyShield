@@ -30,7 +30,7 @@ func CompressToolSchema() map[string]any {
 				"description": "Optional short title applied to ranges that don't carry their own.",
 			},
 			"content": map[string]any{
-				"description": "One or more ranges to compress into separate summary blocks. Ranges must be disjoint.",
+				"description": "One or more ranges to compress into separate summary blocks. Pass a JSON array of objects directly, not a JSON-encoded string. Ranges must be disjoint.",
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{

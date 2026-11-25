@@ -63,6 +63,14 @@ func (c *TaskController) Notify() {
 func (c *TaskController) Cancel(id int64) {
 	c.cancel(id, agent.AbortPausedByUser)
 }
+
+func (c *TaskController) HasActiveExecution(id int64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, task := c.active[id]
+	_, chat := c.activeChats[id]
+	return task || chat
+}
 func (c *TaskController) CancelBySchedule(id int64) {
 	c.cancel(id, agent.AbortPausedBySchedule)
 }

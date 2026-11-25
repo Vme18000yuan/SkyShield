@@ -109,6 +109,21 @@ class AgenticReconTests(unittest.TestCase):
         self.assertEqual(manifest['status'], 'partial')
         self.assertEqual(manifest['coverage']['agentic']['unexecuted'], ['organization'])
 
+    def test_completed_port_phase_is_reused_after_resume(self):
+        def ports(pipeline):
+            atomic_json(pipeline.out / 'raw/ports.json', [])
+            atomic_json(pipeline.out / 'raw/port-scan-status.json', {'status': 'success', 'targets': [], 'results': []})
+            return {'status': 'success'}
+        with patch.object(Pipeline, 'ports', side_effect=ports, autospec=True) as scanner:
+            self.assertEqual(self.execute('ports'), 0)
+            self.assertEqual(self.execute('ports'), 0)
+            self.assertEqual(self.execute('finish'), 0)
+            self.args.resume = True
+            self.assertEqual(self.execute('ports'), 0)
+            self.assertEqual(scanner.call_count, 1)
+        manifest = json.loads((self.out / 'manifest.json').read_text())
+        self.assertEqual(manifest['agentic_attempts']['ports'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -38,7 +38,35 @@ func (c *Compactor) View(_ context.Context, msgs []llm.Message) []llm.Message {
 // compaction already recognises every provider's phrasing, so the detection is
 // borrowed rather than duplicated.
 func (c *Compactor) IsOverflow(err error) bool {
-	return compaction.New(compaction.Config{}, nil).IsOverflow(err)
+	if !compaction.IsOverflow(err) {
+		return false
+	}
+	c.overflow.learn(ParseOverflowWindow(err.Error()))
+	return true
+}
+
+func (c *Compactor) SetRequestBudget(overhead, output int) {
+	c.sess.mu.Lock()
+	defer c.sess.mu.Unlock()
+	c.sess.overhead = max(0, overhead)
+	if output <= 0 {
+		output = 8192
+	}
+	c.sess.outputReservation = output
+}
+
+// A task can switch model profiles between turns. The archive stays intact.
+func (c *Compactor) SetContextWindow(window int) {
+	if window <= 0 {
+		return
+	}
+	c.sess.mu.Lock()
+	defer c.sess.mu.Unlock()
+	if c.sess.cfg.ModelContextLimit != window {
+		c.sess.emergencyFloor = 0
+		c.overflow.reset()
+	}
+	c.sess.cfg.ModelContextLimit = window
 }
 
 // Reactive recovers from a prompt-too-long error.
@@ -54,14 +82,17 @@ func (c *Compactor) Reactive(ctx context.Context, msgs []llm.Message) ([]llm.Mes
 	// measuring against it would show progress on every attempt and never admit
 	// that arming changed nothing.
 	before := c.sess.sentTokens()
+	if before > 0 {
+		before += c.sess.overhead + c.sess.outputReservation
+	}
 
 	c.overflow.arm(c.sess.Config().ModelContextLimit)
 	floor := c.overflow.armedFloor()
 	c.sess.setEmergencyFloor(floor)
 
-	after := estimateMessages(c.View(ctx, msgs))
+	after := estimateMessages(c.View(ctx, msgs)) + c.sess.overhead + c.sess.outputReservation
 
-	shrank := before == 0 || after < before
+	shrank := before > 0 && after < before
 	fits := floor == 0 || after <= floor
 	if !shrank || !fits {
 		// Nothing more to give. Returning true here would promise a smaller

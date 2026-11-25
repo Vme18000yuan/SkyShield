@@ -66,6 +66,7 @@ func TestSalvageableArgumentsSurviveTheSchemaGate(t *testing.T) {
 		"truncated mid-object":   `{"content":[{"startId":"m00001","endId":"m00009","summary":"first"},{"startId":"m00010","end`,
 		"double-encoded whole":   `"{\"content\":[{\"startId\":\"m00001\",\"endId\":\"m00009\",\"summary\":\"s\"}]}"`,
 		"unterminated inner":     `{"content":"[{\"startId\":\"m00001\",\"endId\":\"m00009\",\"summary\":\"s\"]"}`,
+		"inner missing closers":  `{"content":"[{\"startId\":\"m00001\",\"endId\":\"m00009\",\"summary\":\"s\"", "topic":"fixture"}`,
 		"raw newline in summary": "{\"content\":[{\"startId\":\"m00001\",\"endId\":\"m00009\",\"summary\":\"line one\nline two\"}]}",
 	}
 

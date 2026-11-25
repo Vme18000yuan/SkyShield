@@ -41,8 +41,8 @@ func usageTextTurn(s string, in, out int) []llm.StreamEvent {
 }
 
 // The loop must pass the previous response's total token size to the compactor's
-// Pre: 0 on the first turn (no prior response), then input+output of the turn
-// that just completed.
+// Pre: 0 on the first turn, then the preceding request's INPUT size. Context
+// managers add the new assistant/tool messages using the change in view size.
 func TestCompactorReceivesLastInputTokens(t *testing.T) {
 	m := &scriptedModel{turns: [][]llm.StreamEvent{
 		usageToolTurn("c1", "Bash", `{"command":"echo hi"}`, 100, 20),
@@ -66,7 +66,7 @@ func TestCompactorReceivesLastInputTokens(t *testing.T) {
 	if rc.seen[0] != 0 {
 		t.Fatalf("first Pre should see 0 (no prior response), got %d", rc.seen[0])
 	}
-	if rc.seen[1] != 120 {
-		t.Fatalf("second Pre should see turn-1 tokens (100+20), got %d", rc.seen[1])
+	if rc.seen[1] != 100 {
+		t.Fatalf("second Pre should see turn-1 input (100), got %d", rc.seen[1])
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"io"
 	"iter"
 	"log/slog"
+	"math/rand/v2"
 	"net/url"
 	"strings"
 	"time"
@@ -20,15 +21,21 @@ import (
 // RuntimeModelOptions carries ARTEX harness settings alongside the provider,
 // so model settings change actual runs rather than only the editor.
 type RuntimeModelOptions struct {
-	ContextWindow  int
-	MaxTokens      int
-	NonStreaming   bool
-	NoaCompaction  bool
-	IntentRetry    artexdb.RetryRule
-	StreamAttempts int
-	StreamInterval time.Duration
+	ContextWindow      int
+	MaxTokens          int
+	NonStreaming       bool
+	NoaCompaction      bool
+	IntentRetry        artexdb.RetryRule
+	StreamAttempts     int
+	StreamInterval     time.Duration
+	MaxRequestAttempts int
 }
 type runtimeModel interface{ RuntimeModelOptions() RuntimeModelOptions }
+
+// Prevent an outer task/intent loop from starting a new recovery ladder after
+// this provider has already exhausted the safe request-level recovery window.
+var ErrModelRecoveryExhausted = errors.New("模型自动恢复已结束，可从已保存进度继续")
+
 type modelOptionsProvider struct {
 	llm.Provider
 	options RuntimeModelOptions
@@ -64,10 +71,22 @@ type configuredProvider struct {
 }
 
 func ConfigureProvider(base llm.Provider, config agent.Config, policy artexdb.LLMRetryPolicy, noa bool) llm.Provider {
-	return &configuredProvider{base: base, config: config, options: RuntimeModelOptions{ContextWindow: config.CompactionWindow(), MaxTokens: config.MaxTokens, NonStreaming: !config.Stream, NoaCompaction: noa, IntentRetry: policy.Intent, StreamAttempts: config.Retry.StreamAttempts, StreamInterval: config.Retry.StreamInterval}}
+	output := config.MaxTokens
+	if output <= 0 {
+		output = min(8192, config.CompactionWindow()/4)
+	}
+	return &configuredProvider{base: base, config: config, options: RuntimeModelOptions{ContextWindow: config.CompactionWindow(), MaxTokens: output, NonStreaming: !config.Stream, NoaCompaction: noa, IntentRetry: policy.Intent, StreamAttempts: config.Retry.StreamAttempts, StreamInterval: config.Retry.StreamInterval}}
 }
-func (p *configuredProvider) RuntimeModelOptions() RuntimeModelOptions { return p.options }
-func (p *configuredProvider) ContextWindowTokens() int                 { return p.options.ContextWindow }
+func (p *configuredProvider) RuntimeModelOptions() RuntimeModelOptions {
+	options := p.options
+	retries := p.config.Retry.StreamAttempts
+	if retries == 0 {
+		retries = 2
+	}
+	options.MaxRequestAttempts = p.requestAttempts(max(0, retries) + 1)
+	return options
+}
+func (p *configuredProvider) ContextWindowTokens() int { return p.options.ContextWindow }
 func (p *configuredProvider) request(req llm.CompletionRequest) llm.CompletionRequest {
 	if p.config.MaxTokens > 0 {
 		if req.MaxTokens <= 0 || req.MaxTokens > p.config.MaxTokens {
@@ -93,8 +112,20 @@ func (p *configuredProvider) Complete(ctx context.Context, req llm.CompletionReq
 	if err := p.checkWindow(req); err != nil {
 		return llm.Message{}, "", llm.Usage{}, err
 	}
-	message, reason, usage, err := p.base.Complete(ctx, req)
+	message, reason, usage, err := p.base.Complete(llm.WithRequestBudget(ctx, p.requestAttempts(0)), req)
 	return message, reason, usage, p.redact(err)
+}
+
+func (p *configuredProvider) requestAttempts(streamRetries int) int {
+	connect := p.config.Retry.ConnectAttempts
+	if connect == 0 {
+		connect = 3
+	}
+	empty := p.config.Retry.EmptyAttempts
+	if empty == 0 {
+		empty = 2
+	}
+	return 1 + max(0, connect, empty, streamRetries)
 }
 
 type redactedModelError struct {
@@ -136,11 +167,21 @@ func (p *configuredProvider) Stream(ctx context.Context, req llm.CompletionReque
 		if p.config.Retry.StreamAttempts != 0 {
 			retries = max(0, p.config.Retry.StreamAttempts)
 		}
+		callCtx := llm.WithRequestBudget(ctx, p.requestAttempts(retries+1))
+		if retries > 0 {
+			callCtx = llm.WithConnectRetryLimit(callCtx, 0)
+		}
+		var cancelRecovery context.CancelFunc
+		defer func() {
+			if cancelRecovery != nil {
+				cancelRecovery()
+			}
+		}()
 		for attempt := 0; ; attempt++ {
 			committed := false
 			var pending []llm.StreamEvent
 			var failure error
-			for event, err := range p.base.Stream(ctx, p.request(req)) {
+			for event, err := range p.base.Stream(callCtx, p.request(req)) {
 				if err != nil {
 					failure = p.redact(err)
 					break
@@ -163,6 +204,10 @@ func (p *configuredProvider) Stream(ctx context.Context, req llm.CompletionReque
 				}
 			}
 			if failure != nil && !committed && ctx.Err() == nil && attempt < retries && retryableStreamError(failure) {
+				if cancelRecovery == nil {
+					callCtx, cancelRecovery = context.WithTimeout(callCtx, 90*time.Second)
+				}
+				executionProgress(ctx, fmt.Sprintf("模型连接暂时中断，正在恢复（%d/%d）；已完成的工具结果已保留。", attempt+1, retries))
 				// Some OpenAI-compatible gateways intermittently close a streaming
 				// POST before sending headers. Before any tool or text was delivered,
 				// one non-streaming attempt can safely preserve the agent turn. It
@@ -170,7 +215,7 @@ func (p *configuredProvider) Stream(ctx context.Context, req llm.CompletionReque
 				if !fallbackUsed && p.config.Format == llm.FormatOpenAI && (errors.Is(failure, io.EOF) || errors.Is(failure, io.ErrUnexpectedEOF)) {
 					fallbackUsed = true
 					slog.Warn("LLM 流式请求在输出前断开，尝试非流式恢复")
-					fallbackCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+					fallbackCtx, cancel := context.WithTimeout(callCtx, 45*time.Second)
 					message, reason, usage, completeErr := p.base.Complete(fallbackCtx, p.request(req))
 					cancel()
 					if completeErr == nil {
@@ -184,6 +229,10 @@ func (p *configuredProvider) Stream(ctx context.Context, req llm.CompletionReque
 							return
 						}
 					}
+					if completeErr != nil && !errors.Is(completeErr, context.DeadlineExceeded) && !errors.Is(completeErr, context.Canceled) && !retryableStreamError(completeErr) {
+						yield(llm.StreamEvent{}, p.redact(completeErr))
+						return
+					}
 					if ctx.Err() != nil {
 						yield(llm.StreamEvent{}, ctx.Err())
 						return
@@ -192,12 +241,14 @@ func (p *configuredProvider) Stream(ctx context.Context, req llm.CompletionReque
 				delay := min(500*time.Millisecond*time.Duration(1<<min(attempt, 4)), 4*time.Second)
 				if p.config.Retry.StreamInterval > 0 {
 					delay = p.config.Retry.StreamInterval
+				} else {
+					delay = delay*4/5 + time.Duration(rand.Int64N(int64(delay*2/5)+1))
 				}
 				timer := time.NewTimer(delay)
 				select {
-				case <-ctx.Done():
+				case <-callCtx.Done():
 					timer.Stop()
-					yield(llm.StreamEvent{}, ctx.Err())
+					yield(llm.StreamEvent{}, errors.Join(ErrModelRecoveryExhausted, failure))
 					return
 				case <-timer.C:
 				}
@@ -211,6 +262,9 @@ func (p *configuredProvider) Stream(ctx context.Context, req llm.CompletionReque
 				}
 			}
 			if failure != nil {
+				if ctx.Err() == nil && retryableStreamError(failure) {
+					failure = errors.Join(ErrModelRecoveryExhausted, failure)
+				}
 				yield(llm.StreamEvent{}, failure)
 			}
 			return
@@ -282,7 +336,7 @@ func streamCommitsOutput(event llm.StreamEvent) bool {
 	return false
 }
 func retryableStreamError(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, llm.ErrRunBudget) || agent.IsQuotaExhaustedMessage(err.Error()) {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, llm.ErrRunBudget) || errors.Is(err, ErrModelRecoveryExhausted) || errors.Is(err, llm.ErrRequestAttemptsExhausted) || agent.IsQuotaExhaustedMessage(err.Error()) {
 		return false
 	}
 	value := strings.ToLower(err.Error())

@@ -78,7 +78,11 @@ type Session struct {
 	// providerTokens is the input size the provider last reported. It is
 	// authoritative where available: a local estimate can drift, and the whole
 	// pressure ladder keys off this number.
-	providerTokens int
+	providerTokens         int
+	providerEstimate       int
+	lastProjectionEstimate int
+	overhead               int
+	outputReservation      int
 	// emergencyFloor, when non-zero, forces the view to build under this ceiling
 	// after a prompt-too-long error taught us the real window.
 	emergencyFloor int
@@ -186,10 +190,11 @@ func (s *Session) View(msgs []llm.Message) []llm.Message {
 	s.notePriorTurnOutcome(msgs)
 
 	cfg := s.cfg
+	cfg.ModelContextLimit = max(1, cfg.ModelContextLimit-s.outputReservation)
 	if s.emergencyFloor > 0 {
 		// A prompt-too-long error taught us the real window. Build to it, rather
 		// than to the configured one that just failed.
-		cfg.ModelContextLimit = s.emergencyFloor
+		cfg.ModelContextLimit = max(1, min(cfg.ModelContextLimit, s.emergencyFloor-s.outputReservation))
 	}
 
 	res := noa.ProcessTurn(noa.ProcessTurnInput{
@@ -218,6 +223,7 @@ func (s *Session) View(msgs []llm.Message) []llm.Message {
 
 	out := Reassemble(view, msgs, sc, ReassembleOptions{State: &s.state, Tag: true})
 	s.lastSentTokens = estimateMessages(out)
+	s.lastProjectionEstimate = estimateProjectedTokens(cores, s.state, s.cfg) + s.overhead
 	return out
 }
 
@@ -325,7 +331,7 @@ func lastAssistantCalledCompress(msgs []llm.Message) bool {
 // to the provider's number, never to discard it as "drift". Callers hold the
 // lock.
 func (s *Session) resolveTokenCount(cores []noa.CoreMessage) int {
-	est := estimateProjectedTokens(cores, s.state, s.cfg)
+	est := estimateProjectedTokens(cores, s.state, s.cfg) + s.overhead
 	p := s.providerTokens
 	if p <= 0 {
 		return est
@@ -336,6 +342,9 @@ func (s *Session) resolveTokenCount(cores []noa.CoreMessage) int {
 	// re-trigger an emergency the model already resolved.
 	if s.providerTokensAt < s.lastCompressAt {
 		return est
+	}
+	if s.providerEstimate > 0 {
+		p += est - s.providerEstimate
 	}
 	return max(est, p)
 }
@@ -430,6 +439,7 @@ func (s *Session) noteProviderTokens(n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.providerTokens = n
+	s.providerEstimate = s.lastProjectionEstimate
 	s.providerTokensAt = s.state.Stats.CompressionCount
 }
 

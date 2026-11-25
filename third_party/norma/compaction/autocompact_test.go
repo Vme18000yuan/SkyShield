@@ -185,7 +185,7 @@ func TestPreAutoViaLastInputTokensNoMicro(t *testing.T) {
 	c := New(Config{ContextWindow: 200000, MaxOutputTokens: 8000, KeepRecent: 2}, rs.fn)
 	var msgs []llm.Message
 	for range 10 {
-		msgs = append(msgs, llm.UserText("small")) // no compactable tools
+		msgs = append(msgs, bigMsg(llm.RoleUser, 400)) // small, but still larger than a summary
 	}
 	out := c.Pre(context.Background(), msgs, 200000) // above autoThreshold (179000)
 	if boundaryCount(out) != 1 {
@@ -229,7 +229,7 @@ func TestPreNonDestructive(t *testing.T) {
 	c := New(Config{ContextWindow: 200000, MaxOutputTokens: 8000, KeepRecent: 2}, rs.fn)
 	var msgs []llm.Message
 	for range 10 {
-		msgs = append(msgs, llm.UserText("keep"))
+		msgs = append(msgs, bigMsg(llm.RoleUser, 400))
 	}
 	out := c.Pre(context.Background(), msgs, 200000)
 	// Full history retained + boundary + summary.
@@ -254,7 +254,7 @@ func TestReactiveTripped(t *testing.T) {
 }
 
 // If the summary is larger than the original working set, Reactive reports it did
-// not shrink (ok=false) even though a boundary was inserted.
+// not shrink (ok=false) and leaves the original working set intact.
 func TestReactiveNoShrinkWhenSummaryHuge(t *testing.T) {
 	rs := &recSummarizer{reply: strings.Repeat("z", 200000)}
 	c := New(Config{ContextWindow: 200000, MaxOutputTokens: 8000, KeepRecent: 2}, rs.fn)
@@ -266,7 +266,7 @@ func TestReactiveNoShrinkWhenSummaryHuge(t *testing.T) {
 	if ok {
 		t.Fatal("a huge summary means the API view did not shrink → ok=false")
 	}
-	if boundaryCount(out) != 1 {
-		t.Fatalf("autoCompact still inserts a boundary, got %d", boundaryCount(out))
+	if boundaryCount(out) != 0 {
+		t.Fatalf("a larger summary must not insert a boundary, got %d", boundaryCount(out))
 	}
 }

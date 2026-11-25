@@ -8,6 +8,14 @@
       "status": "mock-unsupported",
       "reviewTrigger": "When mock root inventory and task evidence fixtures become available",
       "recoveryPath": "Use the local backend; graph interaction smoke tests use isolated network fixtures"
+    },
+    {
+      "file": "services/ai-data-deletion.service.ts",
+      "owner": "AI workbench",
+      "reason": "Deletion requires owner-scoped persistent records and filesystem transactions. The network mock returns 501 and never forwards these destructive routes to a real backend.",
+      "status": "mock-unsupported",
+      "reviewTrigger": "When owned AI conversation, task and traffic fixtures are added to the network mock",
+      "recoveryPath": "Use the local backend; deletion contract tests run against an isolated PostgreSQL database and temporary file stores"
     }
   ]
 }

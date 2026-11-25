@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import ChatPage from "../chat-page"
 
-const fixtures = vi.hoisted(() => ({ api: { agents: vi.fn(), chatLLMProfiles: vi.fn(), conversations: vi.fn(), conversationHistory: vi.fn(), conversationMessages: vi.fn() } }))
+const fixtures = vi.hoisted(() => ({ api: { agents: vi.fn(), chatLLMProfiles: vi.fn(), conversations: vi.fn(), conversationHistory: vi.fn(), conversationMessages: vi.fn(), sendConversationMessage: vi.fn() } }))
 vi.mock("@/services/artex-ai.service", () => ({ api: fixtures.api }))
 vi.mock("@/hooks/artex/use-side-questions", () => ({ useSideQuestions: () => ({ handleCommand: () => false }) }))
 vi.mock("../side-question-workspace", () => ({ SideQuestionButton: () => null, SideQuestionWorkspace: ({ children }: { children: React.ReactNode }) => children }))
@@ -29,5 +29,19 @@ describe("chat terminal backlog", () => {
     fireEvent.click(await screen.findByText("尾页恢复测试"))
     await waitFor(() => expect(screen.getByTestId("transcript-tail")).toHaveTextContent("450"))
     expect(fixtures.api.conversationMessages.mock.calls.map(call => call[1])).toEqual([0, 200, 400])
+  })
+  it("resumes in the original conversation without resending the draft", async () => {
+    fixtures.api.conversationHistory.mockResolvedValue({ items: [], cursor: 1, finalCursor: 1, running: false, hasMore: true, runStatus: "failed", terminalReason: "model_error" })
+    fixtures.api.conversationMessages.mockResolvedValue({ items: [], cursor: 0, running: true })
+    fixtures.api.sendConversationMessage.mockResolvedValue({})
+    render(<ChatPage />)
+    fireEvent.click(await screen.findByText("尾页恢复测试"))
+    const input = await screen.findByPlaceholderText("输入消息，@ 引用记录，Enter 发送")
+    fireEvent.change(input, { target: { value: "保留的草稿" } })
+    fireEvent.click(await screen.findByRole("button", { name: "继续未完成步骤" }))
+    await waitFor(() => expect(fixtures.api.sendConversationMessage).toHaveBeenCalledTimes(1))
+    expect(fixtures.api.sendConversationMessage).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", expect.stringContaining("只补充未完成步骤"))
+    expect(input).toHaveValue("保留的草稿")
+    await waitFor(() => expect(screen.queryByRole("button", { name: "继续未完成步骤" })).not.toBeInTheDocument())
   })
 })

@@ -597,6 +597,13 @@
       "up": "000085_oast_monitor.up.sql",
       "down": "000085_oast_monitor.down.sql",
       "checksum": "sha256:de33c38e887779a0db96d1cfa9b3c69864c711a5bb691c43d3d637b308caa872"
+    },
+    {
+      "id": "000086",
+      "slug": "ai_storage_cleanup",
+      "up": "000086_ai_storage_cleanup.up.sql",
+      "down": "000086_ai_storage_cleanup.down.sql",
+      "checksum": "sha256:73ffcf3213db1dbb5f3a1034cae023758223fa0eee8d41b500f999d049070fd2"
     }
   ]
 }

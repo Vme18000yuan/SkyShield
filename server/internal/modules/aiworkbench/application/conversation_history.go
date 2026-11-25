@@ -24,9 +24,10 @@ func (f *ConversationFacade) ActivityDetail(ctx context.Context, user int, id st
 }
 
 type ConversationDeleteItem struct {
-	ID    string `json:"id"`
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	ID             string `json:"id"`
+	OK             bool   `json:"ok"`
+	Error          string `json:"error,omitempty"`
+	CleanupPending bool   `json:"cleanupPending,omitempty"`
 }
 
 func (f *ConversationFacade) DeleteConversations(ctx context.Context, user int, ids []string) ([]ConversationDeleteItem, error) {
@@ -43,6 +44,19 @@ func (f *ConversationFacade) DeleteConversations(ctx context.Context, user int, 
 			seen[id] = true
 			unique = append(unique, id)
 		}
+	}
+	if f.deleteData != nil {
+		items := make([]ConversationDeleteItem, 0, len(unique))
+		for _, id := range unique {
+			_ = f.Stop(ctx, user, id)
+			pending, err := f.deleteData(ctx, user, id)
+			item := ConversationDeleteItem{ID: id, OK: err == nil, CleanupPending: pending}
+			if err != nil {
+				item.Error = err.Error()
+			}
+			items = append(items, item)
+		}
+		return items, nil
 	}
 	store, ok := f.store.(ConversationHistoryStore)
 	if !ok {

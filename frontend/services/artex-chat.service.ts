@@ -4,7 +4,7 @@ import type { ChatMention } from "@/lib/artex/chat-mentions"
 import type { ConversationFeedPage } from "@/lib/artex/conversation-feed"
 
 type ConversationDTO = {id:string; title:string; agentKey:string; llmProfileId?:string; pinned:boolean; createdAt:string; updatedAt:string; running:boolean; reviewReadOnly?:boolean}
-type ConversationDeletion = {items:{id:string;ok:boolean;error?:string}[]}
+type ConversationDeletion = {items:{id:string;ok:boolean;error?:string;cleanupPending?:boolean}[]}
 const conversation=(item:ConversationDTO):Conversation=>({id:item.id,title:item.title,agent_key:item.agentKey==="assistant"?"mainagent":item.agentKey,llm_profile_id:item.llmProfileId,pinned:item.pinned,created_at:item.createdAt,updated_at:item.updatedAt,running:item.running,review_read_only:item.reviewReadOnly})
 const enc=encodeURIComponent
 const query=(filter:InterceptApprovalFilter,page=1,size=20)=>new URLSearchParams({...Object.fromEntries(Object.entries(filter).filter(([,value])=>value)),page:String(page),size:String(size)}).toString()

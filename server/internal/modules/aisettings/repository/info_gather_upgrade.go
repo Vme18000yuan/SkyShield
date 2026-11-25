@@ -200,3 +200,14 @@ var infoGatherSourceReliabilityScripts = map[string]string{
 func (s *SkillStore) upgradeInfoGatherSourceReliabilityScripts(ctx context.Context) error {
 	return s.upgradeInfoGatherScriptsVersion(ctx, infoGatherSourceReliabilityScripts, "builtin_info_gather_source_reliability_v1/")
 }
+
+// Upgrade the checkpoint group atomically, preserving administrator edits.
+var infoGatherPortResumeScripts = map[string]string{
+	"scripts/scan_ports.py":     "a4a0c211dacceb185be7f0fe1cee0ab22190b97d295b750ac479002c8d1f1e2d",
+	"scripts/recon_pipeline.py": "79c95bee4c839ef426a311414d56b3acf9a00acdfc619d13e9e35335080c55c3",
+	"scripts/agentic_recon.py":  "81e716f008f15dac9f87beaf46c2cfe006d1de315975f7413402aaf03b20fb86",
+}
+
+func (s *SkillStore) upgradeInfoGatherPortResumeScripts(ctx context.Context) error {
+	return s.upgradeInfoGatherScriptsVersion(ctx, infoGatherPortResumeScripts, "builtin_info_gather_port_resume_v1/")
+}

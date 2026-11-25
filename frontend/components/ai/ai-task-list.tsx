@@ -22,6 +22,7 @@ import { textRole } from "@/lib/typography"
 import { api as artexAPI } from "@/services/artex-ai.service"
 import type { AITask } from "@/types/ai-task.types"
 import { AITaskCreateDialog } from "./ai-task-create-dialog"
+import { AIDataDeleteButton } from "./ai-data-delete-button"
 
 export function AITaskStatusBadge({ task }: { task: AITask }) {
   const t = useTranslations("aiTasks")
@@ -77,7 +78,7 @@ export function AITaskList() {
           <TableCell><RemarkEditor label={`任务 ${task.displayName}`} value={task.remark ?? ""} onSave={value => save(task, { remark:value })} /></TableCell>
           <TableCell className="max-w-md truncate">{task.goal}</TableCell>
           <TableCell><select aria-label={`任务 ${task.displayName} 分类`} className="h-8 max-w-40 rounded-md border bg-background px-2 text-sm" value={task.categoryId ?? ""} disabled={metadata.isPending} onChange={event => void save(task, { categoryId:event.target.value || null }).catch(error => toast.error((error as Error).message))}><option value="">未分类</option>{categories.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></TableCell>
-          <TableCell><AITaskStatusBadge task={task} /></TableCell><TableCell>{new Date(task.createdAt).toLocaleString(locale)}</TableCell><TableCell><Button variant="outline" size="sm" render={<Link href={`/ai/tasks/${task.id}/`} />}>{t("view")}</Button></TableCell>
+          <TableCell><AITaskStatusBadge task={task} /></TableCell><TableCell>{new Date(task.createdAt).toLocaleString(locale)}</TableCell><TableCell><div className="flex gap-2"><Button variant="outline" size="sm" render={<Link href={`/ai/tasks/${task.id}/`} />}>{t("view")}</Button><AIDataDeleteButton subject={task.displayName} request={{ kind: "task", id: task.id }} onDeleted={resetPage} /></div></TableCell>
         </TableRow>)}{!list.data?.tasks.length && <TableRow><TableCell colSpan={7}>{t("empty")}</TableCell></TableRow>}</TableBody>
       </Table></div>
     </ContentHandoff>

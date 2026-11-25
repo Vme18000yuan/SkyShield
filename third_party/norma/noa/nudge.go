@@ -12,7 +12,8 @@ func resolveAdaptiveGrowth(limit int, n NudgeConfig) int {
 	if limit <= 0 {
 		return n.GrowthFloor
 	}
-	return min(n.GrowthCap, max(n.GrowthFloor, roundHalfUp(float64(limit)*n.GrowthRatio)))
+	// Absolute defaults tuned for large windows must fit smaller profiles too.
+	return min(n.GrowthCap, max(n.GrowthFloor, roundHalfUp(float64(limit)*n.GrowthRatio)), max(1000, limit*2/5))
 }
 
 // growthFloorOf is the cadence gate: how much the context must grow before
@@ -66,7 +67,7 @@ func DecideNudge(in DecideNudgeInput) NudgeDecision {
 	}
 
 	adaptive := resolveAdaptiveGrowth(limit, cfg.Nudge)
-	floor := growthFloorOf(adaptive, cfg.Nudge)
+	floor := NudgeGrowthFloor(cfg)
 	minBen := cfg.minPressureBenefit()
 
 	overLimit := usage >= cfg.Nudge.MaxContextLimitPct
@@ -164,6 +165,21 @@ func decideGrowth(d *NudgeDecision, in DecideNudgeInput, tiers map[Tier]tierPend
 	usageFloor := cfg.Nudge.MinContextLimitPct
 	t2CountReady := tiers[2].count >= cfg.Tiers.Tier2Trigger && d.ContextUsage >= usageFloor
 	t3CountReady := tiers[3].count >= cfg.Tiers.Tier3Trigger && d.ContextUsage >= usageFloor
+	// Do not let a steady stream of raw tool output starve consolidation of
+	// summaries that already consume a material share of a small window.
+	if cfg.Tiers.Enabled {
+		for _, tier := range []Tier{3, 2} {
+			ready := t2CountReady
+			if tier == 3 {
+				ready = t3CountReady
+			}
+			if ready && tiers[tier].pending >= cfg.minPressureBenefit() && tierCadenceReady(in.State, tier, in.TokenCount, floor) {
+				d.ShouldInject, d.Tier, d.TierTargetBlocks = true, tier, tiers[tier].blocks
+				d.Reason = fmt.Sprintf("growth: consolidate tier %d backlog (%d tokens)", tier, tiers[tier].pending)
+				return
+			}
+		}
+	}
 
 	if tiers[1].pending >= adaptive {
 		d.ShouldInject = true
@@ -324,5 +340,9 @@ func stampNudge(state *CompressionState, cfg Config, tokenCount int, d NudgeDeci
 // nudge may resume. Reusing the same unit the pacing already speaks in keeps
 // the behaviour predictable and avoids one more knob to tune.
 func NudgeGrowthFloor(cfg Config) int {
-	return growthFloorOf(resolveAdaptiveGrowth(cfg.ModelContextLimit, cfg.Nudge), cfg.Nudge)
+	floor := growthFloorOf(resolveAdaptiveGrowth(cfg.ModelContextLimit, cfg.Nudge), cfg.Nudge)
+	if cfg.ModelContextLimit > 0 {
+		floor = min(floor, max(1000, cfg.ModelContextLimit/8))
+	}
+	return floor
 }

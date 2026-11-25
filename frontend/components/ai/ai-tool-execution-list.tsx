@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from "next-intl"
 import { AppErrorState } from "@/components/shared/feedback/app-error-state"
 import { ContentHandoff } from "@/components/shared/loading/content-handoff"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -14,9 +15,11 @@ import { useAIToolExecution, useAIToolExecutions } from "@/hooks/use-ai-tool-exe
 import { normalizeError } from "@/lib/errors/normalize-error"
 import { textRole } from "@/lib/typography"
 import type { AIToolExecutionSource } from "@/types/ai-tool-execution.types"
+import { AIDataDeleteButton } from "./ai-data-delete-button"
 
 export function AIToolExecutionList() {
   const t = useTranslations("aiTools")
+  const deletionText = useTranslations("aiDataDeletion")
   const locale = useLocale()
   const [search, setSearch] = React.useState("")
   const [query, setQuery] = React.useState("")
@@ -24,8 +27,11 @@ export function AIToolExecutionList() {
   const [page, setPage] = React.useState(0)
   const [selected, setSelected] = React.useState<string | null>(null)
   const [source, setSource] = React.useState<AIToolExecutionSource>("conversation")
+  const [checked, setChecked] = React.useState<string[]>([])
   const list = useAIToolExecutions(source, query, cursors[page])
   const detail = useAIToolExecution(source, selected)
+  React.useEffect(() => { setChecked([]) }, [source, page, query])
+  const selectable = list.data?.executions.filter(item => item.status !== "running").map(item => item.id) ?? []
   React.useEffect(() => {
     const timer = window.setTimeout(() => { setQuery(search.trim()); setCursors([""]); setPage(0) }, 300)
     return () => window.clearTimeout(timer)
@@ -36,17 +42,18 @@ export function AIToolExecutionList() {
     <Tabs value={source} onValueChange={value => { if (value === "conversation" || value === "task") { setSource(value); setCursors([""]); setPage(0); setSelected(null) } }}>
       <TabsList variant="filter"><TabsTrigger value="conversation">{t("chatSource")}</TabsTrigger><TabsTrigger value="task">{t("taskSource")}</TabsTrigger></TabsList>
     </Tabs>
-    <Input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("search")} aria-label={t("search")} className="max-w-sm" />
+    <div className="flex flex-wrap items-center gap-2"><Input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("search")} aria-label={t("search")} className="max-w-sm" /><AIDataDeleteButton label={deletionText("deleteSelected", { count: checked.length })} disabled={!checked.length} request={{ kind: "executions", source, ids: checked }} onDeleted={() => { setChecked([]); setSelected(null); setCursors([""]); setPage(0) }} /></div>
     <ContentHandoff owner="ai-tool-execution-content" layer="workspace" isLoading={list.isPending}
       skeleton={<div className="flex flex-col gap-2" aria-label={t("loading")}>{[0, 1, 2, 3].map(row => <Skeleton key={row} className="h-10 w-full" />)}</div>}>
-      <Table><TableHeader><TableRow><TableHead>{t("tool")}</TableHead><TableHead>{source === "task" ? t("taskSource") : t("conversation")}</TableHead><TableHead>{t("status")}</TableHead><TableHead>{t("time")}</TableHead><TableHead /></TableRow></TableHeader>
+      <Table><TableHeader><TableRow><TableHead><Checkbox aria-label={deletionText("selectPage")} checked={selectable.length > 0 && selectable.every(id => checked.includes(id))} onCheckedChange={value => setChecked(value ? selectable : [])} /></TableHead><TableHead>{t("tool")}</TableHead><TableHead>{source === "task" ? t("taskSource") : t("conversation")}</TableHead><TableHead>{t("status")}</TableHead><TableHead>{t("time")}</TableHead><TableHead /></TableRow></TableHeader>
         <TableBody>
           {list.data?.executions.map(item => <TableRow key={item.id}>
+            <TableCell><Checkbox aria-label={deletionText("selectRecord", { id: item.id })} checked={checked.includes(item.id)} disabled={item.status === "running"} onCheckedChange={value => setChecked(previous => value ? [...previous, item.id] : previous.filter(id => id !== item.id))} /></TableCell>
             <TableCell>{item.tool}</TableCell><TableCell>{item.conversation}</TableCell><TableCell>{t(item.status)}</TableCell>
             <TableCell>{new Date(item.createdAt).toLocaleString(locale)}</TableCell>
-            <TableCell><Button variant="outline" size="sm" onClick={() => setSelected(item.id)}>{t("detail")}</Button></TableCell>
+            <TableCell><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => setSelected(item.id)}>{t("detail")}</Button><AIDataDeleteButton request={{ kind: "executions", source, ids: [item.id] }} disabled={item.status === "running"} onDeleted={() => { setSelected(null); setCursors([""]); setPage(0) }} /></div></TableCell>
           </TableRow>)}
-          {!list.data?.executions.length && <TableRow><TableCell colSpan={5}>{t("empty")}</TableCell></TableRow>}
+          {!list.data?.executions.length && <TableRow><TableCell colSpan={6}>{t("empty")}</TableCell></TableRow>}
         </TableBody>
       </Table>
     </ContentHandoff>
