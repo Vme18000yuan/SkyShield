@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "minimumUpdaterVersion": 1,
-  "version": "2026.11.25",
-  "revision": "1a15b6dcb88f0daf611fc83a6fa77de1cfd7e63b",
-  "publishedAt": "2026-11-25T07:27:53.086822+00:00",
-  "notes": "## 简体中文\n\n### 本次更新\n\n- AI 对话、任务、工具执行和流量记录增加删除入口；删除对话或任务时清理关联会话和文件，已归集资产与漏洞保留。\n- 模型连接中断时限制分层重试，保留已完成工具结果，并可在原对话继续未完成步骤。\n- 普通模式端口扫描复用已完成目标，对未完成目标单独补扫，保留已有证据和真实覆盖状态。\n- 修复上下文压缩中的请求大小估算、工具调用和结果配对、上限识别与小窗口压缩问题；兼容 Compress 参数缺少结构结束符的情况。\n- 新增数据库迁移 86；升级后会按需清理相关文件并保留已归集资产和漏洞。\n\n### 升级与验证\n\n源码提交 `1a15b6dcb88f0daf611fc83a6fa77de1cfd7e63b`，配套 Server、Frontend、Bootstrap、Nginx 镜像标签为 `sha-1a15b6dcb88f`，平台为 `linux/amd64`。等待运行中的任务结束后，使用 `./update.sh --mode docker` 或 `./update.sh --mode local` 更新。\n\n已验证信息收集和端口补扫、AI 恢复及压缩、前端入口和隔离 PostgreSQL 迁移与续接；Server 镜像通过工具及本地代理冒烟测试。模型服务持续不可用时任务仍可能暂停，历史执行结果不会自动重跑。生产环境完整升级和备份恢复演练未执行。\n\n## English\n\nAdds deletion of AI tasks, tool executions and traffic with associated conversation files, while preserving imported assets and vulnerabilities. Improves bounded model recovery, resumable port scans, context compaction and malformed Compress argument handling. Includes database migration 86.\n\nAll four `linux/amd64` images are tagged `sha-1a15b6dcb88f` for source revision `1a15b6dcb88f0daf611fc83a6fa77de1cfd7e63b`. Update with `./update.sh --mode docker` or `./update.sh --mode local` after active tasks finish. Focused tests, isolated PostgreSQL checks and Server image smoke tests passed; a complete production upgrade and restore drill was not performed.\n\nFull Changelog: https://github.com/Vme18000yuan/SkyShield/compare/v2026.11.23...v2026.11.25\n",
+  "version": "2026.11.27",
+  "revision": "92156a2384760700bc9d11ff56b259a647542c0c",
+  "publishedAt": "2026-11-27T03:23:01.755279+00:00",
+  "notes": "## 简体中文\n\n- 修复长 AI 对话上下文容量估算不一致，以及压缩后续接仍可能触发 `prompt_too_long` 的问题。常规压缩不足时，系统保存私有上下文检查点，保留用户要求和近期完整工具结果，支持后续续接。\n- LLM 激活配置增加明确的编辑入口；保存时保留激活状态及已有密钥，新一轮对话使用更新后的配置。\n- 上下文归档随对应对话或任务清理，并排除在 Git 和 Docker 构建上下文之外。\n- 没有新增数据库迁移；模型真实窗口不足或用户要求本身过长时仍可能出现超限提示。\n\n源码提交 `92156a2384760700bc9d11ff56b259a647542c0c`；四个配套 `linux/amd64` 镜像标签为 `sha-92156a238476`。等待任务结束后，运行 `./update.sh --mode docker` 或 `./update.sh --mode local`。\n\n验证包括 256K 窗口、64 轮工具调用和冷启动续接回归，两种压缩模式、激活配置编辑、类型检查、隔离 PostgreSQL 检查及本地部署。未执行完整生产升级和备份恢复演练。\n\n## English\n\nFixes context size accounting and long-session recovery after compaction, adds a clear edit action for activated model profiles, and excludes private context checkpoints from Git and Docker build contexts. Existing keys and activation are preserved when editing. No database migration is added.\n\nSource revision `92156a2384760700bc9d11ff56b259a647542c0c` has four matching `linux/amd64` images tagged `sha-92156a238476`. Focused long-session, cold-resume, settings and isolated database checks passed. A full production upgrade and backup restoration drill was not performed.\n\nFull Changelog: https://github.com/Vme18000yuan/SkyShield/compare/v2026.11.25...v2026.11.27\n",
   "images": {
-    "server": "docker.io/solder110/skyshield-server@sha256:6bdcbe082346bdbbbb6af5fa2652819019656cf220578b0acc6fa19c24c98666",
-    "frontend": "docker.io/solder110/skyshield-frontend@sha256:e8b06b233f97c36c127f71b0ea4fcb6b42f490e917da93a88390364930eaa974",
-    "bootstrap": "docker.io/solder110/skyshield-bootstrap@sha256:da2087e7a7425815dc1497a3b85e3283bfaae47bf3d6d349022cb16ab901398d",
-    "nginx": "docker.io/solder110/skyshield-nginx@sha256:617374c14fba5e1d9d941cf4c864ef4410b59bd07b6b3a7faba9837d7cd11b79"
+    "server": "docker.io/solder110/skyshield-server@sha256:14242ef28dba9bbf499c1094ae7c09e661a4b1c4c3f00a6d993968ba45acd1f9",
+    "frontend": "docker.io/solder110/skyshield-frontend@sha256:caee3312b5e12779e54051a8550c67332de4cfbebc07871330ef5a2197d4b336",
+    "bootstrap": "docker.io/solder110/skyshield-bootstrap@sha256:5b27e4ca8f6b4f2321f5b1ec2a80c6f3248ea0231a9331028f0428774c394890",
+    "nginx": "docker.io/solder110/skyshield-nginx@sha256:7a49f3750a1c33aab29e1d331eb416ea565d0d3910cb3929a207f5563d118e31"
   }
 }
