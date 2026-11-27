@@ -2,7 +2,6 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"iter"
@@ -453,15 +452,15 @@ func (l *loop) run() {
 			return
 		}
 
+		l.maybeInjectTodoReminder()
 		// Non-destructive proactive compaction (MicroCompact → AutoCompact).
 		if l.in.Compactor != nil {
 			if budget, ok := l.in.Compactor.(RequestBudgeter); ok {
-				static, _ := json.Marshal(struct {
-					System   []string
-					Tools    []llm.ToolSchema
-					Reminder string
-				}{l.in.System, schemas, l.in.SystemReminder})
-				budget.SetRequestBudget((len(static)+2)/3, l.maxTokens())
+				static := llm.CompletionRequest{System: l.in.System, Tools: schemas}
+				if l.in.SystemReminder != "" {
+					static.Messages = []llm.Message{llm.UserText(l.in.SystemReminder)}
+				}
+				budget.SetRequestBudget(llm.EstimateRequestTokens(static)+8, l.maxTokens())
 			}
 			l.messages = l.in.Compactor.Pre(l.toolCtx, l.messages, l.lastInputTokens)
 			l.recordNewBoundary()
@@ -925,7 +924,6 @@ func (l *loop) requestMessages() []llm.Message {
 }
 
 func (l *loop) streamAndExecute(schemas []llm.ToolSchema) (asst llm.Message, exec *streamExec, stopReason string, err error, consumerStopped, aborted bool) {
-	l.maybeInjectTodoReminder()
 	msgs := l.requestMessages()
 	if l.in.SystemReminder != "" {
 		msgs = append([]llm.Message{llm.UserText(l.in.SystemReminder)}, msgs...)

@@ -27,6 +27,16 @@ boundaries preserve complete tool exchanges. NOA learns a provider-reported
 window, follows profile changes, and scales its compression cadence for small
 windows. Raw transcripts and compression archives remain intact.
 
+The host also measures the final request view after NOA restores original tool
+arguments. When normal compression cannot make room, a private JSON archive in
+the session/task .context directory retains the working history and request
+view. A durable transcript boundary keeps user instructions and recent complete
+tool exchanges in the active context. This checkpoint survives process restart;
+it does not replay tools, change model window settings, or delete evidence.
+If instructions alone exceed the available budget, or the archive cannot be
+written, the history is retained and the request remains a visible failure.
+The existing conversation/task deletion flow removes these scoped archives.
+
 Regression checks use mock model transports and scan tools. They cover EOF
 before output, no replay after output, shared retry exhaustion, continuation
 from a saved tool result with both context managers, large tool-result growth,

@@ -121,3 +121,6 @@ old-python/
 **/*.sqlite*
 **/*.db
 **/*.dump
+
+# Private AI context checkpoints, never source artifacts.
+.context/

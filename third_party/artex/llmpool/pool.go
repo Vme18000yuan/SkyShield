@@ -274,32 +274,9 @@ func trimErr(err error) string {
 // can't hold it are skipped. Deliberately crude (~3.5 chars/token) and biased to
 // over-estimate slightly; it only needs to tell "fits" from "nowhere near".
 func estimateTokens(req llm.CompletionRequest) int {
-	n := 0
-	for _, s := range req.System {
-		n += len(s)
-	}
-	for _, m := range req.Messages {
-		n += blocksLen(m.Content)
-	}
-	for _, t := range req.Tools {
-		// InputSchema is a decoded map, so its serialized size isn't available
-		// cheaply — charge a flat ~120 chars per top-level property instead.
-		n += len(t.Name) + len(t.Description) + len(t.InputSchema)*120
-	}
-	return n * 2 / 7 // ≈ len/3.5
+	return llm.EstimateRequestTokens(req)
 }
 
 // EstimateRequestTokens is the shared conservative routing estimate. It is a
 // preflight guard; provider usage remains the authoritative accounting source.
 func EstimateRequestTokens(req llm.CompletionRequest) int { return estimateTokens(req) }
-
-func blocksLen(bs []llm.ContentBlock) int {
-	n := 0
-	for _, b := range bs {
-		n += len(b.Text) + len(b.Thinking) + len(b.Input) + len(b.Name)
-		if len(b.Content) > 0 {
-			n += blocksLen(b.Content)
-		}
-	}
-	return n
-}

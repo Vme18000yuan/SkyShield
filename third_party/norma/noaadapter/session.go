@@ -198,10 +198,11 @@ func (s *Session) View(msgs []llm.Message) []llm.Message {
 	}
 
 	res := noa.ProcessTurn(noa.ProcessTurnInput{
-		Messages:   cores,
-		State:      s.state,
-		Config:     cfg,
-		TokenCount: tokens,
+		Messages:    cores,
+		State:       s.state,
+		Config:      cfg,
+		TokenCount:  tokens,
+		CountTokens: countViewTextTokens,
 	})
 	s.state = res.State
 	s.sidecar = sc
@@ -356,8 +357,12 @@ func (s *Session) resolveTokenCount(cores []noa.CoreMessage) int {
 // array still contains everything prune removes, so counting it pins the figure
 // high forever and drives compression that reclaims nothing.
 func estimateProjectedTokens(cores []noa.CoreMessage, state noa.CompressionState, cfg noa.Config) int {
-	return noa.ProjectedTokenCount(cores, state, cfg, nil)
+	return noa.ProjectedTokenCount(cores, state, cfg, countViewTextTokens)
 }
+
+// Match the outbound estimator's byte ratio and allow for protocol fields and
+// ref tags. A /4 estimate undercounts large ASCII outputs before transmission.
+func countViewTextTokens(text string) int { return (len(text)*2+6)/7 + 24 }
 
 // estimateCoreTokens sums the RAW projection, ignoring what prune would hide.
 // Use it only where the raw history size is genuinely the question (e.g.

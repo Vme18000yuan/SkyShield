@@ -17,6 +17,8 @@ type Compactor struct {
 	overflow overflowState
 }
 
+func (c *Compactor) ContextWindowTokens() int { return c.sess.Config().ModelContextLimit }
+
 // Pre is a no-op on the history.
 //
 // The built-in compaction rewrites messages here; noa must not. Message
@@ -107,16 +109,5 @@ func (c *Compactor) Reactive(ctx context.Context, msgs []llm.Message) ([]llm.Mes
 
 // estimateMessages sizes a rebuilt request.
 func estimateMessages(msgs []llm.Message) int {
-	total := 0
-	for _, m := range msgs {
-		for _, b := range m.Content {
-			total += len(b.Text) / 4
-			total += len(b.Thinking) / 4
-			total += len(b.Input) / 4
-			for _, inner := range b.Content {
-				total += len(inner.Text) / 4
-			}
-		}
-	}
-	return total
+	return llm.EstimateMessageTokens(msgs)
 }

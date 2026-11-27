@@ -60,3 +60,4 @@ frontend/*.tsbuildinfo
 **/*.sqlite*
 **/*.db
 **/*.dump
+**/.context

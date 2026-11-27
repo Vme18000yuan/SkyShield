@@ -121,7 +121,7 @@ func TestFloorStaleIgnoresPreCompressionAnchor(t *testing.T) {
 	sess.lastCompressAt = 1 // a compression happened after that figure was taken
 	cores, _ := Project(msgs)
 	got := sess.resolveTokenCount(cores)
-	est := estimateCoreTokens(cores)
+	est := estimateProjectedTokens(cores, sess.state, sess.cfg)
 	sess.mu.Unlock()
 
 	if got != est {
@@ -135,7 +135,7 @@ func TestProviderTokensUsedWhenCurrent(t *testing.T) {
 
 	sess.mu.Lock()
 	cores, _ := Project(msgs)
-	est := estimateCoreTokens(cores)
+	est := estimateProjectedTokens(cores, sess.state, sess.cfg)
 	sess.providerTokens = est + 100 // authoritative and current, so it is adopted
 	sess.providerTokensAt = 0
 	sess.lastCompressAt = 0

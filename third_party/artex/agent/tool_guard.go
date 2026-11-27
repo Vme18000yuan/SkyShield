@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"sync/atomic"
 
 	"github.com/Autumn-27/norma/agentcore"
@@ -27,10 +28,28 @@ func guardPanic(item tool.CoreTool) tool.CoreTool {
 }
 
 func newToolSafeSession(ctx context.Context, options agentcore.Options) *agentcore.Session {
+	window := 256000
+	if options.Compaction != nil && options.Compaction.ContextWindow > 0 {
+		window = options.Compaction.ContextWindow
+	}
+	windowFn := func() int { return window }
+	if provider, ok := options.Provider.(contextWindowProvider); ok {
+		windowFn = provider.ContextWindowTokens
+	} else if manager, ok := options.Compactor.(contextWindowProvider); ok {
+		windowFn = manager.ContextWindowTokens
+	}
 	if provider, ok := options.Provider.(contextWindowProvider); ok && options.Compactor == nil && options.Compaction != nil {
 		options.Compactor = &adaptiveCompactor{config: *options.Compaction, window: provider.ContextWindowTokens,
 			summarize: compaction.ProviderSummarizer(options.Provider, options.MaxTokens, options.NonStreaming)}
 		options.Compaction = nil
+	}
+	if options.Compactor == nil && options.Compaction != nil {
+		options.Compactor = compaction.New(*options.Compaction, compaction.ProviderSummarizer(options.Provider, options.MaxTokens, options.NonStreaming))
+		options.Compaction = nil
+	}
+	if options.Compactor != nil && filepath.IsAbs(options.WorkingDir) {
+		options.Compactor = &contextBudgetCompactor{Compactor: options.Compactor, window: windowFn,
+			directory: filepath.Join(options.WorkingDir, ".context"), warn: options.OnWarn}
 	}
 	if policy, ok := ctx.Value(hostPolicyKey{}).(HostPolicy); ok && policy.ExternalBackgroundTasks {
 		options.DisableBackgroundTasks = true

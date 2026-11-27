@@ -463,7 +463,7 @@ function ProfileSheet({
         retry,
       });
       if (isNew) toast.success(`已新建：${name.trim()}（在卡片上「设为激活」以启用）`);
-      else toast.success(profile?.is_default ? "已保存，激活配置即时生效，无需重启" : "已保存");
+      else toast.success(profile?.is_default ? "已保存，无需重新激活；新一轮对话使用更新配置" : "已保存");
       onSaved(String(id));
       onOpenChange(false);
     } catch (e) {
@@ -491,7 +491,7 @@ function ProfileSheet({
           <SheetDescription>
             {isNew
               ? "新建后不会自动激活，请在卡片上「设为激活」以启用。"
-              : "修改后点击保存；激活配置保存后对全部 Agent 立即生效。"}
+              : "激活配置也可编辑，保存后无需重新激活或重启。正在运行的对话可在本轮结束后继续，以使用新配置。"}
           </SheetDescription>
         </SheetHeader>
 
@@ -920,6 +920,7 @@ export default function ArtexLLMSettings() {
                   tabIndex={0}
                   onClick={() => openEditor(p)}
                   onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       openEditor(p);
@@ -968,6 +969,10 @@ export default function ArtexLLMSettings() {
                     </div>
 
                     <div className="mt-1 flex gap-2">
+                      <Button size="sm" variant="outline" aria-label={"编辑配置 " + p.name} onClick={(e) => {
+                        e.stopPropagation();
+                        openEditor(p);
+                      }}>编辑</Button>
                       <Button
                         size="sm"
                         variant="outline"

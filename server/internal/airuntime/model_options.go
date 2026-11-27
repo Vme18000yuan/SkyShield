@@ -102,8 +102,9 @@ func (p *configuredProvider) request(req llm.CompletionRequest) llm.CompletionRe
 }
 
 func (p *configuredProvider) checkWindow(req llm.CompletionRequest) error {
-	if p.options.ContextWindow > 0 && llmpool.EstimateRequestTokens(req)+req.MaxTokens > p.options.ContextWindow {
-		return fmt.Errorf("context length exceeds configured model window (%d tokens); compact before retry", p.options.ContextWindow)
+	input := llmpool.EstimateRequestTokens(req)
+	if p.options.ContextWindow > 0 && input+req.MaxTokens > p.options.ContextWindow {
+		return fmt.Errorf("context length exceeds configured model window (%d tokens); estimated input %d, output reservation %d; compact before retry", p.options.ContextWindow, input, req.MaxTokens)
 	}
 	return nil
 }

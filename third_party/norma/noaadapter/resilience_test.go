@@ -52,6 +52,19 @@ func renderView(msgs []llm.Message) string {
 	return b.String()
 }
 
+// Retry/nudge scheduling is intentionally renewed on a new run. Compare the
+// actual context and stable refs, excluding the ephemeral compression prompt.
+func renderSavedView(msgs []llm.Message) string {
+	var saved []llm.Message
+	nudge := findNudge(msgs)
+	for _, m := range msgs {
+		if nudge == "" || m.Text() != nudge {
+			saved = append(saved, m)
+		}
+	}
+	return renderView(saved)
+}
+
 // The everyday resume: the process restarts, a new Session is built over the
 // same archive directory, and the conversation continues. The model must see
 // exactly what it saw before — different refs would invalidate every id it is
@@ -59,7 +72,7 @@ func renderView(msgs []llm.Message) string {
 func TestResumeFromDiskReproducesTheSameView(t *testing.T) {
 	dir := t.TempDir()
 	sess, history := buildWorkingSession(t, dir, 45)
-	want := renderView(sess.View(history))
+	want := renderSavedView(sess.View(history))
 	wantBlocks := len(noa.ActiveBlocks(sess.State()))
 
 	opts := baseOptions()
@@ -73,7 +86,7 @@ func TestResumeFromDiskReproducesTheSameView(t *testing.T) {
 	if got := len(noa.ActiveBlocks(resumed.State())); got != wantBlocks {
 		t.Fatalf("resumed with %d active blocks, want %d", got, wantBlocks)
 	}
-	if got := renderView(resumed.View(history)); got != want {
+	if got := renderSavedView(resumed.View(history)); got != want {
 		t.Fatalf("the resumed view differs from the original.\nwant %d bytes\ngot  %d bytes\n"+
 			"first divergence at byte %d", len(want), len(got), firstDiff(want, got))
 	}
@@ -86,7 +99,7 @@ func TestResumeFromDiskReproducesTheSameView(t *testing.T) {
 func TestRebuildAfterStateLossReproducesTheSameView(t *testing.T) {
 	dir := t.TempDir()
 	sess, history := buildWorkingSession(t, dir, 45)
-	want := renderView(sess.View(history))
+	want := renderSavedView(sess.View(history))
 	wantBlocks := noa.ActiveBlocks(sess.State())
 
 	// Lose the state file the way an import or a botched copy would.
@@ -130,7 +143,7 @@ func TestRebuildAfterStateLossReproducesTheSameView(t *testing.T) {
 			t.Fatalf("block %d came back at tier %d, was tier %d", i, gotBlocks[i].Tier, wantBlocks[i].Tier)
 		}
 	}
-	if got := renderView(rebuilt.View(history)); got != want {
+	if got := renderSavedView(rebuilt.View(history)); got != want {
 		t.Fatalf("the rebuilt view differs from the original at byte %d", firstDiff(want, got))
 	}
 }
@@ -265,7 +278,9 @@ func TestTier1ArchivesContainTheOriginalText(t *testing.T) {
 	}
 
 	checked := 0
-	for _, b := range noa.ActiveBlocks(sess.State()) {
+	// Tier consolidation may have absorbed every tier-1 block; its original
+	// archive still has to remain complete and readable.
+	for _, b := range sess.State().Blocks {
 		if b.Tier != 1 {
 			continue
 		}

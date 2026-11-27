@@ -35,3 +35,4 @@ tsconfig..next-skyshield-stage-*.json
 **/*.sqlite*
 **/*.db
 **/*.dump
+**/.context

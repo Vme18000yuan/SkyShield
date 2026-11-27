@@ -16,6 +16,16 @@ type replaySafeNoaCompactor struct {
 	window func() int
 }
 
+func (c *replaySafeNoaCompactor) ContextWindowTokens() int {
+	if c.window != nil {
+		return c.window()
+	}
+	if manager, ok := c.Compactor.(contextWindowProvider); ok {
+		return manager.ContextWindowTokens()
+	}
+	return 256000
+}
+
 func (c *replaySafeNoaCompactor) SetRequestBudget(overhead, output int) {
 	if c.window != nil {
 		if setter, ok := c.Compactor.(interface{ SetContextWindow(int) }); ok {
@@ -34,7 +44,7 @@ func (c *replaySafeNoaCompactor) View(ctx context.Context, history []llm.Message
 		ambiguous bool
 	}
 	calls := map[string]originalCall{}
-	for _, message := range history {
+	for _, message := range history[llm.LastBoundaryIndex(history)+1:] {
 		if message.Role != llm.RoleAssistant {
 			continue
 		}
